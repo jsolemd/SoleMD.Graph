@@ -32,10 +32,13 @@ interface GraphBundleState {
   queries: GraphBundleQueries | null
 }
 
-export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
+export function useGraphBundle(bundle: GraphBundle | null): GraphBundleState {
   const activeBundleChecksumRef = useRef<string | null>(null)
-  const sessionBundleRef = useRef(bundle)
-  if (sessionBundleRef.current.bundleChecksum !== bundle.bundleChecksum) {
+  const sessionBundleRef = useRef<GraphBundle | null>(bundle)
+  if (
+    bundle != null &&
+    sessionBundleRef.current?.bundleChecksum !== bundle.bundleChecksum
+  ) {
     sessionBundleRef.current = bundle
   }
   const sessionBundle = sessionBundleRef.current
@@ -55,6 +58,9 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
   }, [])
 
   useEffect(() => {
+    if (sessionBundle == null) {
+      return
+    }
     let cancelled = false
     let unsubscribeCanvas = () => {}
     const previousBundleChecksum = activeBundleChecksumRef.current
@@ -177,7 +183,9 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
     }
   }, [sessionBundle])
 
-  const isResolvedBundle = state.bundleChecksum === sessionBundle.bundleChecksum
+  const isResolvedBundle =
+    sessionBundle != null &&
+    state.bundleChecksum === sessionBundle.bundleChecksum
   const isCanvasReady =
     isResolvedBundle && Boolean(state.canvas) && Boolean(state.queries)
 

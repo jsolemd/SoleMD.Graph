@@ -55,11 +55,16 @@ export function GraphLoadingChrome({
       <div className="fixed right-3 top-3" style={{ zIndex }}>
         {groupRightControls ? (
           <div
-            className="flex items-center gap-0.5 rounded-full transition-[background-color,box-shadow] duration-300"
+            className={
+              "flex items-center gap-0.5 rounded-full transition-[background-color,box-shadow] duration-300"
+              + (surfaceMode === "auto" ? " chrome-surface-right-target" : "")
+            }
             style={
-              surfaceMode === "pill"
-                ? pillRightChromeStyle
-                : flushRightChromeStyle
+              surfaceMode === "auto"
+                ? undefined
+                : surfaceMode === "pill"
+                  ? pillRightChromeStyle
+                  : flushRightChromeStyle
             }
           >
             {rightSlot}

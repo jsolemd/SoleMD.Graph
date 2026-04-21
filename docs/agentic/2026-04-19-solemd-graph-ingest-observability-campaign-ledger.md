@@ -630,4 +630,44 @@ Expected laptop access path:
 
 - laptop browser:
   - `http://localhost:3300`
+
+---
+
+### 2026-04-21 post-audit amendment — bounded `run_label`
+
+Following the 2026-04-21 ingest optimization audit
+(`docs/agentic/2026-04-21-solemd-graph-ingest-optimization-audit-ledger.md`),
+the `run_label` Prometheus label value on `worker_active_run_info` and its
+sibling progress/elapsed gauges is **bounded** — it is `"{source_code}:{release_tag}"`
+and MUST NOT embed `ingest_run_id`.
+
+Rationale: prometheus_client retains series per label tuple for the process
+lifetime. Every completed run would leave a zero-valued series keyed on a
+unique UUID, leaking cardinality indefinitely. `ingest_run_id` remains in
+the structured `ingest.cycle.started`/`ingest.cycle.published`/
+`ingest.cycle.failed` log events and in `solemd.ingest_runs` for incident
+correlation.
+
+Updated cutover verification after rotating the ingest worker:
+
+- `/metrics` `worker_active_run_info{worker_scope="ingest",run_kind="release_ingest"}`
+  has exactly one series per active run, with
+  `run_label="s2:<release_tag>"` or `run_label="pt3:<release_tag>"` —
+  no UUID segment.
+- `work_item` is still `family:file` during loading, family-only during
+  index/analyze.
+- `worker_active_run_progress_units{progress_kind="current_work_item_input_bytes"}`
+  is present.
+- `ingest_failures_total` now carries a `family` label
+  (`source_code`, `phase`, `family`, `failure_class`). Pre-family
+  failures emit `family=""`.
+- `ingest_write` asyncpg pool parameters: `statement_cache_size=128`,
+  `server_settings.idle_in_transaction_session_timeout="900000"`,
+  `tcp_keepalives_idle="60"`, `tcp_keepalives_interval="10"`,
+  `tcp_keepalives_count="6"`.
+
+The enforcing regression tests are
+`apps/worker/tests/test_ingest_runtime.py::test_writer_failure_releases_lock_and_records_family_failure`,
+`apps/worker/tests/test_telemetry_metrics.py::test_active_run_tracker_clears_labels_when_body_raises`,
+and `apps/worker/tests/test_db.py::test_ingest_write_pool_spec_uses_contract_defaults`.
   - `http://localhost:9095`

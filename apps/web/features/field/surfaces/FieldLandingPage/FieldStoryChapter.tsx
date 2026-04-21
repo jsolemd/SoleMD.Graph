@@ -1,9 +1,9 @@
 "use client";
 
-import type { RefObject } from "react";
-import { motion } from "framer-motion";
+import { useRef, type RefObject } from "react";
 import { MetaPill } from "@/features/graph/components/panels/PanelShell/MetaPill";
-import { smooth } from "@/lib/motion";
+import { useChapterAdapter } from "../../scroll/chapter-adapters/useChapterAdapter";
+import type { FieldChapterKey } from "../../scroll/chapter-adapters/types";
 import type {
   FieldLandingSection,
   FieldStoryBeat,
@@ -12,6 +12,7 @@ import { FieldStoryProgress } from "./FieldStoryProgress";
 
 interface FieldStoryChapterProps {
   beats: readonly FieldStoryBeat[];
+  chapterKey: FieldChapterKey;
   section: FieldLandingSection;
   sectionRef?: RefObject<HTMLElement | null>;
 }
@@ -93,12 +94,17 @@ function StoryBeatDetail({ beat }: { beat: FieldStoryBeat }) {
 
 export function FieldStoryChapter({
   beats,
+  chapterKey,
   section,
   sectionRef,
 }: FieldStoryChapterProps) {
+  const localRef = useRef<HTMLElement | null>(null);
+  const ref = sectionRef ?? localRef;
+  useChapterAdapter(ref, chapterKey);
+
   return (
     <section
-      ref={sectionRef}
+      ref={ref}
       id={section.id}
       data-ambient-section
       data-preset={section.preset}
@@ -106,21 +112,18 @@ export function FieldStoryChapter({
       className="px-4 pb-[9.5rem] pt-[6vh] sm:px-6 sm:pt-[8vh]"
     >
       <div className="mx-auto w-full max-w-[1440px]">
-        <FieldStoryProgress beatIds={beats.map((beat) => beat.id)} />
+        <FieldStoryProgress
+          beatIds={beats.map((beat) => beat.id)}
+          chapterKey={chapterKey}
+        />
 
         <div className="space-y-[4vh]">
           {beats.map((beat) =>
             beat.variant === "centered" ? (
-              <motion.div
+              <div
                 key={beat.id}
                 id={beat.id}
-                initial={{ opacity: 0, y: 18 }}
-                viewport={{ once: true, amount: 0.35 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{
-                  y: smooth,
-                  opacity: { duration: 0.18, ease: "easeOut" },
-                }}
+                data-story-beat
                 className="mx-auto max-w-[860px] pb-[12vh] pt-[26vh] text-center"
               >
                 <div className="mb-5 flex justify-center">
@@ -134,18 +137,12 @@ export function FieldStoryChapter({
                 <p className="mx-auto mt-5 max-w-[54ch] text-[15px] leading-7 text-[var(--graph-panel-text-dim)]">
                   {beat.body}
                 </p>
-              </motion.div>
+              </div>
             ) : (
-              <motion.div
+              <div
                 key={beat.id}
                 id={beat.id}
-                initial={{ opacity: 0, y: 18 }}
-                viewport={{ once: true, amount: 0.35 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{
-                  y: smooth,
-                  opacity: { duration: 0.18, ease: "easeOut" },
-                }}
+                data-story-beat
                 className="grid min-h-[72svh] grid-cols-1 gap-6 py-[20vh] lg:grid-cols-12 lg:items-center lg:gap-10"
               >
                 <div className="lg:col-span-5 lg:col-start-1">
@@ -163,7 +160,7 @@ export function FieldStoryChapter({
                 <div className="lg:col-span-3 lg:col-start-9">
                   <StoryBeatDetail beat={beat} />
                 </div>
-              </motion.div>
+              </div>
             ),
           )}
         </div>

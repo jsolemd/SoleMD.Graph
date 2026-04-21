@@ -458,6 +458,7 @@ async def _open_or_resume_selection_run(
                     requested_by = $2,
                     trigger = $3,
                     error_message = NULL,
+                    completed_at = NULL,
                     plan_checksum = $4,
                     plan_manifest = $5
                 WHERE corpus_selection_run_id = $6

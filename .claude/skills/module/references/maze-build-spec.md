@@ -556,18 +556,25 @@ Deduplicated across all 12 audits. Each entry cites the audit that first named i
 43. **`onComponentChange` / `ul.CHANGE` → React reconciliation + Zustand subscriptions**. `b13-components-chrome.md`.
 44. **DPR ceiling 1.75** (stricter than Maze's 2); aligned with `frontend-performance.md § "DPR capped at 2"`. `b11-stage-runtime.md`.
 45. **B9 stream rebuild sanctioned divergences**: authored `id` attributes on `<path>` elements; refs + `data-*` instead of `.js-*` selectors; sibling React nodes for `data-gfx` vs. `data-scroll`; `afsp-`-prefixed tokens instead of Maze class names; SoleMD-authored copy instead of vulnerability-requirement strings. `b09-stream-popups.md § "Proposed sanctioned deviations"`.
-46. **Points stay visible through the detail story**. Blob `depthOut=1.0` / `amplitudeOut=0.8`, `updateVisibility()` remains a documented no-op, and `alphaDiagramFloor` / `selectionHotspotFloor` stay in force. User-locked on **2026-04-19**. Undo path: `references/object-formation-surface.md § "Undoing deviation #1"`.
-47. **Landing keeps the bookend blob ending; authored shape formation is
+46. **Module Zero / landing-scoped locked deviation: points stay visible through the detail story**. Blob `depthOut=1.0` / `amplitudeOut=0.8`, `updateVisibility()` remains a documented no-op, and `alphaDiagramFloor` / `selectionHotspotFloor` stay in force. User-locked on **2026-04-19**. This is not a global rule for future modules. Undo path: `references/object-formation-surface.md § "Undoing deviation #1"`.
+47. **Module Zero / landing-scoped locked deviation: landing keeps the bookend blob ending; authored shape formation is
 reserved for future module pages.** Stream remains a conveyor overlap chapter,
 pcb remains available as a non-landing convergence family, and future
 module-specific silhouettes still route through
-`references/object-formation-surface.md`.
+`references/object-formation-surface.md`. This is not a global rule for future
+modules.
 
 **47 consolidated sanctioned deviations across 14 buckets.** When in doubt whether a change fits an existing deviation, read the originating audit before deciding.
 
 ## 13. Known gaps + rebuild backlog (prioritized)
 
-### Status after the 2026-04-19 landing pass
+### Historical status after the 2026-04-19 landing pass
+
+This subsection is a historical synthesis snapshot, not guaranteed live-code
+truth. Before treating any item below as landed, reconcile against the current
+branch and the latest foundation plan ledger:
+
+- [2026-04-21-solemd-graph-module-zero-foundation-plan-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-04-21-solemd-graph-module-zero-foundation-plan-ledger.md:1)
 
 - **B9 stream DOM motion-path + popups** remain deferred to a future user-authored DOM/SVG shell pass; the shared stream stage controller and graph chapter are in place, but the popup rail is intentionally not shipped in this pass.
 - **B12 Story-2 progress + CSS custom-property contract** landed on the root-driven `--progress-N` model.

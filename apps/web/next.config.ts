@@ -1,6 +1,10 @@
 import type { NextConfig } from 'next'
 
 const DUCKDB_BROWSER_ENTRY = '@duckdb/duckdb-wasm/dist/duckdb-browser.mjs'
+// lottie-react's package.json `browser` field points at build/index.umd.js.
+// Turbopack picks that for client code and the UMD entry fails to load as an
+// ESM chunk. Force the ESM build (the `module` field) on both bundlers.
+const LOTTIE_REACT_ESM_ENTRY = 'lottie-react/build/index.es.js'
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -54,6 +58,7 @@ const nextConfig: NextConfig = {
       // DuckDB-WASM ships browser and Node entries. Force the browser entry in
       // dev as well so Turbopack does not walk the larger Node-side surface.
       '@duckdb/duckdb-wasm': DUCKDB_BROWSER_ENTRY,
+      'lottie-react': LOTTIE_REACT_ESM_ENTRY,
     },
   },
   webpack: (config) => {
@@ -61,6 +66,7 @@ const nextConfig: NextConfig = {
     config.resolve.alias = {
       ...(config.resolve.alias ?? {}),
       '@duckdb/duckdb-wasm': DUCKDB_BROWSER_ENTRY,
+      'lottie-react': LOTTIE_REACT_ESM_ENTRY,
     }
 
     // Keep the suppression narrow to DuckDB's optional Node-side bundle.

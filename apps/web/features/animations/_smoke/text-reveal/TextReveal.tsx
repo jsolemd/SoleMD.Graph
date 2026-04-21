@@ -17,7 +17,7 @@
  *
  * Honors `useReducedMotion` with a rest-state render.
  */
-import { motion, useReducedMotionConfig as useReducedMotion, type Variants } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 
 const HEADLINE = "Elegant, Precise, Calm.";
 const SUBLINE = "Apple Health meets the New England Journal of Medicine.";

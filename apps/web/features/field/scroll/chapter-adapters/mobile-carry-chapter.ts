@@ -2,27 +2,63 @@
 
 import { gsap } from "gsap";
 import type { ChapterAdapter } from "./types";
-import { ensureGsapScrollTriggerRegistered } from "../../controller/FieldController";
 
-export const mobileCarryChapterAdapter: ChapterAdapter = (element, options) => {
+interface MobileMarqueeRegistration {
+  tween: gsap.core.Tween | null;
+  userPaused: boolean;
+  syncPlayback: () => void;
+}
+
+const registrations = new WeakMap<HTMLElement, MobileMarqueeRegistration>();
+
+export function setMobileMarqueePaused(
+  element: HTMLElement | null,
+  paused: boolean,
+): void {
+  if (!element) return;
+  const registration = registrations.get(element);
+  if (!registration) return;
+  registration.userPaused = paused;
+  registration.syncPlayback();
+}
+
+export function isMobileMarqueeRegistered(
+  element: HTMLElement | null,
+): boolean {
+  if (!element) return false;
+  const registration = registrations.get(element);
+  return registration?.tween != null;
+}
+
+export const mobileCarryChapterAdapter: ChapterAdapter = (ctx) => {
+  const { element, reducedMotion, subscribe, getState } = ctx;
+
   const viewport = element.querySelector<HTMLElement>(
     "[data-mobile-carry-viewport]",
   );
   const track = element.querySelector<HTMLElement>("[data-mobile-carry-track]");
   if (!viewport || !track) return { dispose() {} };
 
-  if (options.reducedMotion) {
+  if (reducedMotion) {
     track.style.transform = "translate3d(0, 0, 0)";
-    return { dispose() {} };
+    return {
+      dispose() {
+        track.style.transform = "";
+      },
+    };
   }
 
-  ensureGsapScrollTriggerRegistered();
+  const registration: MobileMarqueeRegistration = {
+    tween: null,
+    userPaused: false,
+    syncPlayback: () => {},
+  };
+  registrations.set(element, registration);
 
   const mm = gsap.matchMedia();
-  let clone: HTMLElement | null = null;
 
   mm.add("(max-width: 1023px)", () => {
-    clone = track.cloneNode(true) as HTMLElement;
+    const clone = track.cloneNode(true) as HTMLElement;
     clone.setAttribute("aria-hidden", "true");
     viewport.appendChild(clone);
     gsap.set([track, clone], { xPercent: 0 });
@@ -32,25 +68,31 @@ export const mobileCarryChapterAdapter: ChapterAdapter = (element, options) => {
       duration: 10,
       ease: "none",
       repeat: -1,
-      scrollTrigger: {
-        trigger: element,
-        start: "top bottom",
-        end: "bottom top",
-        toggleActions: "play pause resume reset",
-        invalidateOnRefresh: true,
-        onRefresh: () => {
-          gsap.set([track, clone], { xPercent: 0 });
-        },
-      },
+      paused: true,
     });
+    registration.tween = tween;
+
+    const syncPlayback = () => {
+      const { active } = getState();
+      const shouldPlay = active && !registration.userPaused;
+      if (shouldPlay) {
+        if (tween.paused()) tween.play();
+      } else {
+        if (!tween.paused()) tween.pause();
+      }
+    };
+    registration.syncPlayback = syncPlayback;
+    syncPlayback();
+    const unsubscribe = subscribe(syncPlayback);
 
     return () => {
-      tween.scrollTrigger?.kill();
+      unsubscribe();
       tween.kill();
-      if (clone?.parentNode === viewport) {
+      registration.tween = null;
+      registration.syncPlayback = () => {};
+      if (clone.parentNode === viewport) {
         viewport.removeChild(clone);
       }
-      clone = null;
       gsap.set(track, { clearProps: "transform" });
     };
   });
@@ -58,10 +100,7 @@ export const mobileCarryChapterAdapter: ChapterAdapter = (element, options) => {
   return {
     dispose() {
       mm.revert();
-      if (clone?.parentNode === viewport) {
-        viewport.removeChild(clone);
-      }
-      clone = null;
+      registrations.delete(element);
     },
   };
 };

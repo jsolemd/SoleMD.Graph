@@ -39,6 +39,19 @@ export default function ThemeToggle({
   const isDark = mounted ? computedColorScheme === "dark" : false;
   const label = isDark ? "Switch to light mode" : "Switch to dark mode";
 
+  const autoMode = surfaceMode === "auto";
+  const buttonClassName =
+    "graph-icon-btn" + (autoMode && !grouped ? " chrome-toggle-target" : "");
+  let buttonStyle: CSSProperties | undefined;
+  if (autoMode) {
+    buttonStyle = grouped ? chromeFlushSurfaceStyle : undefined;
+  } else {
+    buttonStyle =
+      grouped || surfaceMode === "flush"
+        ? chromeFlushSurfaceStyle
+        : pillToggleStyle;
+  }
+
   return (
     <Tooltip label={label} position="bottom" withArrow>
       <ActionIcon
@@ -49,13 +62,9 @@ export default function ThemeToggle({
         variant="transparent"
         size="lg"
         radius="xl"
-        className="graph-icon-btn"
+        className={buttonClassName}
         aria-label={label}
-        style={
-          grouped || surfaceMode === "flush"
-            ? chromeFlushSurfaceStyle
-            : pillToggleStyle
-        }
+        style={buttonStyle}
         styles={graphControlBtnStyles}
       >
         <motion.div

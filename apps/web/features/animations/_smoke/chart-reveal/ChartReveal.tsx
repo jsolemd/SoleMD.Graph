@@ -1,5 +1,5 @@
 "use client";
-import { motion, useReducedMotionConfig as useReducedMotion, type Variants } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { dataReveal } from "@/lib/motion";
 
 const DATA = [

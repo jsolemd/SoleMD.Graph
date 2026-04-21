@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useMantineColorScheme } from "@mantine/core";
-import { useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 import { Search, X } from "lucide-react";
 import type { LottieRefCurrentProps } from "lottie-react";
 import searchToggleAnimation from "@/features/animations/_assets/lottie/search-toggle.json";

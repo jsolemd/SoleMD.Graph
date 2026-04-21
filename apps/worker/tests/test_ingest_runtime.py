@@ -6,11 +6,14 @@ from pathlib import Path
 import asyncpg
 import pytest
 
-from app.db import open_pools
+from prometheus_client.parser import text_string_to_metric_families
+
+from app.db import init_connection, open_pools
 from app.ingest.errors import IngestAlreadyInProgress, IngestAlreadyPublished
-from app.ingest.models import StartReleaseRequest
-from app.ingest.runtime import run_release_ingest
+from app.ingest.models import IngestPlan, StartReleaseRequest
+from app.ingest.runtime import _open_or_resume_run, run_release_ingest
 from app.ingest.sources import pubtator, semantic_scholar
+from app.telemetry.metrics import collect_metrics_text
 from helpers import write_jsonl_gz, write_manifest, write_tar_gz, write_tsv_gz
 from telemetry_test_support import metric_sample_value
 
@@ -860,6 +863,106 @@ async def test_force_new_run_rejects_unfinished_run(
 
 
 @pytest.mark.asyncio
+async def test_open_or_resume_run_reopens_terminal_row_for_resume(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+) -> None:
+    release_tag = "2026-05-01"
+    request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+    )
+    plan = IngestPlan(
+        source_code="s2",
+        release_tag=release_tag,
+        release_dir=tmp_path,
+        manifest_uri=f"{tmp_path}/manifests",
+        release_checksum="checksum-v1",
+        families=(),
+    )
+    plan_payload = plan.model_dump(mode="json")
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        await init_connection(admin_connection)
+        source_release_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.source_releases (
+                source_published_at,
+                manifest_checksum,
+                manifest_uri,
+                source_name,
+                source_release_key,
+                release_status
+            )
+            VALUES (NULL, $1, $2, 's2', $3, 'ingesting')
+            RETURNING source_release_id
+            """,
+            plan.release_checksum,
+            plan.manifest_uri,
+            release_tag,
+        )
+        ingest_run_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.ingest_runs (
+                advisory_lock_key,
+                source_release_id,
+                status,
+                requested_status,
+                manifest_uri,
+                error_message,
+                completed_at,
+                plan_manifest,
+                phase_started_at
+            )
+            VALUES ($1, $2, 7, 2, $3, 'previous abort', now(), $4, $5)
+            RETURNING ingest_run_id
+            """,
+            111,
+            source_release_id,
+            "/stale/manifest",
+            plan_payload,
+            {"started": "2026-05-01T00:00:00+00:00"},
+        )
+
+        resumed = await _open_or_resume_run(
+            admin_connection,
+            request=request,
+            plan=plan,
+            source_release_id=source_release_id,
+            lock_key=222,
+        )
+
+        row = await admin_connection.fetchrow(
+            """
+            SELECT
+                advisory_lock_key,
+                status,
+                requested_status,
+                manifest_uri,
+                error_message,
+                completed_at
+            FROM solemd.ingest_runs
+            WHERE ingest_run_id = $1
+            """,
+            ingest_run_id,
+        )
+    finally:
+        await admin_connection.close()
+
+    assert resumed.ingest_run_id == ingest_run_id
+    assert resumed.status == 7
+    assert row is not None
+    assert row["advisory_lock_key"] == 222
+    assert row["status"] == 7
+    assert row["requested_status"] is None
+    assert row["manifest_uri"] == plan.manifest_uri
+    assert row["error_message"] is None
+    assert row["completed_at"] is None
+
+
+@pytest.mark.asyncio
 async def test_s2_citations_resume_is_deterministic(
     tmp_path: Path,
     warehouse_dsns: dict[str, str],
@@ -1589,3 +1692,123 @@ async def test_pubtator_relations_duplicate_rows_merge_cleanly(
         ) == 5
     finally:
         await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_writer_failure_releases_lock_and_records_family_failure(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+    monkeypatch,
+) -> None:
+    release_tag = "2026-04-21"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+
+    async def exploding_load_family(*args, **kwargs):
+        raise RuntimeError("synthetic writer failure")
+
+    from app.ingest.runtime import SOURCE_WRITERS
+    from app.ingest.runtime import SourceWriter
+
+    monkeypatch.setitem(
+        SOURCE_WRITERS,
+        "s2",
+        SourceWriter(load_family=exploding_load_family),
+    )
+
+    before_failure = metric_sample_value(
+        "ingest_failures_total",
+        {
+            "source_code": "s2",
+            "phase": "loading",
+            "family": "citations",
+            "failure_class": "RuntimeError",
+        },
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        with pytest.raises(RuntimeError, match="synthetic writer failure"):
+            await run_release_ingest(
+                StartReleaseRequest(
+                    source_code="s2",
+                    release_tag=release_tag,
+                    requested_by="tester",
+                    family_allowlist=("citations",),
+                ),
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+
+        lock_key_probe_pool = pools.get("ingest_write")
+        async with lock_key_probe_pool.acquire() as connection:
+            lock_key = await connection.fetchval(
+                "SELECT hashtextextended($1, 0)::bigint",
+                f"ingest:s2:{release_tag}",
+            )
+            acquired = await connection.fetchval(
+                "SELECT pg_try_advisory_lock($1)", lock_key
+            )
+            try:
+                assert acquired, "advisory lock was not released after writer failure"
+            finally:
+                if acquired:
+                    await connection.execute(
+                        "SELECT pg_advisory_unlock($1)", lock_key
+                    )
+    finally:
+        await pools.close()
+
+    after_failure = metric_sample_value(
+        "ingest_failures_total",
+        {
+            "source_code": "s2",
+            "phase": "loading",
+            "family": "citations",
+            "failure_class": "RuntimeError",
+        },
+    )
+    assert after_failure == before_failure + 1, (
+        "ingest_failures_total should carry the family label on writer failure"
+    )
+
+    for family in text_string_to_metric_families(collect_metrics_text()):
+        if family.name != "worker_active_run_info":
+            continue
+        for sample in family.samples:
+            run_label = sample.labels.get("run_label", "")
+            assert not any(
+                part.count("-") >= 4 and len(part) >= 32
+                for part in run_label.split(":")
+            ), (
+                f"worker_active_run_info.run_label leaked a UUID-shaped "
+                f"segment: {run_label!r}"
+            )

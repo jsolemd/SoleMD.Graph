@@ -7,6 +7,25 @@ The Round 12 canonical ledger is
 `docs/map/field-maze-baseline-ledger-round-12.md`. Line citations below
 are to `scripts.pretty.js` unless otherwise noted.
 
+## Status Note
+
+This file contains valuable Round 12 evidence, but some terminology and early
+sections still reflect the older DOM-scan / `pcb`-named baseline. The current
+authoritative Module Zero contract is:
+
+- manifest-driven, not `[data-gfx]`-scan-driven
+- shared chapter progress, not controller-local scroll truth
+- `objectFormation`, not `pcb`, as the current non-landing convergence-family name
+
+Use these as the first-read architecture surfaces before treating this file as
+normative:
+
+- `maze-build-spec.md`
+- `module-zero-reconstruction.md`
+
+Use this document as low-level evidence and overlay mechanics reference, not as
+the primary ownership contract.
+
 ## Fixed Stage Ownership
 
 Maze uses one page-global stage shell:

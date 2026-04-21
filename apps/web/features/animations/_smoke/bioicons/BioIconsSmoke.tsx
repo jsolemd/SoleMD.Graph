@@ -11,7 +11,7 @@
  * than BioIcons — cleaner geometry, one fill, and trivially recolorable
  * to the SoleMD pastel palette.
  */
-import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { canvasReveal } from "@/lib/motion";
 
 const SVG = `<svg viewBox="0 0 48 48" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">

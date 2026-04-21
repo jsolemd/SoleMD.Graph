@@ -13,9 +13,6 @@ import { useMediaQuery, useViewportSize } from "@mantine/hooks";
 import { useReducedMotion } from "framer-motion";
 import type { GraphBundle } from "@solemd/graph";
 import {
-  type ChromeSurfaceMode,
-} from "@/features/graph/components/panels/PanelShell/panel-styles";
-import {
   FieldConnectionOverlay,
   type FieldConnectionOverlayHandle,
 } from "./FieldConnectionOverlay";
@@ -25,7 +22,10 @@ import {
   useShellVariant,
   type ShellVariant,
 } from "@/features/graph/components/shell/use-shell-variant";
-import { useGraphWarmup } from "@/features/graph/hooks/use-graph-warmup";
+import {
+  useGraphWarmup,
+  type GraphWarmupStatus,
+} from "@/features/graph/hooks/use-graph-warmup";
 import type { PanelEdgeTocEntry } from "@/features/wiki/components/PanelEdgeToc";
 import { ViewportTocRail } from "@/features/wiki/components/ViewportTocRail";
 import { APP_CHROME_PX } from "@/lib/density";
@@ -33,6 +33,10 @@ import { FieldCanvas } from "../../renderer/FieldCanvas";
 import type { BlobController } from "../../controller/BlobController";
 import type { FieldController } from "../../controller/FieldController";
 import { fieldLoopClock } from "../../renderer/field-loop-clock";
+import {
+  createFieldSceneStore,
+  FieldSceneStoreProvider,
+} from "../../scroll/field-scene-store";
 import { FieldHotspotPool } from "./FieldHotspotPool";
 import {
   createFieldSceneState,
@@ -72,7 +76,6 @@ const fieldVignetteStyle: CSSProperties = {
   background: "transparent",
 };
 
-const CHROME_SURFACE_TRANSITION_SCROLL_PX = 24;
 const LANDING_GRAPH_READY_DEBUG_PARAM = "landingGraphReady";
 
 function useLandingGraphReadyDebugOverride(): boolean {
@@ -98,17 +101,21 @@ function getLandingSection(sectionId: string) {
 
 function FieldLandingShellContent({
   activeStageItemIds,
-  graphReady,
+  graphStatus,
   isCompactFieldViewport,
+  reducedMotion,
   sceneStateRef,
   showViewportToc,
 }: {
   activeStageItemIds: readonly FieldStageItemId[];
-  graphReady: boolean;
+  graphStatus: GraphWarmupStatus;
   isCompactFieldViewport: boolean;
+  reducedMotion: boolean;
   sceneStateRef: MutableRefObject<FieldSceneState>;
   showViewportToc: boolean;
 }) {
+  const graphReady = graphStatus === "ready";
+  const scrollBehavior: ScrollBehavior = reducedMotion ? "auto" : "smooth";
   const { ready: stageReady, registerController } = useFixedStageManager();
   const router = useRouter();
   const connectionOverlayRef =
@@ -118,27 +125,9 @@ function FieldLandingShellContent({
   const blobHotspotRefsRef = useRef<Array<HTMLDivElement | null>>([]);
   const blobHotspotCardRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [blobControllerReady, setBlobControllerReady] = useState(false);
-  const [chromeSurfaceMode, setChromeSurfaceMode] =
-    useState<ChromeSurfaceMode>("flush");
   const sectionNavScrollOffset = isCompactFieldViewport
     ? 24
     : APP_CHROME_PX.panelTop + 76;
-
-  useEffect(() => {
-    function syncChromeSurfaceMode() {
-      const nextMode: ChromeSurfaceMode =
-        window.scrollY > CHROME_SURFACE_TRANSITION_SCROLL_PX ? "pill" : "flush";
-      setChromeSurfaceMode((current) =>
-        current === nextMode ? current : nextMode,
-      );
-    }
-
-    syncChromeSurfaceMode();
-    window.addEventListener("scroll", syncChromeSurfaceMode, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", syncChromeSurfaceMode);
-    };
-  }, []);
 
   // Subscribe to the shared loop clock so the connection overlay and
   // per-hotspot card seats stay in sync with the frames BlobController
@@ -226,7 +215,7 @@ function FieldLandingShellContent({
       section.getBoundingClientRect().top + window.scrollY - sectionNavScrollOffset;
     window.scrollTo({
       top: Math.max(0, top),
-      behavior: "smooth",
+      behavior: scrollBehavior,
     });
   }
 
@@ -236,6 +225,12 @@ function FieldLandingShellContent({
       className="relative"
       style={rootShellStyle}
     >
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-black focus:px-4 focus:py-2 focus:text-white"
+      >
+        Skip to content
+      </a>
       <FieldCanvas
         activeIds={activeStageItemIds}
         className="fixed inset-0"
@@ -328,20 +323,20 @@ function FieldLandingShellContent({
         brandTooltipLabel="Back to top"
         groupRightControls
         onBrandClick={() =>
-          window.scrollTo({ top: 0, behavior: "smooth" })
+          window.scrollTo({ top: 0, behavior: scrollBehavior })
         }
-        surfaceMode={chromeSurfaceMode}
+        surfaceMode="auto"
         rightSlot={
           <FieldGraphWarmupAction
-            graphReady={graphReady}
+            status={graphStatus}
             onOpenGraph={() => router.push("/graph")}
           />
         }
       />
 
-      <FieldScrollCue visible={chromeSurfaceMode === "flush"} />
+      <FieldScrollCue />
 
-      <main className="relative z-10">
+      <main id="main-content" className="relative z-10">
         <FieldHeroSection
           onExploreRuntime={() => scrollToSection("section-story-1")}
           section={heroSection}
@@ -351,6 +346,7 @@ function FieldLandingShellContent({
 
         <FieldStoryChapter
           beats={fieldStoryOneBeats}
+          chapterKey="storyOne"
           section={storyOneSection}
         />
 
@@ -360,6 +356,7 @@ function FieldLandingShellContent({
 
         <FieldStoryChapter
           beats={fieldStoryTwoBeats}
+          chapterKey="storyThree"
           section={storyThreeSection}
         />
 
@@ -375,7 +372,7 @@ function FieldLandingShellContent({
             }
           }}
           onReturnToTop={() =>
-            window.scrollTo({ top: 0, behavior: "smooth" })
+            window.scrollTo({ top: 0, behavior: scrollBehavior })
           }
           section={ctaSection}
         />
@@ -385,6 +382,7 @@ function FieldLandingShellContent({
         <ViewportTocRail
           entries={tocEntries}
           compact
+          rightPx={4}
           scrollOffsetPx={sectionNavScrollOffset}
         />
       ) : null}
@@ -393,17 +391,24 @@ function FieldLandingShellContent({
 }
 
 function FieldLandingShell({
-  graphReady,
+  graphStatus,
   shellVariant,
 }: {
-  graphReady: boolean;
+  graphStatus: GraphWarmupStatus;
   shellVariant: ShellVariant;
 }) {
   const reducedMotion = useReducedMotion();
-  const hasCoarsePointer = useMediaQuery("(pointer: coarse)");
+  const hasAnyCoarsePointer = useMediaQuery("(any-pointer: coarse)");
+  const hasAnyFinePointer = useMediaQuery("(any-pointer: fine)");
+  const isPureTouchDevice = !!hasAnyCoarsePointer && !hasAnyFinePointer;
   const { width: viewportWidth } = useViewportSize();
-  const sceneStateRef = useRef<FieldSceneState>(
-    createFieldSceneState(),
+  const sceneStateRef = useMemo<MutableRefObject<FieldSceneState>>(
+    () => ({ current: createFieldSceneState() }),
+    [],
+  );
+  const sceneStore = useMemo(
+    () => createFieldSceneStore(sceneStateRef.current),
+    [sceneStateRef],
   );
   const activeStageItemIds = useMemo(
     () =>
@@ -419,42 +424,31 @@ function FieldLandingShell({
   const showViewportToc =
     shellVariant === "desktop"
     && !isCompactFieldViewport
-    && !hasCoarsePointer;
+    && !isPureTouchDevice;
 
   useEffect(() => {
     sceneStateRef.current.motionEnabled = !reducedMotion;
   }, [reducedMotion]);
 
   return (
-    <FixedStageManagerProvider
-      isMobile={isCompactFieldViewport}
-      manifest={FIELD_SECTION_MANIFEST}
-      reducedMotion={!!reducedMotion}
-      sceneStateRef={sceneStateRef}
-    >
-      <FieldLandingShellContent
-        activeStageItemIds={activeStageItemIds}
-        graphReady={graphReady}
-        isCompactFieldViewport={isCompactFieldViewport}
+    <FieldSceneStoreProvider store={sceneStore}>
+      <FixedStageManagerProvider
+        isMobile={isCompactFieldViewport}
+        manifest={FIELD_SECTION_MANIFEST}
+        reducedMotion={!!reducedMotion}
+        sceneStore={sceneStore}
         sceneStateRef={sceneStateRef}
-        showViewportToc={showViewportToc}
-      />
-    </FixedStageManagerProvider>
-  );
-}
-
-function FieldLandingPageWithWarmup({ bundle }: { bundle: GraphBundle }) {
-  const forcedGraphReady = useLandingGraphReadyDebugOverride();
-  const { graphReady } = useGraphWarmup(bundle);
-  const shellVariant = useShellVariant();
-
-  return (
-    <ShellVariantProvider value={shellVariant}>
-      <FieldLandingShell
-        graphReady={graphReady || forcedGraphReady}
-        shellVariant={shellVariant}
-      />
-    </ShellVariantProvider>
+      >
+        <FieldLandingShellContent
+          activeStageItemIds={activeStageItemIds}
+          graphStatus={graphStatus}
+          isCompactFieldViewport={isCompactFieldViewport}
+          reducedMotion={!!reducedMotion}
+          sceneStateRef={sceneStateRef}
+          showViewportToc={showViewportToc}
+        />
+      </FixedStageManagerProvider>
+    </FieldSceneStoreProvider>
   );
 }
 
@@ -464,18 +458,16 @@ export function FieldLandingPage({
   bundle: GraphBundle | null;
 }) {
   const forcedGraphReady = useLandingGraphReadyDebugOverride();
+  const { status } = useGraphWarmup(bundle);
   const shellVariant = useShellVariant();
+  const graphStatus: GraphWarmupStatus = forcedGraphReady ? "ready" : status;
 
-  if (bundle == null) {
-    return (
-      <ShellVariantProvider value={shellVariant}>
-        <FieldLandingShell
-          graphReady={forcedGraphReady}
-          shellVariant={shellVariant}
-        />
-      </ShellVariantProvider>
-    );
-  }
-
-  return <FieldLandingPageWithWarmup bundle={bundle} />;
+  return (
+    <ShellVariantProvider value={shellVariant}>
+      <FieldLandingShell
+        graphStatus={graphStatus}
+        shellVariant={shellVariant}
+      />
+    </ShellVariantProvider>
+  );
 }

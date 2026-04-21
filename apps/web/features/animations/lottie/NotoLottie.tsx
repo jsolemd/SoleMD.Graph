@@ -12,7 +12,7 @@
  */
 import { useEffect, useState, type CSSProperties } from "react";
 import Lottie from "lottie-react";
-import { useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 
 type Tier = "core" | "relevant" | "tangential";
 

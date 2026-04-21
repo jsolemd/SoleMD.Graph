@@ -1,5 +1,6 @@
 "use client";
 
+import { useComputedColorScheme } from "@mantine/core";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import {
@@ -158,6 +159,8 @@ export function FieldScene({
 }: FieldSceneProps) {
   const viewportWidth = useThree((state) => state.size.width);
   const isMobile = viewportWidth < FIELD_NON_DESKTOP_BREAKPOINT;
+  const colorScheme = useComputedColorScheme("light");
+  const lightModeValue = colorScheme === "light" ? 1 : 0;
   const activeIdSet = useMemo(() => new Set(activeIds), [activeIds]);
   const pointSources = useMemo(
     () =>
@@ -189,13 +192,13 @@ export function FieldScene({
   );
 
   const blobUniformsRef = useRef<LayerUniforms>(
-    blobController.createLayerUniforms(isMobile, pointTexture),
+    blobController.createLayerUniforms(isMobile, pointTexture, lightModeValue),
   );
   const streamUniformsRef = useRef<LayerUniforms>(
-    streamController.createLayerUniforms(isMobile, pointTexture),
+    streamController.createLayerUniforms(isMobile, pointTexture, lightModeValue),
   );
   const objectFormationUniformsRef = useRef<LayerUniforms>(
-    objectFormationController.createLayerUniforms(isMobile, pointTexture),
+    objectFormationController.createLayerUniforms(isMobile, pointTexture, lightModeValue),
   );
 
   const blobUniforms = syncLayerUniforms(
@@ -241,6 +244,14 @@ export function FieldScene({
       blobController.setPointSource(pointSources.blob);
     }
   }, [activeIdSet, blobController, pointSources]);
+
+  // Mutate uLightMode in place on theme toggle. Recreating the uniforms
+  // object would reset the BlobController rainbow tween on uColorNoise.
+  useEffect(() => {
+    blobUniformsRef.current.uLightMode.value = lightModeValue;
+    streamUniformsRef.current.uLightMode.value = lightModeValue;
+    objectFormationUniformsRef.current.uLightMode.value = lightModeValue;
+  }, [lightModeValue]);
 
   useEffect(() => {
     return () => {

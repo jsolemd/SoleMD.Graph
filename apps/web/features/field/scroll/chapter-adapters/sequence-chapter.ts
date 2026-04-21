@@ -2,7 +2,6 @@
 
 import { gsap } from "gsap";
 import type { ChapterAdapter } from "./types";
-import { ensureGsapScrollTriggerRegistered } from "../../controller/FieldController";
 
 function prepareCheckmarkPaths(element: HTMLElement) {
   return Array.from(
@@ -15,7 +14,9 @@ function prepareCheckmarkPaths(element: HTMLElement) {
   });
 }
 
-export const sequenceChapterAdapter: ChapterAdapter = (element, options) => {
+export const sequenceChapterAdapter: ChapterAdapter = (ctx) => {
+  const { element, reducedMotion, subscribe, getState } = ctx;
+
   const main = element.querySelector<HTMLElement>("[data-sequence-main]");
   const items = Array.from(
     element.querySelectorAll<HTMLElement>("[data-sequence-item]"),
@@ -24,7 +25,14 @@ export const sequenceChapterAdapter: ChapterAdapter = (element, options) => {
 
   if (!main || items.length === 0) return { dispose() {} };
 
-  if (options.reducedMotion) {
+  const restoreCheckmarks = () => {
+    checkmarkPaths.forEach(({ length, path }) => {
+      path.style.strokeDasharray = `${length}`;
+      path.style.strokeDashoffset = `${length}`;
+    });
+  };
+
+  if (reducedMotion) {
     main.style.opacity = "1";
     main.style.transform = "none";
     items.forEach((item) => {
@@ -48,17 +56,7 @@ export const sequenceChapterAdapter: ChapterAdapter = (element, options) => {
     };
   }
 
-  ensureGsapScrollTriggerRegistered();
-
-  const master = gsap.timeline({
-    scrollTrigger: {
-      trigger: element,
-      start: "top bottom",
-      end: "bottom top",
-      toggleActions: "play pause resume reset",
-      invalidateOnRefresh: true,
-    },
-  });
+  const master = gsap.timeline({ paused: true });
 
   master.from(main, {
     opacity: 0,
@@ -74,12 +72,17 @@ export const sequenceChapterAdapter: ChapterAdapter = (element, options) => {
     const path = item.querySelector<SVGPathElement>(
       "[data-sequence-checkmark-path]",
     );
-    const pathMeta = checkmarkPaths.find((candidate) => candidate.path === path);
+    const pathMeta = checkmarkPaths.find(
+      (candidate) => candidate.path === path,
+    );
 
     const nested = gsap.timeline({
       defaults: { duration: 0.35, ease: "power2.out" },
       onComplete: () => {
         item.classList.add("is-animated");
+      },
+      onReverseComplete: () => {
+        item.classList.remove("is-animated");
       },
     });
 
@@ -104,15 +107,19 @@ export const sequenceChapterAdapter: ChapterAdapter = (element, options) => {
     master.add(nested, index === 0 ? "-=0.1" : "-=0.35");
   });
 
+  const render = () => {
+    const { progress } = getState();
+    master.progress(progress).pause();
+  };
+  render();
+  const unsubscribe = subscribe(render);
+
   return {
     dispose() {
-      master.scrollTrigger?.kill();
+      unsubscribe();
       master.kill();
       items.forEach((item) => item.classList.remove("is-animated"));
-      checkmarkPaths.forEach(({ length, path }) => {
-        path.style.strokeDasharray = `${length}`;
-        path.style.strokeDashoffset = `${length}`;
-      });
+      restoreCheckmarks();
     },
   };
 };

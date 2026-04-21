@@ -1,8 +1,11 @@
 "use client";
 
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useMediaQuery } from "@mantine/hooks";
+import { useReducedMotion } from "framer-motion";
 import { MetaPill } from "@/features/graph/components/panels/PanelShell/MetaPill";
 import { useChapterAdapter } from "../../scroll/chapter-adapters/useChapterAdapter";
+import { setMobileMarqueePaused } from "../../scroll/chapter-adapters/mobile-carry-chapter";
 import {
   fieldMobileCarryItems,
   type FieldLandingSection,
@@ -17,6 +20,22 @@ export function FieldMobileCarrySection({
 }: FieldMobileCarrySectionProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   useChapterAdapter(sectionRef, "mobileCarry");
+
+  const reducedMotion = useReducedMotion() ?? false;
+  const isNarrowViewport = useMediaQuery("(max-width: 1023px)") ?? false;
+  const marqueeAnimates = !reducedMotion && isNarrowViewport;
+
+  const [paused, setPaused] = useState(false);
+  const togglePaused = useCallback(() => {
+    setPaused((current) => {
+      const next = !current;
+      setMobileMarqueePaused(sectionRef.current, next);
+      return next;
+    });
+  }, []);
+
+  const buttonPaused = reducedMotion ? true : paused;
+  const buttonLabel = buttonPaused ? "Play marquee" : "Pause marquee";
 
   return (
     <section
@@ -68,6 +87,40 @@ export function FieldMobileCarrySection({
             ))}
           </div>
         </div>
+
+        {marqueeAnimates ? (
+          <div className="mt-4 flex justify-center">
+            <button
+              type="button"
+              aria-pressed={paused}
+              aria-label={buttonLabel}
+              onClick={togglePaused}
+              className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[12px] font-medium uppercase tracking-[0.16em]"
+              style={{
+                background:
+                  "color-mix(in srgb, var(--graph-panel-bg) 78%, transparent)",
+                color: "var(--graph-panel-text)",
+              }}
+            >
+              {paused ? "Play" : "Pause"}
+            </button>
+          </div>
+        ) : reducedMotion ? (
+          <div className="mt-4 flex justify-center">
+            <span
+              role="status"
+              aria-label="Marquee paused for reduced motion"
+              className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[12px] font-medium uppercase tracking-[0.16em] opacity-70"
+              style={{
+                background:
+                  "color-mix(in srgb, var(--graph-panel-bg) 78%, transparent)",
+                color: "var(--graph-panel-text)",
+              }}
+            >
+              Paused
+            </span>
+          </div>
+        ) : null}
       </div>
     </section>
   );

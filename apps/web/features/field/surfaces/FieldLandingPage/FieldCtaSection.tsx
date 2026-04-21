@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { chromePillSurfaceStyle } from "@/features/graph/components/panels/PanelShell/panel-styles";
 import { TextReveal } from "@/features/animations/text-reveal/TextReveal";
 import { smooth } from "@/lib/motion";
@@ -26,6 +26,7 @@ export function FieldCtaSection({
 }: FieldCtaSectionProps) {
 const sectionRef = useRef<HTMLElement | null>(null);
   useChapterAdapter(sectionRef, "cta");
+  const reducedMotion = useReducedMotion() ?? false;
   const buttonVariants = {
     hidden: { opacity: 0, scale: 0.78 },
     visible: { opacity: 1, scale: 1 },
@@ -45,13 +46,17 @@ const sectionRef = useRef<HTMLElement | null>(null);
         <div className="max-w-[760px] text-center">
           <motion.p
             className="text-[11px] uppercase tracking-[0.24em]"
-            initial={{ opacity: 0, y: 12 }}
-            viewport={{ once: true, amount: 0.35 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            transition={{
-              y: smooth,
-              opacity: { duration: 0.18, ease: "easeOut" },
-            }}
+            {...(reducedMotion
+              ? {}
+              : {
+                  initial: { opacity: 0, y: 12 },
+                  viewport: { once: true, amount: 0.35 },
+                  whileInView: { opacity: 1, y: 0 },
+                  transition: {
+                    y: smooth,
+                    opacity: { duration: 0.18, ease: "easeOut" },
+                  },
+                })}
             style={{
               color:
                 "color-mix(in srgb, var(--graph-panel-text-dim) 92%, transparent)",
@@ -85,28 +90,33 @@ const sectionRef = useRef<HTMLElement | null>(null);
 
         <motion.div
           className="mt-8 flex flex-wrap items-center justify-center gap-3"
-          variants={{
-            hidden: {},
-            visible: {
-              transition: {
-                staggerChildren: 0.12,
-              },
-            },
-          }}
-          initial={{ opacity: 0, y: 18 }}
-          viewport={{ once: true, amount: 0.35 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          transition={{
-            y: smooth,
-            opacity: { duration: 0.18, ease: "easeOut", delay: 0.08 },
-          }}
+          {...(reducedMotion
+            ? {}
+            : {
+                variants: {
+                  hidden: {},
+                  visible: {
+                    transition: {
+                      staggerChildren: 0.12,
+                    },
+                  },
+                },
+                initial: { opacity: 0, y: 18 },
+                viewport: { once: true, amount: 0.35 },
+                whileInView: { opacity: 1, y: 0 },
+                transition: {
+                  y: smooth,
+                  opacity: { duration: 0.18, ease: "easeOut", delay: 0.08 },
+                },
+              })}
         >
           <motion.button
             type="button"
             onClick={onOpenGraph}
             disabled={!graphReady}
-            variants={buttonVariants}
-            transition={smooth}
+            {...(reducedMotion
+              ? {}
+              : { variants: buttonVariants, transition: smooth })}
             className="rounded-full px-4 py-2 text-sm font-medium transition-[filter] hover:brightness-110"
             style={{
               ...chromePillSurfaceStyle,
@@ -119,8 +129,9 @@ const sectionRef = useRef<HTMLElement | null>(null);
           <motion.button
             type="button"
             onClick={onReturnToTop}
-            variants={buttonVariants}
-            transition={smooth}
+            {...(reducedMotion
+              ? {}
+              : { variants: buttonVariants, transition: smooth })}
             className="rounded-full px-4 py-2 text-sm font-medium transition-[filter] hover:brightness-110"
             style={{
               ...chromePillSurfaceStyle,

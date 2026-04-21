@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { chromePillSurfaceStyle } from "@/features/graph/components/panels/PanelShell/panel-styles";
 import { TextReveal } from "@/features/animations/text-reveal/TextReveal";
 import { smooth } from "@/lib/motion";
@@ -19,6 +19,7 @@ export function FieldHeroSection({
 }: FieldHeroSectionProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   useChapterAdapter(sectionRef, "hero");
+  const reducedMotion = useReducedMotion() ?? false;
 
   return (
     <section
@@ -34,12 +35,16 @@ export function FieldHeroSection({
         <div className="max-w-[760px] text-center">
           <motion.p
             className="text-[11px] uppercase tracking-[0.24em]"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              y: smooth,
-              opacity: { duration: 0.18, ease: "easeOut" },
-            }}
+            {...(reducedMotion
+              ? {}
+              : {
+                  initial: { opacity: 0, y: 12 },
+                  animate: { opacity: 1, y: 0 },
+                  transition: {
+                    y: smooth,
+                    opacity: { duration: 0.18, ease: "easeOut" },
+                  },
+                })}
             style={{
               color:
                 "color-mix(in srgb, var(--graph-panel-text-dim) 92%, transparent)",
@@ -73,12 +78,16 @@ export function FieldHeroSection({
 
         <motion.div
           className="mt-8 flex flex-wrap items-center justify-center gap-3"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{
-            y: smooth,
-            opacity: { duration: 0.18, ease: "easeOut", delay: 0.08 },
-          }}
+          {...(reducedMotion
+            ? {}
+            : {
+                initial: { opacity: 0, y: 18 },
+                animate: { opacity: 1, y: 0 },
+                transition: {
+                  y: smooth,
+                  opacity: { duration: 0.18, ease: "easeOut", delay: 0.08 },
+                },
+              })}
         >
           <button
             type="button"

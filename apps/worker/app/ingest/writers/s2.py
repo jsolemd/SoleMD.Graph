@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 import json
 from pathlib import Path
 from typing import Any
@@ -13,8 +13,8 @@ from app.config import Settings
 from app.ingest.models import CopyStats, FilePlan, IngestPlan, StartReleaseRequest
 from app.ingest.sources import semantic_scholar
 from app.ingest.writers.base import (
-    BatchCopyBuffer,
     copy_records,
+    iter_file_batches,
 )
 
 
@@ -90,6 +90,8 @@ async def load_family(
     ingest_run_id: UUID,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     family = next(item for item in plan.families if item.family == family_name)
     if family_name == "publication_venues":
@@ -100,6 +102,8 @@ async def load_family(
             request,
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     if family_name == "authors":
         return await _load_authors(
@@ -111,6 +115,8 @@ async def load_family(
             ingest_run_id=ingest_run_id,
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     if family_name == "papers":
         return await _load_papers(
@@ -122,6 +128,8 @@ async def load_family(
             ingest_run_id,
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     if family_name == "abstracts":
         return await _load_text_patch(
@@ -132,6 +140,8 @@ async def load_family(
             patch_column="abstract",
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     if family_name == "tldrs":
         return await _load_text_patch(
@@ -142,6 +152,8 @@ async def load_family(
             patch_column="tldr",
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     if family_name == "citations":
         return await _load_citations(
@@ -153,6 +165,8 @@ async def load_family(
             ingest_run_id,
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     if family_name == "s2orc_v2":
         return await _load_s2orc_documents(
@@ -164,8 +178,32 @@ async def load_family(
             ingest_run_id=ingest_run_id,
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     raise ValueError(f"unsupported S2 family {family_name}")
+
+
+async def _iter_s2_row_batches(
+    file_path: Path,
+    *,
+    family_name: str,
+    request: StartReleaseRequest,
+    batch_size: int,
+    on_input_progress: Callable[[int], None] | None = None,
+):
+    async for row_batch in iter_file_batches(
+        file_path,
+        row_iterator=lambda path, on_progress: semantic_scholar.stream_family(
+            family_name,
+            path,
+            max_records_per_file=request.max_records_per_file,
+            on_progress=on_progress,
+        ),
+        batch_size=batch_size,
+        on_input_progress=on_input_progress,
+    ):
+        yield row_batch
 
 
 async def _load_publication_venues(
@@ -176,6 +214,8 @@ async def _load_publication_venues(
     *,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     return await _load_small_upsert_family(
         pool,
@@ -186,6 +226,8 @@ async def _load_publication_venues(
         upsert=_upsert_publication_venues,
         on_file_completed=on_file_completed,
         on_rows_written=on_rows_written,
+        on_input_progress=on_input_progress,
+        on_batch_processed=on_batch_processed,
     )
 
 
@@ -199,45 +241,48 @@ async def _load_authors(
     *,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
-    row_count = 0
-    async with pool.acquire() as connection:
-        for file_plan in files:
+    semaphore = asyncio.Semaphore(max(1, settings.ingest_max_concurrent_files))
+
+    async def worker(file_path: Path) -> int:
+        async with semaphore, pool.acquire() as connection:
             file_row_count = 0
-            buffer = BatchCopyBuffer[dict[str, Any]](batch_size=settings.ingest_copy_batch_rows)
-            for row in semantic_scholar.stream_family(
-                "authors",
-                file_plan.path,
-                max_records_per_file=request.max_records_per_file,
+            async for row_batch in _iter_s2_row_batches(
+                file_path,
+                family_name="authors",
+                request=request,
+                batch_size=settings.ingest_copy_batch_rows,
+                on_input_progress=(
+                    None
+                    if on_input_progress is None
+                    else lambda bytes_read: on_input_progress(file_path, bytes_read)
+                ),
             ):
-                batch = buffer.add(row)
-                if batch:
-                    async with connection.transaction():
-                        await _upsert_author_registry(
-                            connection,
-                            batch,
-                            source_release_id=source_release_id,
-                            ingest_run_id=ingest_run_id,
-                        )
-                    file_row_count += len(batch)
-                    if on_rows_written is not None:
-                        on_rows_written(file_plan.path, len(batch))
-            if buffer.rows:
-                batch = buffer.flush()
                 async with connection.transaction():
                     await _upsert_author_registry(
                         connection,
-                        batch,
+                        row_batch,
                         source_release_id=source_release_id,
                         ingest_run_id=ingest_run_id,
                     )
-                file_row_count += len(batch)
+                file_row_count += len(row_batch)
                 if on_rows_written is not None:
-                    on_rows_written(file_plan.path, len(batch))
-            row_count += file_row_count
+                    on_rows_written(file_path, len(row_batch))
+                if on_batch_processed is not None:
+                    await on_batch_processed(file_path, len(row_batch))
             if on_file_completed is not None:
-                on_file_completed(file_plan.path, file_row_count)
-    return CopyStats(family="authors", row_count=row_count, file_count=len(files))
+                on_file_completed(file_path, file_row_count)
+            return file_row_count
+
+    async with asyncio.TaskGroup() as group:
+        tasks = [group.create_task(worker(file_plan.path)) for file_plan in files]
+    return CopyStats(
+        family="authors",
+        row_count=sum(task.result() for task in tasks),
+        file_count=len(files),
+    )
 
 
 async def _load_small_upsert_family(
@@ -250,35 +295,43 @@ async def _load_small_upsert_family(
     upsert,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
-    row_count = 0
-    async with pool.acquire() as connection:
-        for file_plan in files:
+    semaphore = asyncio.Semaphore(max(1, settings.ingest_max_concurrent_files))
+
+    async def worker(file_path: Path) -> int:
+        async with semaphore, pool.acquire() as connection:
             file_row_count = 0
-            buffer = BatchCopyBuffer[dict[str, Any]](batch_size=settings.ingest_copy_batch_rows)
-            for row in semantic_scholar.stream_family(
-                family_name,
-                file_plan.path,
-                max_records_per_file=request.max_records_per_file,
+            async for row_batch in _iter_s2_row_batches(
+                file_path,
+                family_name=family_name,
+                request=request,
+                batch_size=settings.ingest_copy_batch_rows,
+                on_input_progress=(
+                    None
+                    if on_input_progress is None
+                    else lambda bytes_read: on_input_progress(file_path, bytes_read)
+                ),
             ):
-                batch = buffer.add(row)
-                if batch:
-                    async with connection.transaction():
-                        await upsert(connection, batch)
-                    file_row_count += len(batch)
-                    if on_rows_written is not None:
-                        on_rows_written(file_plan.path, len(batch))
-            if buffer.rows:
-                batch = buffer.flush()
                 async with connection.transaction():
-                    await upsert(connection, batch)
-                file_row_count += len(batch)
+                    await upsert(connection, row_batch)
+                file_row_count += len(row_batch)
                 if on_rows_written is not None:
-                    on_rows_written(file_plan.path, len(batch))
-            row_count += file_row_count
+                    on_rows_written(file_path, len(row_batch))
+                if on_batch_processed is not None:
+                    await on_batch_processed(file_path, len(row_batch))
             if on_file_completed is not None:
-                on_file_completed(file_plan.path, file_row_count)
-    return CopyStats(family=family_name, row_count=row_count, file_count=len(files))
+                on_file_completed(file_path, file_row_count)
+            return file_row_count
+
+    async with asyncio.TaskGroup() as group:
+        tasks = [group.create_task(worker(file_plan.path)) for file_plan in files]
+    return CopyStats(
+        family=family_name,
+        row_count=sum(task.result() for task in tasks),
+        file_count=len(files),
+    )
 
 
 async def _load_papers(
@@ -291,8 +344,10 @@ async def _load_papers(
     *,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
-    semaphore = asyncio.Semaphore(settings.ingest_max_concurrent_files)
+    semaphore = asyncio.Semaphore(max(1, settings.ingest_max_concurrent_files))
 
     async def worker(file_path: Path) -> int:
         async with semaphore, pool.acquire() as connection:
@@ -304,6 +359,8 @@ async def _load_papers(
                 ingest_run_id=ingest_run_id,
                 batch_size=settings.ingest_copy_batch_rows,
                 on_rows_written=on_rows_written,
+                on_input_progress=on_input_progress,
+                on_batch_processed=on_batch_processed,
             )
             if on_file_completed is not None:
                 on_file_completed(file_path, written)
@@ -327,36 +384,48 @@ async def _load_text_patch(
     patch_column: str,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     family_name = "abstracts" if patch_column == "abstract" else "tldrs"
-    row_count = 0
-    async with pool.acquire() as connection:
-        for file_plan in files:
+    semaphore = asyncio.Semaphore(max(1, settings.ingest_max_concurrent_files))
+
+    async def worker(file_path: Path) -> int:
+        async with semaphore, pool.acquire() as connection:
             file_row_count = 0
-            buffer = BatchCopyBuffer[dict[str, Any]](batch_size=settings.ingest_copy_batch_rows)
-            for row in semantic_scholar.stream_family(
-                family_name,
-                file_plan.path,
-                max_records_per_file=request.max_records_per_file,
+            async for row_batch in _iter_s2_row_batches(
+                file_path,
+                family_name=family_name,
+                request=request,
+                batch_size=settings.ingest_copy_batch_rows,
+                on_input_progress=(
+                    None
+                    if on_input_progress is None
+                    else lambda bytes_read: on_input_progress(file_path, bytes_read)
+                ),
             ):
-                batch = buffer.add(row)
-                if batch:
-                    async with connection.transaction():
-                        await _apply_text_patch(connection, batch, patch_column=patch_column)
-                    file_row_count += len(batch)
-                    if on_rows_written is not None:
-                        on_rows_written(file_plan.path, len(batch))
-            if buffer.rows:
-                batch = buffer.flush()
                 async with connection.transaction():
-                    await _apply_text_patch(connection, batch, patch_column=patch_column)
-                file_row_count += len(batch)
+                    await _apply_text_patch(
+                        connection,
+                        row_batch,
+                        patch_column=patch_column,
+                    )
+                file_row_count += len(row_batch)
                 if on_rows_written is not None:
-                    on_rows_written(file_plan.path, len(batch))
-            row_count += file_row_count
+                    on_rows_written(file_path, len(row_batch))
+                if on_batch_processed is not None:
+                    await on_batch_processed(file_path, len(row_batch))
             if on_file_completed is not None:
-                on_file_completed(file_plan.path, file_row_count)
-    return CopyStats(family=family_name, row_count=row_count, file_count=len(files))
+                on_file_completed(file_path, file_row_count)
+            return file_row_count
+
+    async with asyncio.TaskGroup() as group:
+        tasks = [group.create_task(worker(file_plan.path)) for file_plan in files]
+    return CopyStats(
+        family=family_name,
+        row_count=sum(task.result() for task in tasks),
+        file_count=len(files),
+    )
 
 
 async def _load_citations(
@@ -369,13 +438,15 @@ async def _load_citations(
     *,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     async with pool.acquire() as control_connection, control_connection.transaction():
         await control_connection.execute(
             "DELETE FROM solemd.s2_paper_reference_metrics_raw WHERE source_release_id = $1",
             source_release_id,
         )
-    semaphore = asyncio.Semaphore(settings.ingest_max_concurrent_files)
+    semaphore = asyncio.Semaphore(max(1, settings.ingest_max_concurrent_files))
 
     async def worker(file_path: Path) -> int:
         async with semaphore, pool.acquire() as connection:
@@ -387,6 +458,8 @@ async def _load_citations(
                 ingest_run_id=ingest_run_id,
                 batch_size=settings.ingest_copy_batch_rows,
                 on_rows_written=on_rows_written,
+                on_input_progress=on_input_progress,
+                on_batch_processed=on_batch_processed,
             )
             if on_file_completed is not None:
                 on_file_completed(file_path, written)
@@ -411,6 +484,8 @@ async def _load_s2orc_documents(
     ingest_run_id: UUID,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     semaphore = asyncio.Semaphore(max(1, settings.ingest_max_concurrent_files // 2))
 
@@ -424,6 +499,8 @@ async def _load_s2orc_documents(
                 ingest_run_id=ingest_run_id,
                 batch_size=max(64, settings.ingest_copy_batch_rows // 32),
                 on_rows_written=on_rows_written,
+                on_input_progress=on_input_progress,
+                on_batch_processed=on_batch_processed,
             )
             if on_file_completed is not None:
                 on_file_completed(file_path, written)
@@ -447,17 +524,68 @@ async def _copy_paper_file(
     ingest_run_id: UUID,
     batch_size: int,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> int:
-    paper_rows: list[tuple] = []
-    author_rows: list[tuple] = []
-    asset_rows: list[tuple] = []
-    pending_deletes: list[str] = []
     written = 0
-
-    async def flush_all() -> None:
-        nonlocal written, pending_deletes, paper_rows, author_rows, asset_rows
-        if not paper_rows:
-            return
+    async for row_batch in _iter_s2_row_batches(
+        file_path,
+        family_name="papers",
+        request=request,
+        batch_size=batch_size,
+        on_input_progress=(
+            None
+            if on_input_progress is None
+            else lambda bytes_read: on_input_progress(file_path, bytes_read)
+        ),
+    ):
+        pending_deletes: list[str] = []
+        paper_rows: list[tuple] = []
+        author_rows: list[tuple] = []
+        asset_rows: list[tuple] = []
+        for row in row_batch:
+            pending_deletes.append(row["paper_id"])
+            paper_rows.append(
+                (
+                    row["paper_id"],
+                    source_release_id,
+                    None,
+                    row["source_venue_id"],
+                    row["pmid"],
+                    row["doi_norm"],
+                    row["pmc_id"],
+                    row["title"],
+                    None,
+                    None,
+                    row["venue_raw"],
+                    row["year"],
+                    row["publication_date"],
+                    row["is_open_access"],
+                    row["payload_checksum"],
+                    ingest_run_id,
+                )
+            )
+            for author in row["authors"]:
+                author_rows.append(
+                    (
+                        author["paper_id"],
+                        author["author_ordinal"],
+                        author["source_author_id"],
+                        author["name_raw"],
+                        author["affiliation_raw"],
+                    )
+                )
+            for asset in row["assets"]:
+                asset_rows.append(
+                    (
+                        asset["paper_id"],
+                        asset["asset_kind"],
+                        asset["asset_url"],
+                        asset["content_type"],
+                        asset["availability_raw"],
+                        asset["asset_checksum"],
+                    )
+                )
         async with connection.transaction():
             await connection.execute(
                 "DELETE FROM solemd.s2_papers_raw WHERE paper_id = ANY($1::text[])",
@@ -488,63 +616,8 @@ async def _copy_paper_file(
                     columns=_PAPER_ASSET_COLUMNS,
                     records=asset_rows,
                 )
-        pending_deletes = []
-        paper_rows = []
-        author_rows = []
-        asset_rows = []
-
-    for row in semantic_scholar.stream_family(
-        "papers",
-        file_path,
-        max_records_per_file=request.max_records_per_file,
-    ):
-        pending_deletes.append(row["paper_id"])
-        paper_rows.append(
-            (
-                row["paper_id"],
-                source_release_id,
-                None,
-                row["source_venue_id"],
-                row["pmid"],
-                row["doi_norm"],
-                row["pmc_id"],
-                row["title"],
-                None,
-                None,
-                row["venue_raw"],
-                row["year"],
-                row["publication_date"],
-                row["is_open_access"],
-                row["payload_checksum"],
-                ingest_run_id,
-            )
-        )
-        for author in row["authors"]:
-            author_rows.append(
-                (
-                    author["paper_id"],
-                    author["author_ordinal"],
-                    author["source_author_id"],
-                    author["name_raw"],
-                    author["affiliation_raw"],
-                )
-            )
-        for asset in row["assets"]:
-            asset_rows.append(
-                (
-                    asset["paper_id"],
-                    asset["asset_kind"],
-                    asset["asset_url"],
-                    asset["content_type"],
-                    asset["availability_raw"],
-                    asset["asset_checksum"],
-                )
-            )
-        if len(paper_rows) >= batch_size:
-            await flush_all()
-
-    if paper_rows:
-        await flush_all()
+        if on_batch_processed is not None and paper_rows:
+            await on_batch_processed(file_path, len(paper_rows))
     return written
 
 
@@ -577,34 +650,31 @@ async def _copy_s2orc_file(
     ingest_run_id: UUID,
     batch_size: int,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> int:
-    document_batch: list[dict[str, Any]] = []
     written = 0
-    for row in semantic_scholar.stream_family(
-        "s2orc_v2",
+    async for row_batch in _iter_s2_row_batches(
         file_path,
-        max_records_per_file=request.max_records_per_file,
+        family_name="s2orc_v2",
+        request=request,
+        batch_size=batch_size,
+        on_input_progress=(
+            None
+            if on_input_progress is None
+            else lambda bytes_read: on_input_progress(file_path, bytes_read)
+        ),
     ):
-        document_batch.append(row)
-        if len(document_batch) >= batch_size:
-            written += await _flush_document_batch(
-                connection,
-                document_batch,
-                source_release_id=source_release_id,
-                ingest_run_id=ingest_run_id,
-            )
-            if on_rows_written is not None and document_batch:
-                on_rows_written(file_path, len(document_batch))
-            document_batch = []
-    if document_batch:
         written += await _flush_document_batch(
             connection,
-            document_batch,
+            row_batch,
             source_release_id=source_release_id,
             ingest_run_id=ingest_run_id,
         )
         if on_rows_written is not None:
-            on_rows_written(file_path, len(document_batch))
+            on_rows_written(file_path, len(row_batch))
+        if on_batch_processed is not None and row_batch:
+            await on_batch_processed(file_path, len(row_batch))
     return written
 
 
@@ -800,81 +870,80 @@ async def _upsert_citation_metrics_for_file(
     ingest_run_id: UUID,
     batch_size: int,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> int:
     written = 0
-    metrics_by_paper: dict[str, list[int]] = {}
-
-    async def flush_metrics() -> None:
-        nonlocal written, metrics_by_paper
-        if not metrics_by_paper:
-            return
+    async for row_batch in _iter_s2_row_batches(
+        file_path,
+        family_name="citations",
+        request=request,
+        batch_size=batch_size,
+        on_input_progress=(
+            None
+            if on_input_progress is None
+            else lambda bytes_read: on_input_progress(file_path, bytes_read)
+        ),
+    ):
+        metrics_by_paper: dict[str, list[int]] = {}
+        for row in row_batch:
+            counts = metrics_by_paper.setdefault(row["citing_paper_id"], [0, 0, 0, 0])
+            counts[0] += 1
+            if row["is_influential"]:
+                counts[1] += 1
+            if row["cited_paper_id"] is not None:
+                counts[2] += 1
+            else:
+                counts[3] += 1
         paper_ids = list(metrics_by_paper.keys())
         reference_out_counts = [metrics_by_paper[paper_id][0] for paper_id in paper_ids]
         influential_counts = [metrics_by_paper[paper_id][1] for paper_id in paper_ids]
         linked_counts = [metrics_by_paper[paper_id][2] for paper_id in paper_ids]
         orphan_counts = [metrics_by_paper[paper_id][3] for paper_id in paper_ids]
-        await connection.execute(
-            """
-            INSERT INTO solemd.s2_paper_reference_metrics_raw (
-                source_release_id,
-                citing_paper_id,
-                reference_out_count,
-                influential_reference_count,
-                linked_reference_count,
-                orphan_reference_count,
-                last_seen_run_id
+        async with connection.transaction():
+            await connection.execute(
+                """
+                INSERT INTO solemd.s2_paper_reference_metrics_raw (
+                    source_release_id,
+                    citing_paper_id,
+                    reference_out_count,
+                    influential_reference_count,
+                    linked_reference_count,
+                    orphan_reference_count,
+                    last_seen_run_id
+                )
+                SELECT * FROM unnest(
+                    $1::integer[],
+                    $2::text[],
+                    $3::integer[],
+                    $4::integer[],
+                    $5::integer[],
+                    $6::integer[],
+                    $7::uuid[]
+                )
+                ON CONFLICT (source_release_id, citing_paper_id)
+                DO UPDATE SET
+                    reference_out_count = solemd.s2_paper_reference_metrics_raw.reference_out_count
+                        + EXCLUDED.reference_out_count,
+                    influential_reference_count = solemd.s2_paper_reference_metrics_raw.influential_reference_count
+                        + EXCLUDED.influential_reference_count,
+                    linked_reference_count = solemd.s2_paper_reference_metrics_raw.linked_reference_count
+                        + EXCLUDED.linked_reference_count,
+                    orphan_reference_count = solemd.s2_paper_reference_metrics_raw.orphan_reference_count
+                        + EXCLUDED.orphan_reference_count,
+                    last_seen_run_id = EXCLUDED.last_seen_run_id
+                """,
+                [source_release_id] * len(paper_ids),
+                paper_ids,
+                reference_out_counts,
+                influential_counts,
+                linked_counts,
+                orphan_counts,
+                [ingest_run_id] * len(paper_ids),
             )
-            SELECT * FROM unnest(
-                $1::integer[],
-                $2::text[],
-                $3::integer[],
-                $4::integer[],
-                $5::integer[],
-                $6::integer[],
-                $7::uuid[]
-            )
-            ON CONFLICT (source_release_id, citing_paper_id)
-            DO UPDATE SET
-                reference_out_count = solemd.s2_paper_reference_metrics_raw.reference_out_count
-                    + EXCLUDED.reference_out_count,
-                influential_reference_count = solemd.s2_paper_reference_metrics_raw.influential_reference_count
-                    + EXCLUDED.influential_reference_count,
-                linked_reference_count = solemd.s2_paper_reference_metrics_raw.linked_reference_count
-                    + EXCLUDED.linked_reference_count,
-                orphan_reference_count = solemd.s2_paper_reference_metrics_raw.orphan_reference_count
-                    + EXCLUDED.orphan_reference_count,
-                last_seen_run_id = EXCLUDED.last_seen_run_id
-            """,
-            [source_release_id] * len(paper_ids),
-            paper_ids,
-            reference_out_counts,
-            influential_counts,
-            linked_counts,
-            orphan_counts,
-            [ingest_run_id] * len(paper_ids),
-        )
         written += len(paper_ids)
         if on_rows_written is not None:
             on_rows_written(file_path, len(paper_ids))
-        metrics_by_paper = {}
-
-    for row in semantic_scholar.stream_family(
-        "citations",
-        file_path,
-        max_records_per_file=request.max_records_per_file,
-    ):
-        counts = metrics_by_paper.setdefault(row["citing_paper_id"], [0, 0, 0, 0])
-        counts[0] += 1
-        if row["is_influential"]:
-            counts[1] += 1
-        if row["cited_paper_id"] is not None:
-            counts[2] += 1
-        else:
-            counts[3] += 1
-        if len(metrics_by_paper) >= batch_size:
-            async with connection.transaction():
-                await flush_metrics()
-
-    async with connection.transaction():
-        await flush_metrics()
+        if on_batch_processed is not None and paper_ids:
+            await on_batch_processed(file_path, len(paper_ids))
     return written

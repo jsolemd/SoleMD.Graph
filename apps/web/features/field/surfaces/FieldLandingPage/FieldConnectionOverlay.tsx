@@ -3,14 +3,20 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
+  useSyncExternalStore,
   type MutableRefObject,
 } from "react";
 import type { FieldHotspotFrame } from "../../controller/BlobController";
 import type { FieldSceneState } from "../../scene/visual-presets";
+import { useFieldSceneStore } from "../../scroll/field-scene-store";
 import { fieldConnectionPairs } from "./field-connection-pairs";
-import { getFieldChapterProgress } from "../../scroll/field-scroll-state";
+import {
+  getFieldChapterProgress,
+  getFieldChapterProgressBucket,
+} from "../../scroll/scene-selectors";
 
 export interface FieldConnectionOverlayHandle {
   updateFrames(frames: readonly FieldHotspotFrame[]): void;
@@ -47,16 +53,38 @@ export const FieldConnectionOverlay = forwardRef<
   { chapterId, sceneStateRef },
   ref,
 ) {
+  const sceneStore = useFieldSceneStore();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const pathRefs = useRef<Array<SVGPathElement | null>>([]);
   const dotRefs = useRef<Array<SVGCircleElement | null>>([]);
   const framesRef = useRef<readonly FieldHotspotFrame[] | null>(null);
 
+  // Subscribe to the scene store so this component React-re-renders only
+  // when the chapter's (active, reveal-curve bucket) tuple actually
+  // changes — not on every scroll tick. The per-frame path geometry
+  // update stays imperative via updateFrames()/renderPaths().
+  const getChapterSignal = useCallback(() => {
+    const state = sceneStore.getCurrentState() ?? sceneStateRef.current;
+    if (!state) return 0;
+    const chapter = state.chapters[chapterId];
+    if (!chapter) return 0;
+    const active = chapter.isActive ? 1 : 0;
+    const bucket = getFieldChapterProgressBucket(chapter.progress);
+    return active * 8 + bucket;
+  }, [chapterId, sceneStateRef, sceneStore]);
+  const getServerSignal = useCallback(() => 0, []);
+  const chapterSignal = useSyncExternalStore(
+    sceneStore.subscribe,
+    getChapterSignal,
+    getServerSignal,
+  );
+
   const renderPaths = useCallback(() => {
     const svg = svgRef.current;
     if (!svg) return;
 
-    const progress = getFieldChapterProgress(sceneStateRef.current, chapterId);
+    const sceneState = sceneStore.getCurrentState() ?? sceneStateRef.current;
+    const progress = getFieldChapterProgress(sceneState, chapterId);
     const reveal = smoothstep(0.24, 0.5, progress);
     const fade = 1 - smoothstep(0.66, 0.9, progress);
     const visibility = reveal * fade;
@@ -118,7 +146,7 @@ export const FieldConnectionOverlay = forwardRef<
         dotEl.style.opacity = (pulse * visibility * ceiling * 1.3).toFixed(3);
       }
     });
-  }, [chapterId, sceneStateRef]);
+  }, [chapterId, sceneStateRef, sceneStore]);
 
   useImperativeHandle(
     ref,
@@ -130,6 +158,13 @@ export const FieldConnectionOverlay = forwardRef<
     }),
     [renderPaths],
   );
+
+  // Re-render paths on chapter-signal transitions so the overlay fades
+  // in/out at reveal-curve boundaries even when hotspot frames aren't
+  // actively being pushed.
+  useEffect(() => {
+    renderPaths();
+  }, [chapterSignal, renderPaths]);
 
   return (
     <svg

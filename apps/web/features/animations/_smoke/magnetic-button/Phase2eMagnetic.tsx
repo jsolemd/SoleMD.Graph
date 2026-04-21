@@ -6,7 +6,7 @@
  * the button toward it. Use sparingly — one per page, for primary CTAs.
  */
 import { useRef, useState } from "react";
-import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { crisp } from "@/lib/motion";
 
 export default function Phase2eMagnetic() {

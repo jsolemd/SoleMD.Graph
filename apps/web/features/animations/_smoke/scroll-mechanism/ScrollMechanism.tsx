@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 
 const STEPS = [
   { label: "Rest",          note: "Receptor closed. No ligand bound." },

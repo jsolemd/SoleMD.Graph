@@ -118,15 +118,22 @@ export function useSectionTocState({
     let targets: HTMLElement[] = [];
     let resizeObserver: ResizeObserver | null = null;
     let setupRaf = 0;
+    let tickRaf = 0;
 
-    function syncFillProgress() {
-      const next = resolveRailProgress(
+    function tick() {
+      tickRaf = 0;
+      const nextFill = resolveRailProgress(
         getScrollTop(scrollContainer),
         sectionStartsRef.current,
       );
       setFillProgress((previous) => (
-        Math.abs(previous - next) < 0.001 ? previous : next
+        Math.abs(previous - nextFill) < 0.001 ? previous : nextFill
       ));
+    }
+
+    function scheduleTick() {
+      if (tickRaf !== 0) return;
+      tickRaf = requestAnimationFrame(tick);
     }
 
     function setupObserver() {
@@ -147,14 +154,14 @@ export function useSectionTocState({
       }
 
       sectionStartsRef.current = measureSectionStarts(scrollContainer, targets);
-      syncFillProgress();
+      scheduleTick();
 
       resizeObserver = new ResizeObserver(() => {
         const measuredStarts = measureSectionStarts(scrollContainer, targets);
         if (!areNumberArraysEqual(sectionStartsRef.current, measuredStarts)) {
           sectionStartsRef.current = measuredStarts;
         }
-        syncFillProgress();
+        scheduleTick();
       });
 
       if (scrollContainer) resizeObserver.observe(scrollContainer);
@@ -162,26 +169,26 @@ export function useSectionTocState({
     }
 
     setupRaf = requestAnimationFrame(setupObserver);
-    scrollEventTarget.addEventListener("scroll", syncFillProgress, {
+    scrollEventTarget.addEventListener("scroll", scheduleTick, {
       passive: true,
     });
 
-    const mutationTarget: HTMLElement | null =
-      scrollContainer ??
-      (typeof document === "undefined" ? null : document.body);
-    const mutationObserver = mutationTarget ? new MutationObserver(() => {
+    const handleWindowResize = () => {
       cancelAnimationFrame(setupRaf);
       setupRaf = requestAnimationFrame(setupObserver);
-    }) : null;
-    if (mutationObserver && mutationTarget) {
-      mutationObserver.observe(mutationTarget, { childList: true, subtree: true });
+    };
+    if (!scrollContainer && typeof window !== "undefined") {
+      window.addEventListener("resize", handleWindowResize, { passive: true });
     }
 
     return () => {
       cancelAnimationFrame(setupRaf);
-      scrollEventTarget.removeEventListener("scroll", syncFillProgress);
+      if (tickRaf !== 0) cancelAnimationFrame(tickRaf);
+      scrollEventTarget.removeEventListener("scroll", scheduleTick);
+      if (!scrollContainer && typeof window !== "undefined") {
+        window.removeEventListener("resize", handleWindowResize);
+      }
       resizeObserver?.disconnect();
-      mutationObserver?.disconnect();
     };
   }, [entries, entries.length, entriesKey, scrollRef]);
 

@@ -1,5 +1,9 @@
 import { Camera, Group, Vector3 } from "three";
 import type { FieldPointSource } from "../asset/point-source-types";
+import {
+  projectPointSourceVertex,
+  type FieldHotspotVertexProjection,
+} from "../overlay/field-anchor-projector";
 
 export interface BlobHotspotState {
   interval: number;
@@ -20,12 +24,11 @@ export interface FieldHotspotFrame {
   y: number;
 }
 
-export interface BlobHotspotProjection {
-  candidateIndex: number;
-  scale: number;
-  x: number;
-  y: number;
-}
+// Re-export of the canonical projection shape from
+// `overlay/field-anchor-projector.ts`. Kept under the legacy
+// `BlobHotspotProjection` name so existing imports (BlobController,
+// runtime) stay source-compatible.
+export type BlobHotspotProjection = FieldHotspotVertexProjection;
 
 export interface BlobHotspotRuntime {
   candidateIndex: number | null;
@@ -106,16 +109,11 @@ export function getPointColorCss(
   return `rgb(${red} ${green} ${blue})`;
 }
 
-export function projectBlobHotspotCandidate({
-  blobModel,
-  camera,
-  candidateIndex,
-  height,
-  pixelRatio = 1,
-  source,
-  vector,
-  width,
-}: {
+// Thin wrapper over the canonical projector so existing callers
+// (BlobController, `selectBlobHotspotCandidate`) keep their signature.
+// The projector owns the CSS-pixel / HiDPI cull contract; this file
+// only wires runtime-specific inputs through.
+export function projectBlobHotspotCandidate(args: {
   blobModel: Group;
   camera: Camera;
   candidateIndex: number;
@@ -125,30 +123,7 @@ export function projectBlobHotspotCandidate({
   vector: Vector3;
   width: number;
 }): BlobHotspotProjection | null {
-  const positionOffset = candidateIndex * 3;
-  const localZ = source.buffers.position[positionOffset + 2] ?? 0;
-  if (localZ > 0) return null;
-
-  vector.set(
-    source.buffers.position[positionOffset] ?? 0,
-    source.buffers.position[positionOffset + 1] ?? 0,
-    source.buffers.position[positionOffset + 2] ?? 0,
-  );
-  blobModel.localToWorld(vector);
-  vector.project(camera);
-
-  const x = ((vector.x + 1) * width) / 2 / pixelRatio;
-  const y = ((-vector.y + 1) * height) / 2 / pixelRatio;
-  const scale = Math.max(0.72, Math.min(1.36, (1 - vector.z) * 2));
-  const withinViewport =
-    x > 24 &&
-    x < width - 24 &&
-    y > 24 &&
-    y < height - 24 &&
-    vector.z < 0.84;
-
-  if (!withinViewport) return null;
-  return { candidateIndex, scale, x, y };
+  return projectPointSourceVertex(args);
 }
 
 export function selectBlobHotspotCandidate({

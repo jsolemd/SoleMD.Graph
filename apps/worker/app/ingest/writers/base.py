@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator, Sequence
 from concurrent.futures import CancelledError as FutureCancelledError
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
@@ -19,6 +19,11 @@ S = TypeVar("S")
 @dataclass(slots=True)
 class _ThreadedBatchFailure:
     error: BaseException
+
+
+@dataclass(slots=True)
+class _ThreadedBatchProgress:
+    bytes_read: int
 
 
 _THREAD_STREAM_DONE = object()
@@ -72,10 +77,12 @@ async def copy_files_concurrently(
     pool: asyncpg.Pool,
     file_paths: Sequence[Path],
     *,
-    row_iterator: Callable[[Path], Iterator[S]],
+    row_iterator: Callable[[Path, Callable[[int], None] | None], Iterator[S]],
     row_to_tuple: Callable[[S], tuple],
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
     table_name: str,
     schema_name: str,
     columns: Sequence[str],
@@ -102,6 +109,11 @@ async def copy_files_concurrently(
                 file_path,
                 row_iterator=row_iterator,
                 batch_size=batch_size,
+                on_input_progress=(
+                    None
+                    if on_input_progress is None
+                    else lambda bytes_read: on_input_progress(file_path, bytes_read)
+                ),
             ):
                 batch = [row_to_tuple(row) for row in row_batch]
                 async with connection.transaction():
@@ -115,6 +127,8 @@ async def copy_files_concurrently(
                     written += batch_written
                 if on_rows_written is not None and batch_written:
                     on_rows_written(file_path, batch_written)
+                if on_batch_processed is not None and batch_written:
+                    await on_batch_processed(file_path, batch_written)
             if on_file_completed is not None:
                 on_file_completed(file_path, written)
             return written
@@ -127,9 +141,10 @@ async def copy_files_concurrently(
 async def iter_file_batches(
     file_path: Path,
     *,
-    row_iterator: Callable[[Path], Iterator[T]],
+    row_iterator: Callable[[Path, Callable[[int], None] | None], Iterator[T]],
     batch_size: int,
     queue_depth: int = 2,
+    on_input_progress: Callable[[int], None] | None = None,
 ) -> AsyncIterator[list[T]]:
     """Batch a blocking row iterator in a background thread.
 
@@ -162,7 +177,10 @@ async def iter_file_batches(
     def produce() -> None:
         buffer = BatchCopyBuffer[T](batch_size=batch_size)
         try:
-            for row in row_iterator(file_path):
+            for row in row_iterator(
+                file_path,
+                None if on_input_progress is None else lambda bytes_read: push(_ThreadedBatchProgress(bytes_read)),
+            ):
                 if stop_event.is_set():
                     return
                 batch = buffer.add(row)
@@ -185,6 +203,10 @@ async def iter_file_batches(
                 break
             if isinstance(item, _ThreadedBatchFailure):
                 raise item.error
+            if isinstance(item, _ThreadedBatchProgress):
+                if on_input_progress is not None:
+                    on_input_progress(item.bytes_read)
+                continue
             yield cast(list[T], item)
     finally:
         stop_event.set()

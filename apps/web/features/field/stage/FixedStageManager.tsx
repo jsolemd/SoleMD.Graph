@@ -19,6 +19,7 @@ import type {
   FieldSceneState,
   FieldStageItemId,
 } from "../scene/visual-presets";
+import type { FieldSceneStore } from "../scroll/field-scene-store";
 import { bindFieldControllers } from "../scroll/field-scroll-driver";
 import type { FieldSectionManifestEntry } from "../surfaces/FieldLandingPage/field-landing-content";
 
@@ -38,6 +39,7 @@ export interface FixedStageManagerProviderProps {
   isMobile: boolean;
   manifest: readonly FieldSectionManifestEntry[];
   reducedMotion: boolean;
+  sceneStore: FieldSceneStore;
   sceneStateRef: MutableRefObject<FieldSceneState>;
 }
 
@@ -46,6 +48,7 @@ export function FixedStageManagerProvider({
   isMobile,
   manifest,
   reducedMotion,
+  sceneStore,
   sceneStateRef,
 }: FixedStageManagerProviderProps) {
   const controllersRef = useRef<
@@ -81,36 +84,51 @@ export function FixedStageManagerProvider({
     let disposeBindings: (() => void) | null = null;
     setReady(false);
 
-    async function boot() {
-      await Promise.resolve(
-        prewarmFieldPointSources({
-          densityScale: 1,
-          ids: requiredControllerIds,
-          isMobile,
-        }),
-      );
-      await Promise.all(
-        requiredControllerIds.map((id) => controllers[id]!.whenReady()),
-      );
-      if (cancelled) return;
+    const prewarmPromise = Promise.resolve(
+      prewarmFieldPointSources({
+        densityScale: 1,
+        ids: requiredControllerIds,
+        isMobile,
+      }),
+    );
+    const controllerReadyPromises = requiredControllerIds.map((id) =>
+      controllers[id]!.whenReady(),
+    );
 
-      disposeBindings = bindFieldControllers({
-        heroSectionId: "section-hero",
-        manifest,
-        reducedMotion,
-        sceneStateRef,
-      });
-      setReady(true);
-    }
+    const gate = Promise.all([prewarmPromise, ...controllerReadyPromises]);
 
-    void boot();
+    gate.then(
+      () => {
+        if (cancelled) return;
+        disposeBindings = bindFieldControllers({
+          heroSectionId: "section-hero",
+          manifest,
+          reducedMotion,
+          sceneStore,
+          sceneStateRef,
+        });
+        setReady(true);
+      },
+      (error) => {
+        if (cancelled) return;
+        console.error("[FixedStageManager] readiness gate rejected", error);
+      },
+    );
 
     return () => {
       cancelled = true;
       setReady(false);
       disposeBindings?.();
     };
-  }, [controllerEpoch, isMobile, manifest, reducedMotion, requiredControllerIds, sceneStateRef]);
+  }, [
+    controllerEpoch,
+    isMobile,
+    manifest,
+    reducedMotion,
+    requiredControllerIds,
+    sceneStateRef,
+    sceneStore,
+  ]);
 
   return (
     <FixedStageManagerContext.Provider

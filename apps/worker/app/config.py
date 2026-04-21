@@ -116,10 +116,41 @@ class Settings(BaseSettings):
     ingest_max_concurrent_files: int = Field(
         default=4,
         alias="INGEST_MAX_CONCURRENT_FILES",
+        ge=1,
     )
     ingest_write_command_timeout_seconds: float = Field(
         default=300.0,
         alias="INGEST_WRITE_COMMAND_TIMEOUT_SECONDS",
+    )
+    ingest_write_statement_cache_size: int = Field(
+        default=128,
+        alias="INGEST_WRITE_STATEMENT_CACHE_SIZE",
+        ge=0,
+    )
+    ingest_write_idle_in_transaction_timeout_ms: int = Field(
+        default=15 * 60 * 1000,
+        alias="INGEST_WRITE_IDLE_IN_TRANSACTION_TIMEOUT_MS",
+        ge=0,
+    )
+    ingest_write_tcp_keepalives_idle_seconds: int = Field(
+        default=60,
+        alias="INGEST_WRITE_TCP_KEEPALIVES_IDLE_SECONDS",
+        ge=0,
+    )
+    ingest_write_tcp_keepalives_interval_seconds: int = Field(
+        default=10,
+        alias="INGEST_WRITE_TCP_KEEPALIVES_INTERVAL_SECONDS",
+        ge=0,
+    )
+    ingest_write_tcp_keepalives_count: int = Field(
+        default=6,
+        alias="INGEST_WRITE_TCP_KEEPALIVES_COUNT",
+        ge=0,
+    )
+    ingest_abort_poll_interval_seconds: float = Field(
+        default=2.0,
+        alias="INGEST_ABORT_POLL_INTERVAL_SECONDS",
+        gt=0.0,
     )
     ncbi_api_tool: str = Field(
         default="solemd_graph_worker",

@@ -15,7 +15,7 @@
  * blur the shape. A single collective breath pulses the whole SVG.
  */
 import { useEffect, useId, useMemo, useState } from "react";
-import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 
 // All sub-paths of the Noto Emoji U+1F9E0 glyph, verbatim from
 // googlefonts/noto-emoji. Paths are ordered from largest (main body)

@@ -18,7 +18,7 @@
  * Twemoji: https://github.com/twitter/twemoji (CC-BY 4.0 graphics /
  * MIT code — we're adapting path data which falls under MIT).
  */
-import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { canvasReveal } from "@/lib/motion";
 
 // Brand remap of the original Twemoji palette.

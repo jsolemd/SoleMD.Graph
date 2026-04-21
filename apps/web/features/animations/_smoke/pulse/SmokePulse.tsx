@@ -11,7 +11,7 @@
  * when users opt out, the SVG renders at its mid-keyframe without
  * animating.
  */
-import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { canvasReveal } from "@/lib/motion";
 
 export default function SmokePulse() {

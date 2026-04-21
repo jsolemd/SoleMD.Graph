@@ -123,3 +123,19 @@
 .afr-stage:not(.afr-has-only-reds) .afr-hotspot__ui {
   display: none !important;
 }
+
+/* Reduced-motion guard — WCAG 2.3.3. The hotspot keyframes (inner scale,
+ * outer stroke-dashoffset/scale) are decorative reveal motion; users who
+ * request reduce get a static end-state with zero animation. */
+@media (prefers-reduced-motion: reduce) {
+  .afr-hotspot.is-animating::before,
+  .afr-hotspot.is-animating svg circle {
+    animation: none !important;
+  }
+  .afr-hotspot::before {
+    scale: 1;
+  }
+  .afr-hotspot svg circle {
+    stroke-dashoffset: 0;
+  }
+}

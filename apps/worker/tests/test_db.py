@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.db import ensure_worker_pools_open, set_worker_pools
+from app.config import settings as default_settings
+from app.db import build_pool_specs, ensure_worker_pools_open, set_worker_pools
 
 
 @pytest.mark.asyncio
@@ -27,3 +28,20 @@ async def test_ensure_worker_pools_open_initializes_once(runtime_settings_factor
 
     assert first is second
     assert calls == [("ingest_write",)]
+
+
+def test_ingest_write_pool_spec_uses_contract_defaults() -> None:
+    runtime_settings = default_settings.model_copy(
+        update={
+            "warehouse_dsn_ingest": "postgresql://engine_ingest_write:engine_ingest_write@localhost:5432/warehouse",
+        }
+    )
+    specs = build_pool_specs(runtime_settings)
+    assert "ingest_write" in specs
+    spec = specs["ingest_write"]
+    assert spec.statement_cache_size == 128
+    server_settings = dict(spec.server_settings)
+    assert server_settings.get("idle_in_transaction_session_timeout") == "900000"
+    assert server_settings.get("tcp_keepalives_idle") == "60"
+    assert server_settings.get("tcp_keepalives_interval") == "10"
+    assert server_settings.get("tcp_keepalives_count") == "6"

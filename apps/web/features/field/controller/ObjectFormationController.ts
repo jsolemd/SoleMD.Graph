@@ -1,4 +1,4 @@
-import gsap from "gsap";
+import { gsap } from "gsap";
 import { PerspectiveCamera } from "three";
 import { DECAY, lerpFactor } from "@/lib/motion3d";
 import {
@@ -68,7 +68,8 @@ export class ObjectFormationController extends FieldController {
       ? shader.sizeMobile ?? shader.size
       : shader.size;
 
-    uniforms.uTime.value = elapsedSec * timeFactor;
+    uniforms.uTime.value = elapsedSec;
+    uniforms.uTimeFactor.value = timeFactor;
     uniforms.uPixelRatio.value = pixelRatio;
     uniforms.uIsMobile.value = isMobile;
     uniforms.uScale.value = 1 / baseScale;

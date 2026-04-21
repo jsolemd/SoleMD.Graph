@@ -370,6 +370,103 @@ After the fixed ingest root restart on `2026-04-20`:
   - `pt3:2026-03-21` with `work_item="biocxml"`
   - `s2:2026-03-10` with `work_item="papers"`
 
+### 2026-04-21 deep liveness and throughput audit
+
+Prompt for this pass:
+
+- operator reported that the ingest had been running for `10+` hours and
+  appeared not to move
+- requirement for this pass was to prove whether the run was genuinely stalled
+  or just poorly reported, then fix any underlying engineering defects rather
+  than assuming the first telemetry bug was the whole problem
+
+Measured live liveness sample:
+
+- sampled `worker_active_run_progress_units` and `/proc/<pid>/io` over roughly
+  `54` seconds
+- S2 `papers` advanced from `28,330,786` to `28,450,786`
+- PT3 `biocxml` advanced from `64,450,000` to `64,840,000`
+- both ingest worker processes increased kernel `read_bytes` during the same
+  window
+
+Conclusion from the audit:
+
+- the live run was genuinely progressing; it was not a hard stall
+- the operator-visible panels still made it look stalled because the currently
+  exposed surfaces are too coarse for multi-hour shard work
+- PT3 remained at `0 / 10` file progress during the sample because the first
+  huge `biocxml` tarball had not finished yet even while row counts kept rising
+
+Root issues found in this pass:
+
+- resume bookkeeping bug:
+  - `ingest_runs` could resume a failed or aborted run on the same row without
+    clearing `completed_at`
+  - that made a live resumed run look closed in warehouse queries that rely on
+    `completed_at IS NULL`
+  - the same reopen bug pattern also existed in corpus-selection and
+    evidence-wave resume paths
+- S2 throughput bug:
+  - the S2 writer families still streamed gzip / JSON payloads synchronously in
+    async coroutines rather than through the threaded batch helper
+  - that meant file-level “concurrency” was weaker than it looked and one
+    worker could spend long stretches CPU-bound on parsing while Grafana
+    remained visually flat
+
+Code changes landed in this pass:
+
+- ingest resume now reopens the persisted run row correctly:
+  - `apps/worker/app/ingest/runtime.py`
+  - clears `completed_at`
+  - clears stale `requested_status`
+- corpus-selection and evidence-wave resume now also clear `completed_at`:
+  - `apps/worker/app/corpus/selection_runtime.py`
+  - `apps/worker/app/corpus/wave_runtime.py`
+- S2 family readers now use the threaded batch iterator rather than direct
+  synchronous row loops for the major raw families:
+  - `apps/worker/app/ingest/writers/s2.py`
+  - this moved `publication_venues`, `authors`, `papers`, `abstracts` / `tldrs`,
+    `citations`, and `s2orc_v2` onto `iter_file_batches()`
+- `INGEST_MAX_CONCURRENT_FILES` is now validated with `ge=1` so a bad zero
+  value cannot park S2 family semaphores indefinitely:
+  - `apps/worker/app/config.py`
+
+What remains true after this pass:
+
+- current ingest telemetry still does not expose shard/file identity below the
+  family label
+- `current_work_item_rows` still has no total, so the ratio series remains
+  structurally unhelpful for row-heavy work
+- family promotion / backfill work still happens after file callbacks and can
+  create a silent tail inside `loading`
+
+Follow-on observability gaps identified from static review:
+
+- evidence active-run identity collapses concurrent paper-text jobs onto one
+  shared telemetry series
+- corpus selection allowlisted partial runs can still diverge between live
+  telemetry and persisted warehouse finalization semantics
+- ingest docs promise more family-stage signals than the current runtime emits
+
+Targeted verification for the 2026-04-21 fixes:
+
+```bash
+uv run --project apps/worker pytest \
+  apps/worker/tests/test_ingest_writer_base.py \
+  apps/worker/tests/test_ingest_runtime.py \
+  apps/worker/tests/test_corpus_runtime.py::test_corpus_selection_runtime_resumes_failed_run_deterministically -q
+```
+
+Latest result:
+
+- `16 passed, 2 warnings`
+
+New regression added in this pass:
+
+- `test_open_or_resume_run_reopens_terminal_row_for_resume`
+  - proves that a resumed failed/aborted ingest run clears `completed_at`,
+    clears stale abort state, and keeps the same `ingest_run_id`
+
 ## Implementation Plan
 
 ### Phase 1 — Docs lock
@@ -441,6 +538,79 @@ Completed for active runtime and current docs:
   earlier transition rather than active runtime contract
 
 Runtime behavior was not changed by naming alone.
+
+## 2026-04-21 Throughput And Robustness Hardening
+
+The long PT3 + S2 run clarified that the main failure mode was not deadlock. It
+was coarse progress surfaces plus weak mid-stream control:
+
+- aborts were only checked at family boundaries
+- Grafana could show family-level state but not the hot shard/file
+- `current_work_item_rows` advanced, but its ratio stayed `0` because the total
+  was intentionally unset
+- `overall` progress was weighted by file count rather than actual input size,
+  which made one giant PT3 tarball look motionless for hours
+
+### Changes landed in this pass
+
+- ingest active-run identity still uses bounded Prometheus labels:
+  `run_label` is `{source_code}:{release_tag}` with no embedded
+  `ingest_run_id`; the run UUID remains in logs and `solemd.ingest_runs` for
+  correlation
+- ingest family progress is now byte-weighted off manifest `FilePlan.byte_count`
+  rather than file-count only
+- S2 JSONL and PT3 gzip/tar readers now emit in-file byte heartbeats
+- ingest active worker state now records `family:file` for the last active shard
+  so Grafana can show a concrete hot work item instead of a static family name
+- writers now surface a batch-processed callback, and runtime uses it to poll
+  aborts on a throttle during long families instead of waiting for full-family
+  completion
+- runtime now checks abort state again after family load and again before final
+  publish so operator aborts do not fall through to promotion or publish
+- PubTator stage upserts now skip no-op `ON CONFLICT DO UPDATE` rewrites when
+  the incoming row is semantically identical, reducing write amplification on
+  duplicate-heavy shards
+- the ingest config now exposes `INGEST_ABORT_POLL_INTERVAL_SECONDS` and still
+  guards `INGEST_MAX_CONCURRENT_FILES >= 1`
+
+### Verification
+
+Compile check:
+
+```bash
+python3 -m py_compile \
+  apps/worker/app/config.py \
+  apps/worker/app/ingest/runtime.py \
+  apps/worker/app/ingest/sources/semantic_scholar.py \
+  apps/worker/app/ingest/sources/pubtator.py \
+  apps/worker/app/ingest/writers/base.py \
+  apps/worker/app/ingest/writers/s2.py \
+  apps/worker/app/ingest/writers/pubtator.py
+```
+
+Targeted tests:
+
+```bash
+uv run --project apps/worker pytest \
+  apps/worker/tests/test_ingest_writer_base.py \
+  apps/worker/tests/test_ingest_writers_base.py -q
+
+uv run --project apps/worker pytest \
+  apps/worker/tests/test_ingest_runtime.py \
+  apps/worker/tests/test_telemetry_metrics.py -q
+```
+
+Latest result:
+
+- `3 passed, 2 warnings`
+- `17 passed, 2 warnings`
+
+### Operational note
+
+These changes are landed locally and validated, but the currently running live
+ingest worker is still the older process image. It should not be restarted in
+the middle of the active PT3/S2 family unless replaying the current family is
+acceptable.
 
 ## Risks To Carry Into Implementation
 

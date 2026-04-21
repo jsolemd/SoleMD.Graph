@@ -31,6 +31,7 @@ uniform bool uIsMobile;
 uniform float uPixelRatio;
 uniform float uScale;
 uniform float uTime;
+uniform float uTimeFactor;
 
 uniform float uSpeed;
 uniform float uSize;
@@ -55,6 +56,11 @@ uniform float uFunnelDistortion;
 // uColorNoise is tweened at runtime (BlobController rainbow cycle).
 uniform vec3 uColorBase;
 uniform vec3 uColorNoise;
+
+// 0.0 = dark paper (particles are saturated paint on black), 1.0 = light
+// paper (particles become low-luminance ink dots). Maze shipped dark-only;
+// SoleMD threads the computed Mantine color scheme through FieldScene.
+uniform float uLightMode;
 
 varying float vAlpha;
 varying float vDistance;
@@ -207,7 +213,7 @@ float fbm(vec3 x) {
   float a = 0.5;
   vec3 shift = vec3(100.0);
   for (int i = 0; i < NUM_OCTAVES; ++i) {
-    v += a * snoise(vec4(x, uTime));
+    v += a * snoise(vec4(x, uTime * uTimeFactor));
     x = x * 2.0 + shift;
     a *= 0.5;
   }
@@ -222,14 +228,20 @@ void main() {
   // when uColorNoise is tweened through a palette at runtime.
   vColor = uColorBase + clamp(vNoise, 0.0, 1.0) * 4.0 * (uColorNoise - uColorBase);
 
+  // Light-mode ink remap: drop particle luminance below the paper
+  // background so saturated-on-black pigment becomes readable ink-on-paper.
+  // 0.55 keeps enough chroma for cyan/magenta rainbow stops to read as hue
+  // rather than flat navy.
+  vColor = mix(vColor, vColor * 0.55 + vec3(0.02), uLightMode);
+
   vec3 displaced = position;
   displaced *= (1.0 + (uAmplitude * vNoise));
   displaced += vec3(
-    uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uSpeed))
+    uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uTimeFactor * uSpeed))
   );
 
   if (uStream > 0.0) {
-    displaced.x += uTime * uSpeed * uStream * 0.3;
+    displaced.x += uTime * uTimeFactor * uSpeed * uStream * 0.3;
     displaced.x = mod(displaced.x - uWidth * 0.5, uWidth) - uWidth * 0.5;
 
     float t = clamp((displaced.x - uFunnelStart) / (uFunnelEnd - uFunnelStart), 0.0, 1.0);
@@ -259,6 +271,10 @@ void main() {
   gl_PointSize *= uPixelRatio;
 
   vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
+  // Light-mode alpha boost: particles that were glow on black need more
+  // opacity to hold against paper. Kept modest so higher-luminance hues
+  // (cyan, magenta) don't over-paint at 0.55 multiplier.
+  vAlpha = mix(vAlpha, vAlpha * 1.3, uLightMode);
   if (aSelection > uSelection) {
     vAlpha = 0.0;
   }

@@ -8,7 +8,7 @@ import {
 } from "react";
 import {
   motion,
-  useReducedMotionConfig as useReducedMotion,
+  useReducedMotion,
   type Transition,
   type Variants,
 } from "framer-motion";

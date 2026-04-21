@@ -16,10 +16,15 @@ runtime manual.
 - Module id: `module-id`
 - Surface kind: `landing | wiki module | expanded module | bridge surface`
 - Runtime family: `Field`
+- Ending pattern: `bookend return | persistent carry | authored formation`
 - Human authoring source: `Obsidian/wiki path or note name`
 - Checked-in contract: `docs/map/modules/module-id.md`
 - Global locked deviations:
   - `none yet`
+- Mobile path:
+  - `same runtime, density swap only`
+- Reduced-motion path:
+  - `static copy + reduced field motion`
 
 ## Discovery Snapshot
 
@@ -42,6 +47,10 @@ metaphor, or motion direction.
   - passive scroll, click/tap interactions, hover, graph actions
 - Data / graph coupling:
   - none, ambient only, or specific graph/data bridge
+- Mobile path:
+  - same runtime, alternate shell, density swap, or other explicit rule
+- Reduced-motion path:
+  - what is removed, what remains visible, and what becomes static
 - Reference surfaces:
   - `landing.md`, an Obsidian note, Maze parity, or other explicit analogs
 - Open questions still unresolved:
@@ -79,6 +88,8 @@ carry the current meaning in `narrative role` plus `content`.
   - `blob`
   - `stream`
   - `objectFormation`
+- Historical aliases or runtime-only names:
+  - `none`
 
 If no bridge is needed, write:
 
@@ -86,13 +97,17 @@ If no bridge is needed, write:
 
 ## Stage Manifest
 
-| Order | Section id | Owner family | Stage item id | Preset id | Carry window | Particle behavior | Overlay status |
-|---|---|---|---|---|---|---|---|
-| 1 | `section-example` | `blob` | `blob` | `blob` | through `section-next` | highlighted paper field | `progress` |
+| Order | Section id | Owner family | Ownership mode | Stage item id | Preset id | Carry window | Particle behavior | Overlay status |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `section-example` | `blob` | `owner` | `blob` | `blob` | through `section-next` | highlighted paper field | `progress` |
 
 Notes:
 
 - `Owner family` is the preferred author-facing runtime term.
+- `Ownership mode` should be one of:
+  - `owner`
+  - `carry`
+  - `overlap`
 - `Stage item id` is the code identifier when traceability matters.
 - `Particle behavior` should describe what the particles are doing in product
   terms, not just the slug name.
@@ -109,8 +124,9 @@ Notes:
 
 - Narrative role: `hero | orientation | focus | detail | bridge | synthesis | review path | mobile carry | end state`
 - Section id: `section-example`
+- Historical alias or runtime alias: `none`
 - Chapter key or runtime alias: `example`
-- Stage owner or state: `blob owner` or `blob carry`
+- Stage owner or state: `blob owner`, `blob carry`, or `blob + stream overlap`
 - Purpose:
   - one sentence about why this chapter exists
 - Content:
@@ -132,6 +148,10 @@ Notes:
   - what animates
   - what scrubs
   - what should remain static
+- Mobile path:
+  - what changes on narrow/coarse input
+- Reduced-motion path:
+  - what becomes static, fades only, or disappears
 - Data dependencies:
   - any content/data/graph dependency the chapter needs
 - Deferred items:
@@ -143,6 +163,7 @@ Notes:
 
 - Narrative role: `bridge`
 - Section id: `section-story`
+- Historical alias or runtime alias: `none`
 - Chapter key or runtime alias: `story`
 - Stage owner or state: `stream carry`
 - Purpose:
@@ -161,6 +182,10 @@ Notes:
 - Interaction / motion intent:
   - background particles scrub
   - foreground copy reveals on chapter entry
+- Mobile path:
+  - same runtime, simplified overlay
+- Reduced-motion path:
+  - static rail, no scrubbed reveal
 - Data dependencies:
   - highlighted paper subset
   - relation bridge summary

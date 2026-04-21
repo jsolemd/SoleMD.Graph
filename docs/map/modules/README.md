@@ -27,6 +27,21 @@ hooks it uses.
 They should not try to duplicate the full stage/controller/overlay/runtime
 manual.
 
+## Inherited Runtime Boundaries
+
+Every module contract in this directory inherits these non-negotiable runtime
+rules:
+
+- one fixed stage and one canvas per visible surface adapter
+- the stage manifest is authoritative for stage ownership
+- controllers read shared chapter progress inside `tick()`; DOM/SVG layers may
+  consume shared progress but never own stage truth
+- GSAP owns shared scroll intake and DOM-only chapter adapters
+- Framer/Motion owns DOM affordances only, not field truth
+- reduced-motion path and mobile path are required contract fields, not
+  afterthought polish
+- module-scoped locked deviations must be written explicitly, not implied in prose
+
 ## Source Of Truth Model
 
 Use a two-surface workflow.
@@ -80,10 +95,14 @@ for new modules.
 Every module contract should include:
 
 - module identity
+- ending pattern
+- global locked deviations
 - stage manifest
 - chapter inventory
 - terminology bridge when runtime aliases differ from the preferred
   author-facing names
+- mobile path
+- reduced-motion path
 - naming rules for how to refer to sections/beats
 
 Every chapter entry should include:
@@ -91,8 +110,9 @@ Every chapter entry should include:
 - `chapter name`
 - `narrative role`
 - `section id`
+- `historical alias` or runtime alias when it matters for implementation
 - `chapter hook` or runtime hook alias when adapter code is involved
-- `stage owner` or `stage state`
+- `stage owner`, `stage carry`, or `stage overlap` state
 - `purpose`
 - `content`
 - `particle behavior`

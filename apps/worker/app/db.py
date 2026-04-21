@@ -24,6 +24,7 @@ class PoolSpec:
     max_size: int
     statement_cache_size: int
     command_timeout: float | None = None
+    server_settings: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(slots=True)
@@ -69,8 +70,9 @@ def build_pool_specs(settings: Settings) -> dict[PoolName, PoolSpec]:
             dsn=settings.warehouse_dsn_ingest,
             min_size=settings.pool_ingest_min,
             max_size=settings.pool_ingest_max,
-            statement_cache_size=0,
+            statement_cache_size=settings.ingest_write_statement_cache_size,
             command_timeout=settings.ingest_write_command_timeout_seconds,
+            server_settings=_ingest_write_server_settings(settings),
         )
     if settings.warehouse_dsn_read:
         specs["warehouse_read"] = PoolSpec(
@@ -89,14 +91,34 @@ def resolve_boot_pool_names(settings: Settings) -> tuple[PoolName, ...]:
 
 
 async def open_pool(spec: PoolSpec) -> asyncpg.Pool:
-    return await asyncpg.create_pool(
-        dsn=spec.dsn,
-        min_size=spec.min_size,
-        max_size=spec.max_size,
-        command_timeout=spec.command_timeout,
-        statement_cache_size=spec.statement_cache_size,
-        init=init_connection,
-    )
+    kwargs: dict[str, object] = {
+        "dsn": spec.dsn,
+        "min_size": spec.min_size,
+        "max_size": spec.max_size,
+        "command_timeout": spec.command_timeout,
+        "statement_cache_size": spec.statement_cache_size,
+        "init": init_connection,
+    }
+    if spec.server_settings:
+        kwargs["server_settings"] = dict(spec.server_settings)
+    return await asyncpg.create_pool(**kwargs)
+
+
+def _ingest_write_server_settings(settings: Settings) -> tuple[tuple[str, str], ...]:
+    pairs: list[tuple[str, str]] = []
+    idle_ms = settings.ingest_write_idle_in_transaction_timeout_ms
+    if idle_ms > 0:
+        pairs.append(("idle_in_transaction_session_timeout", str(idle_ms)))
+    keepalives_idle = settings.ingest_write_tcp_keepalives_idle_seconds
+    if keepalives_idle > 0:
+        pairs.append(("tcp_keepalives_idle", str(keepalives_idle)))
+    keepalives_interval = settings.ingest_write_tcp_keepalives_interval_seconds
+    if keepalives_interval > 0:
+        pairs.append(("tcp_keepalives_interval", str(keepalives_interval)))
+    keepalives_count = settings.ingest_write_tcp_keepalives_count
+    if keepalives_count > 0:
+        pairs.append(("tcp_keepalives_count", str(keepalives_count)))
+    return tuple(pairs)
 
 
 async def init_connection(connection: asyncpg.Connection) -> None:

@@ -326,6 +326,7 @@ async def _open_or_resume_wave_run(
                 SET advisory_lock_key = $1,
                     requested_by = $2,
                     error_message = NULL,
+                    completed_at = NULL,
                     plan_checksum = $3,
                     plan_manifest = $4
                 WHERE corpus_wave_run_id = $5

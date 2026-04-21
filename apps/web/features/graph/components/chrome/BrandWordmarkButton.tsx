@@ -18,13 +18,22 @@ export function BrandWordmarkButton({
   surfaceMode = "pill",
   tooltipLabel = "About SoleMD",
 }: BrandWordmarkButtonProps) {
+  const autoMode = surfaceMode === "auto";
+  const className =
+    "flex cursor-pointer items-center rounded-full border-0 px-4 py-1.5 transition-[background-color,box-shadow,filter] duration-300 hover:brightness-110"
+    + (autoMode ? " chrome-surface-target" : "");
+  const surfaceStyle = autoMode
+    ? null
+    : surfaceMode === "pill"
+      ? promptSurfaceStyle
+      : chromeFlushSurfaceStyle;
   return (
     <Tooltip label={tooltipLabel} position="right" withArrow>
       <button
         type="button"
-        className="flex cursor-pointer items-center rounded-full border-0 px-4 py-1.5 transition-[background-color,box-shadow,filter] duration-300 hover:brightness-110"
+        className={className}
         style={{
-          ...(surfaceMode === "pill" ? promptSurfaceStyle : chromeFlushSurfaceStyle),
+          ...surfaceStyle,
           color: "var(--graph-icon-color)",
         }}
         onClick={onClick}

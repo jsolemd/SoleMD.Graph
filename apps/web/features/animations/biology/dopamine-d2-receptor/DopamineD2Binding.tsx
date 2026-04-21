@@ -18,7 +18,7 @@
  * motion shows the `bound` state statically with a caption.
  */
 import { useEffect, useRef, useState } from "react";
-import { motion, useReducedMotionConfig as useReducedMotion, useInView, type Variants } from "framer-motion";
+import { motion, useReducedMotion, useInView, type Variants } from "framer-motion";
 import { canvasReveal } from "@/lib/motion";
 
 type State = "rest" | "approach" | "bound" | "signaling";

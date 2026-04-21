@@ -10,7 +10,9 @@
 @import "./styles/editor.css";
 @import "./styles/vendor-overrides.css";
 @import "./styles/graph-ui.css";
+@import "./styles/chrome-surface.css";
 @import "./styles/wiki-content.css";
 @import "./styles/wiki-module-content.css";
+@import "./styles/viewport-toc-rail.css";
 
 @custom-variant dark (&:where(.dark, .dark *));

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { ActionIcon, Tooltip, useComputedColorScheme } from "@mantine/core";
-import { useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 import { Play } from "lucide-react";
 import type { LottieRefCurrentProps } from "lottie-react";
 import graphPlayAnimation from "@/features/animations/_assets/lottie/field-graph-play.json";
@@ -17,6 +18,7 @@ import {
   chromeFlushSurfaceStyle,
   graphControlBtnStyles,
 } from "@/features/graph/components/panels/PanelShell";
+import type { GraphWarmupStatus } from "@/features/graph/hooks/use-graph-warmup";
 import { fieldLoopClock } from "@/features/field";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
@@ -25,6 +27,7 @@ type WarmupActionPhase = "loading" | "ready-playing" | "ready-idle";
 
 const READY_LABEL = "Enter Graph";
 const LOADING_LABEL = "Graph Loading";
+const UNAVAILABLE_LABEL = "Graph unavailable";
 const GRAPH_ICON_FALLBACK: LottieRgba = [0.102, 0.106, 0.118, 0.68];
 const LOTTIE_VISUAL_SIZE = "calc(var(--icon-size) * 0.82)";
 const MAX_SYNC_ATTEMPTS = 60;
@@ -55,15 +58,18 @@ const visualLayerStyle: CSSProperties = {
 };
 
 export function FieldGraphWarmupAction({
-  graphReady,
+  status,
   onOpenGraph,
 }: {
-  graphReady: boolean;
+  status: GraphWarmupStatus;
   onOpenGraph: () => void;
 }) {
+  const router = useRouter();
   const reduced = useReducedMotion();
   const computedColorScheme = useComputedColorScheme("light");
   const lottieRef = useRef<LottieRefCurrentProps | null>(null);
+  const prefetchedRef = useRef(false);
+  const graphReady = status === "ready";
   const [iconColor, setIconColor] = useState<LottieRgba | null>(null);
   const [phase, setPhase] = useState<WarmupActionPhase>(
     graphReady ? "ready-playing" : "loading",
@@ -85,6 +91,12 @@ export function FieldGraphWarmupAction({
   useEffect(() => {
     setPhase(graphReady ? "ready-playing" : "loading");
   }, [graphReady]);
+
+  useEffect(() => {
+    if (status !== "ready" || prefetchedRef.current) return;
+    prefetchedRef.current = true;
+    router.prefetch("/graph");
+  }, [status, router]);
 
   useEffect(() => {
     if (!graphReady || reduced || !playAnimationData || phase !== "ready-playing") {
@@ -130,25 +142,33 @@ export function FieldGraphWarmupAction({
 
   const canRenderPlayVisual = !reduced && playAnimationData != null;
   const showReadyVisual = graphReady && (reduced || canRenderPlayVisual);
-  const tooltipLabel = graphReady ? READY_LABEL : LOADING_LABEL;
+  const tooltipLabel =
+    status === "ready"
+      ? READY_LABEL
+      : status === "unavailable"
+        ? UNAVAILABLE_LABEL
+        : LOADING_LABEL;
   const iconOpacity = iconColor?.[3] ?? GRAPH_ICON_FALLBACK[3];
+  const isInteractive = status === "ready";
 
   return (
     <Tooltip label={tooltipLabel} position="bottom" withArrow>
       <ActionIcon
         type="button"
-        onClick={graphReady ? onOpenGraph : undefined}
+        onClick={isInteractive ? onOpenGraph : undefined}
         variant="transparent"
         size="lg"
         radius="xl"
         className="graph-icon-btn"
         styles={graphControlBtnStyles}
         aria-label={tooltipLabel}
-        aria-disabled={!graphReady}
-        tabIndex={graphReady ? 0 : -1}
+        aria-disabled={!isInteractive}
+        disabled={status === "unavailable"}
+        tabIndex={isInteractive ? 0 : -1}
         style={{
           ...iconActionStyle,
-          cursor: graphReady ? "pointer" : "default",
+          cursor: isInteractive ? "pointer" : "default",
+          opacity: status === "unavailable" ? 0.5 : undefined,
         }}
       >
         <span aria-hidden="true" style={visualHostStyle}>
@@ -207,13 +227,13 @@ export function FieldGraphWarmupAction({
           ) : null}
         </span>
 
-        {!graphReady ? (
+        {status !== "ready" ? (
           <span
             role="status"
             aria-live="polite"
             className="sr-only"
           >
-            {LOADING_LABEL}
+            {tooltipLabel}
           </span>
         ) : null}
       </ActionIcon>

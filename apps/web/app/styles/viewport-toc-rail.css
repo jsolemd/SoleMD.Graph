@@ -1,0 +1,16 @@
+@keyframes viewport-toc-rail-fill {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+.viewport-toc-rail-fill {
+  transform-origin: top;
+  transform: scaleY(var(--viewport-toc-rail-progress, 0));
+}
+
+@supports (animation-timeline: scroll()) {
+  .viewport-toc-rail-fill {
+    animation: viewport-toc-rail-fill linear both;
+    animation-timeline: scroll(nearest block);
+  }
+}

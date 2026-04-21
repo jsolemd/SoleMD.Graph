@@ -45,8 +45,8 @@ INGEST_FAMILY_FILES_TOTAL = Counter(
 )
 INGEST_FAILURES_TOTAL = Counter(
     "ingest_failures_total",
-    "Ingest failures by phase and exception class.",
-    ["source_code", "phase", "failure_class"],
+    "Ingest failures by phase, family, and exception class.",
+    ["source_code", "phase", "family", "failure_class"],
 )
 INGEST_ACTIVE_LOCK_AGE_SECONDS = Gauge(
     "ingest_active_lock_age_seconds",
@@ -318,8 +318,14 @@ def record_ingest_failure(
     source_code: str,
     phase: str,
     failure_class: str,
+    family: str | None = None,
 ) -> None:
-    INGEST_FAILURES_TOTAL.labels(source_code, phase, failure_class).inc()
+    INGEST_FAILURES_TOTAL.labels(
+        source_code,
+        phase,
+        _metric_label_value(family),
+        failure_class,
+    ).inc()
 
 
 def observe_corpus_selection_phase(

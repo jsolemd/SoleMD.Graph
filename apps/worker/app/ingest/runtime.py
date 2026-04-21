@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
@@ -56,7 +56,7 @@ INGEST_REQUESTED_STATUS_ABORT = 2
 @dataclass(frozen=True, slots=True)
 class SourceAdapter:
     build_plan: Callable[[Settings, StartReleaseRequest], IngestPlan]
-    promote_family: Callable[[asyncpg.Connection, IngestPlan, str, int, str], asyncio.Future | object]
+    promote_family: Callable[[asyncpg.Connection, IngestPlan, str, int, UUID], asyncio.Future | object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,9 +69,11 @@ class SourceWriter:
             IngestPlan,
             str,
             int,
-            str,
+            UUID,
             Callable[[Path, int], None] | None,
             Callable[[Path, int], None] | None,
+            Callable[[Path, int], None] | None,
+            Callable[[Path, int], Awaitable[None]] | None,
         ],
         asyncio.Future | object,
     ]
@@ -135,6 +137,8 @@ async def run_release_ingest(
                 ) as active_run:
                     total_progress_units = float(max(1, len(plan.family_names) + 2))
                     completed_family_count = len(run.families_loaded)
+                    abort_check_lock = asyncio.Lock()
+                    last_abort_check_at = 0.0
                     active_run.set_progress(
                         progress_kind="overall",
                         completed_units=float(completed_family_count),
@@ -142,6 +146,11 @@ async def run_release_ingest(
                     )
                     active_run.set_progress(
                         progress_kind="current_work_item_files",
+                        completed_units=0,
+                        total_units=0,
+                    )
+                    active_run.set_progress(
+                        progress_kind="current_work_item_input_bytes",
                         completed_units=0,
                         total_units=0,
                     )
@@ -161,11 +170,44 @@ async def run_release_ingest(
                     active_phase_name = "loading"
                     active_phase_started = perf_counter()
                     active_run.set_state(phase="loading")
+
+                    async def on_batch_processed(file_path: Path, batch_row_count: int) -> None:
+                        nonlocal last_abort_check_at
+                        del batch_row_count
+                        active_run.set_state(
+                            phase="loading",
+                            work_item=f"{family_name}:{file_path.name}" if family_name is not None else file_path.name,
+                        )
+                        now = perf_counter()
+                        if now - last_abort_check_at < runtime_settings.ingest_abort_poll_interval_seconds:
+                            return
+                        async with abort_check_lock:
+                            now = perf_counter()
+                            if now - last_abort_check_at < runtime_settings.ingest_abort_poll_interval_seconds:
+                                return
+                            # Reuse the outer control connection here. Worker
+                            # loaders already hold pool connections while this
+                            # callback runs, so reacquiring from the same pool
+                            # can deadlock under tighter pool sizing.
+                            await _assert_not_aborted(control_connection, ingest_run_id)
+                            last_abort_check_at = now
+
                     for family_name in plan.family_names:
                         await _assert_not_aborted(control_connection, ingest_run_id)
                         if family_name in run.families_loaded:
                             continue
+                        family_plan = next(item for item in plan.families if item.family == family_name)
                         family_file_total = _plan_family_file_total(plan, family_name)
+                        family_file_sizes = {
+                            file_plan.path: max(0, file_plan.byte_count)
+                            for file_plan in family_plan.files
+                        }
+                        family_input_total_units = float(
+                            sum(family_file_sizes.values())
+                        )
+                        file_input_progress = {
+                            file_plan.path: 0 for file_plan in family_plan.files
+                        }
                         completed_file_count = 0
                         active_run.set_state(phase="loading", work_item=family_name)
                         active_run.set_progress(
@@ -174,22 +216,28 @@ async def run_release_ingest(
                             total_units=float(family_file_total),
                         )
                         active_run.set_progress(
+                            progress_kind="current_work_item_input_bytes",
+                            completed_units=0,
+                            total_units=family_input_total_units,
+                        )
+                        active_run.set_progress(
                             progress_kind="current_work_item_rows",
                             completed_units=0,
                             total_units=0,
                         )
                         written_row_count = 0
 
-                        def on_file_completed(_file_path, _written_rows) -> None:
-                            nonlocal completed_file_count
-                            completed_file_count += 1
-                            active_run.set_progress(
-                                progress_kind="current_work_item_files",
-                                completed_units=float(completed_file_count),
-                                total_units=float(family_file_total),
-                            )
+                        def update_family_progress() -> None:
                             fractional_completed = 1.0
-                            if family_file_total > 0:
+                            if family_input_total_units > 0:
+                                completed_input_units = float(sum(file_input_progress.values()))
+                                active_run.set_progress(
+                                    progress_kind="current_work_item_input_bytes",
+                                    completed_units=completed_input_units,
+                                    total_units=family_input_total_units,
+                                )
+                                fractional_completed = completed_input_units / family_input_total_units
+                            elif family_file_total > 0:
                                 fractional_completed = completed_file_count / family_file_total
                             active_run.set_progress(
                                 progress_kind="overall",
@@ -197,9 +245,45 @@ async def run_release_ingest(
                                 total_units=total_progress_units,
                             )
 
-                        def on_rows_written(_file_path, batch_row_count) -> None:
+                        def on_file_completed(_file_path: Path, _written_rows: int) -> None:
+                            nonlocal completed_file_count
+                            completed_file_count += 1
+                            file_input_progress[_file_path] = max(
+                                file_input_progress.get(_file_path, 0),
+                                family_file_sizes.get(_file_path, 0),
+                            )
+                            active_run.set_state(
+                                phase="loading",
+                                work_item=f"{family_name}:{_file_path.name}",
+                            )
+                            active_run.set_progress(
+                                progress_kind="current_work_item_files",
+                                completed_units=float(completed_file_count),
+                                total_units=float(family_file_total),
+                            )
+                            update_family_progress()
+
+                        def on_input_progress(_file_path: Path, input_bytes: int) -> None:
+                            next_bytes = min(
+                                family_file_sizes.get(_file_path, 0),
+                                max(file_input_progress.get(_file_path, 0), input_bytes),
+                            )
+                            if next_bytes == file_input_progress.get(_file_path, 0):
+                                return
+                            file_input_progress[_file_path] = next_bytes
+                            active_run.set_state(
+                                phase="loading",
+                                work_item=f"{family_name}:{_file_path.name}",
+                            )
+                            update_family_progress()
+
+                        def on_rows_written(_file_path: Path, batch_row_count: int) -> None:
                             nonlocal written_row_count
                             written_row_count += batch_row_count
+                            active_run.set_state(
+                                phase="loading",
+                                work_item=f"{family_name}:{_file_path.name}",
+                            )
                             active_run.set_progress(
                                 progress_kind="current_work_item_rows",
                                 completed_units=float(written_row_count),
@@ -216,7 +300,10 @@ async def run_release_ingest(
                             ingest_run_id,
                             on_file_completed=on_file_completed,
                             on_rows_written=on_rows_written,
+                            on_input_progress=on_input_progress,
+                            on_batch_processed=on_batch_processed,
                         )
+                        await _assert_not_aborted(control_connection, ingest_run_id)
                         async with control_connection.transaction():
                             await adapter.promote_family(
                                 control_connection,
@@ -257,6 +344,11 @@ async def run_release_ingest(
                     active_run.set_state(phase="indexing")
                     active_run.set_progress(
                         progress_kind="current_work_item_files",
+                        completed_units=0,
+                        total_units=0,
+                    )
+                    active_run.set_progress(
+                        progress_kind="current_work_item_input_bytes",
                         completed_units=0,
                         total_units=0,
                     )
@@ -308,6 +400,7 @@ async def run_release_ingest(
                     )
                     active_phase_name = None
                     active_phase_started = None
+                    await _assert_not_aborted(control_connection, ingest_run_id)
                     await _finalize_published(control_connection, ingest_run_id, source_release_id)
                     record_ingest_run(source_code=request.source_code, outcome="published")
                     _emit_event(
@@ -364,6 +457,7 @@ async def run_release_ingest(
                         source_code=request.source_code,
                         phase=failure_phase,
                         failure_class=type(exc).__name__,
+                        family=family_name,
                     )
                     _emit_event(
                         "ingest.cycle.failed",
@@ -488,7 +582,9 @@ async def _open_or_resume_run(
                 SET advisory_lock_key = $1,
                     manifest_uri = $2,
                     plan_manifest = $3,
-                    error_message = NULL
+                    error_message = NULL,
+                    completed_at = NULL,
+                    requested_status = NULL
                 WHERE ingest_run_id = $4
                 """,
                 lock_key,

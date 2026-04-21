@@ -2,7 +2,7 @@
 
 import type { ChapterAdapter } from "./types";
 
-export const ctaChapterAdapter: ChapterAdapter = (element) => {
+export const ctaChapterAdapter: ChapterAdapter = ({ element }) => {
   element.classList.add("is-cta-ready");
   return {
     dispose() {

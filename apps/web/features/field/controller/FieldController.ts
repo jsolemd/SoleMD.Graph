@@ -20,6 +20,7 @@ export function ensureGsapScrollTriggerRegistered(): void {
   scrollTriggerRegistered = true;
 }
 import { attachMouseParallax } from "../renderer/mouse-parallax-wrapper";
+import { projectToScreen } from "../overlay/field-anchor-projector";
 import type {
   FieldSceneState,
   FieldStageItemId,
@@ -52,6 +53,7 @@ export interface LayerUniforms {
   uFunnelThick: { value: number };
   uHeight: { value: number };
   uIsMobile: { value: boolean };
+  uLightMode: { value: number };
   uPixelRatio: { value: number };
   uScale: { value: number };
   uSelection: { value: number };
@@ -59,6 +61,7 @@ export interface LayerUniforms {
   uSpeed: { value: number };
   uStream: { value: number };
   uTime: { value: number };
+  uTimeFactor: { value: number };
   uWidth: { value: number };
 }
 
@@ -120,7 +123,9 @@ function cubicBezier(
 // Per-layer uTime multiplier. Maze drives `uTime` directly from a GSAP
 // timeline playhead (1:1 real-time). SoleMD runs on a module clock, so
 // we scale per layer: blob 0.25 / objectFormation 0.6 / stream 0.12 on desktop;
-// 0.1 / 0.2 / 0.04 with motion disabled.
+// 0.1 / 0.2 / 0.04 with motion disabled. The value is written to the
+// `uTimeFactor` uniform each tick; the shader performs the multiply, so
+// `uTime` remains absolute seconds (framerate independent).
 export function getTimeFactor(
   id: FieldStageItemId,
   motionEnabled: boolean,
@@ -178,7 +183,11 @@ export abstract class FieldController {
   // Maze color uniforms: the blob's `uColorNoise` is further tweened at
   // runtime by BlobController through `LANDING_RAINBOW_RGB`; stream/objectFormation
   // hold the cyan→magenta pair statically.
-  createLayerUniforms(isMobile: boolean, pointTexture: Texture): LayerUniforms {
+  createLayerUniforms(
+    isMobile: boolean,
+    pointTexture: Texture,
+    lightMode = 0,
+  ): LayerUniforms {
     const preset = this.params;
     const { shader } = preset;
     const [baseR, baseG, baseB] = shader.colorBase;
@@ -186,8 +195,10 @@ export abstract class FieldController {
     return {
       pointTexture: { value: pointTexture },
       uIsMobile: { value: isMobile },
+      uLightMode: { value: lightMode },
       uPixelRatio: { value: 1 },
       uTime: { value: 0 },
+      uTimeFactor: { value: 1 },
       uScale: { value: 1 / preset.sceneScale },
       uSpeed: { value: shader.speed },
       uSize: { value: shader.size },
@@ -234,18 +245,13 @@ export abstract class FieldController {
     return base;
   }
 
-  updateVisibility(
-    _scrollY: number,
-    _viewportH: number,
-    _layerTop: number,
-    _layerHeight: number,
-  ): boolean {
-    void _scrollY;
-    void _viewportH;
-    void _layerTop;
-    void _layerHeight;
-    return this.visible;
-  }
+  // Visibility ownership: each concrete controller writes `uniforms.uAlpha`
+  // and `wrapper.visible` in its own tick() from
+  // `context.itemState.visibility` (the aggregated shared-chapter signal).
+  // There is no base-class fallback — the previous `updateVisibility()`
+  // method was dead code because no caller invoked it and every subclass
+  // already owned the write. See `.claude/skills/module/SKILL.md` §4
+  // "Controller + resolver contract".
 
   animateIn(): Promise<void> {
     if (!this.material) return Promise.resolve();
@@ -363,11 +369,18 @@ export abstract class FieldController {
     return () => {};
   }
 
+  // Contract: viewportWidth/Height are in PHYSICAL pixels
+  // (state.gl.domElement.{width,height}) to match how projectHotspots is
+  // already called from FieldScene. Output x/y are CSS pixels so DOM
+  // consumers can feed them straight into translate3d without a second
+  // conversion. pixelRatio is passed explicitly so SSR paths can stay
+  // deterministic — no window.devicePixelRatio read here.
   toScreenPosition(
     target: Vector3,
     camera: Camera,
     viewportWidth: number,
     viewportHeight: number,
+    pixelRatio: number,
     scratch: Vector3 = new Vector3(),
   ): { x: number; y: number; z: number } {
     if (!this.model || !this.wrapper || !this.mouseWrapper) {
@@ -375,15 +388,13 @@ export abstract class FieldController {
     }
     scratch.copy(target);
     this.model.localToWorld(scratch);
-    scratch.project(camera);
-    const pixelRatio =
-      typeof window === "undefined"
-        ? 1
-        : Math.min(window.devicePixelRatio || 1, 2);
-    const x = ((scratch.x + 1) * viewportWidth) / 2 / pixelRatio;
-    const y = ((-scratch.y + 1) * viewportHeight) / 2 / pixelRatio;
-    const z = scratch.z;
-    return { x, y, z };
+    return projectToScreen(
+      scratch,
+      camera,
+      viewportWidth,
+      viewportHeight,
+      pixelRatio,
+    );
   }
 
   // FrameContext is the per-frame bundle FieldScene passes on each tick.

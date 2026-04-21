@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { BLOB_HOTSPOT_COUNT } from "@/features/field";
+import { fieldBlobHotspots } from "./field-hotspot-overlay";
 
 // Static 41-node hotspot pool. Mirrors Maze's index.html:87-149 where the
 // full set of `.afr-hotspot` divs is pre-declared inside `.afr-stage`.
@@ -30,6 +31,20 @@ export interface FieldHotspotPoolProps {
 
 function samplePoolDelayMs(index: number): number {
   return (index * 137) % 2000;
+}
+
+// Compose a human-readable aria-label from the overlay data. Hotspots
+// that only exist as decorative red dots (no title/badges) return null
+// so the node stays unlabeled. Consumers treat null as "skip".
+function composeHotspotAriaLabel(index: number): string | null {
+  const hotspot = fieldBlobHotspots[index];
+  if (!hotspot) return null;
+  const title = hotspot.title.trim();
+  const badgeLabel = hotspot.badges.join(", ");
+  if (!title && !badgeLabel) return null;
+  if (!title) return badgeLabel;
+  if (!badgeLabel) return title;
+  return `${title}: ${badgeLabel}`;
 }
 
 export function FieldHotspotPool({
@@ -68,6 +83,9 @@ export function FieldHotspotPool({
         const slotStyle: CSSProperties = {
           ["--afr-delay" as string]: `${slot.delayMs}ms`,
         };
+        const ariaLabel = slot.hasCard
+          ? composeHotspotAriaLabel(slot.index)
+          : null;
         return (
           <div
             key={slot.index}
@@ -89,6 +107,9 @@ export function FieldHotspotPool({
                   cardRefsRef.current[slot.index] = node;
                 }}
                 className="afr-hotspot__card-seat"
+                {...(ariaLabel
+                  ? { role: "group", "aria-label": ariaLabel }
+                  : {})}
               >
                 {renderCard(slot.index)}
               </div>

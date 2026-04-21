@@ -1,9 +1,10 @@
-import gsap from "gsap";
+import { gsap } from "gsap";
 import { Camera, Color, PerspectiveCamera, Vector3 } from "three";
 import { DECAY, lerpFactor } from "@/lib/motion3d";
 import type { FieldPointSource } from "../asset/point-source-types";
 import { LANDING_RAINBOW_RGB } from "../scene/accent-palette";
 import { resolveLandingBlobChapterState } from "../scroll/chapters/landing-blob-chapter";
+import { projectPointSourceVertex } from "../overlay/field-anchor-projector";
 import {
   FieldController,
   type FieldControllerInit,
@@ -17,7 +18,6 @@ import {
   getBlobHotspotPulseEnvelope,
   getPointColorCss,
   hotspotPhaseUsesCycle,
-  projectBlobHotspotCandidate,
   sampleBlobHotspotDelayMs,
   selectBlobHotspotCandidate,
   type FieldHotspotFrame,
@@ -197,7 +197,8 @@ export class BlobController extends FieldController {
       ? shader.sizeMobile ?? shader.size
       : shader.size;
 
-    uniforms.uTime.value = elapsedSec * timeFactor;
+    uniforms.uTime.value = elapsedSec;
+    uniforms.uTimeFactor.value = timeFactor;
     uniforms.uPixelRatio.value = pixelRatio;
     uniforms.uIsMobile.value = isMobile;
     uniforms.uScale.value = 1 / baseScale;
@@ -472,7 +473,7 @@ export class BlobController extends FieldController {
           : 1;
       if (phaseKey === "dot" && cycleEnvelope <= 0.001) continue;
 
-      let projected = projectBlobHotspotCandidate({
+      let projected = projectPointSourceVertex({
         blobModel,
         camera,
         candidateIndex: runtime.candidateIndex,
@@ -507,7 +508,7 @@ export class BlobController extends FieldController {
           });
           runtime.candidateIndex = reseeded?.candidateIndex ?? null;
           if (runtime.candidateIndex != null) {
-            projected = projectBlobHotspotCandidate({
+            projected = projectPointSourceVertex({
               blobModel,
               camera,
               candidateIndex: runtime.candidateIndex,

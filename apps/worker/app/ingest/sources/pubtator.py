@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import datetime
 import gzip
+import io
 import logging
 from pathlib import Path
 import tarfile
@@ -26,6 +27,7 @@ from app.ingest.models import FamilyPlan, IngestPlan, StartReleaseRequest
 
 
 LOGGER = logging.getLogger(__name__)
+_PROGRESS_REPORT_LINE_INTERVAL = 1_000
 
 
 ENTITY_TYPE_CODES = {
@@ -132,13 +134,14 @@ def stream_family(
     file_path: Path,
     *,
     max_records_per_file: int | None = None,
+    on_progress: Callable[[int], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
     if family_name == "biocxml":
-        return _stream_biocxml(file_path, max_records_per_file)
+        return _stream_biocxml(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "bioconcepts":
-        return _stream_bioconcepts(file_path, max_records_per_file)
+        return _stream_bioconcepts(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "relations":
-        return _stream_relations(file_path, max_records_per_file)
+        return _stream_relations(file_path, max_records_per_file, on_progress=on_progress)
     raise SourceSchemaDrift(f"unsupported PubTator family {family_name}")
 
 
@@ -149,15 +152,25 @@ async def promote_family(
     source_release_id: int,
     ingest_run_id: UUID,
 ) -> None:
-    del plan, ingest_run_id
+    del plan
     if family_name in {"biocxml", "bioconcepts"}:
         resource_code = ENTITY_RESOURCE_BIOCXML if family_name == "biocxml" else ENTITY_RESOURCE_BIOCONCEPTS
-        await _backfill_entity_stage_corpus_ids(connection, source_release_id, resource_code)
+        await _backfill_entity_stage_corpus_ids(
+            connection,
+            source_release_id,
+            resource_code,
+            ingest_run_id=ingest_run_id,
+        )
     if family_name in {"biocxml", "relations"}:
         relation_source = (
             RELATION_SOURCE_BIOCXML if family_name == "biocxml" else RELATION_SOURCE_TSV
         )
-        await _backfill_relation_stage_corpus_ids(connection, source_release_id, relation_source)
+        await _backfill_relation_stage_corpus_ids(
+            connection,
+            source_release_id,
+            relation_source,
+            ingest_run_id=ingest_run_id,
+        )
 
 
 def _target_tables_for_family(family_name: str) -> tuple[str, ...]:
@@ -172,98 +185,111 @@ def _target_tables_for_family(family_name: str) -> tuple[str, ...]:
     return mapping[family_name]
 
 
-def _stream_biocxml(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
+def _stream_biocxml(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
     yielded = 0
     skipped = Counter[str]()
     try:
-        with tarfile.open(path, mode="r|gz") as archive:
-            for member in archive:
-                if not member.isfile() or not member.name.lower().endswith(".xml"):
-                    continue
-                handle = archive.extractfile(member)
-                if handle is None:
-                    continue
-                for _, document in etree.iterparse(handle, events=("end",), tag="document"):
-                    try:
-                        pmid_text = (document.findtext("id") or "").strip()
-                        if not pmid_text.isdigit():
-                            skipped["missing_pmid"] += 1
+        with path.open("rb") as raw_handle:
+            with gzip.GzipFile(fileobj=raw_handle, mode="rb") as compressed_handle:
+                with tarfile.open(fileobj=compressed_handle, mode="r|") as archive:
+                    for member in archive:
+                        if on_progress is not None:
+                            on_progress(raw_handle.tell())
+                        if not member.isfile() or not member.name.lower().endswith(".xml"):
                             continue
-                        pmid = int(pmid_text)
-                        annotation_index: dict[str, tuple[str, int]] = {}
-                        seen_entities: set[tuple[int, int, str, int]] = set()
-                        for passage in document.findall("passage"):
-                            for annotation in passage.findall("annotation"):
-                                infons = _extract_infons(annotation)
-                                entity_type = ENTITY_TYPE_CODES.get((infons.get("type") or "").strip())
-                                mention_text = (annotation.findtext("text") or "").strip()
-                                concept_id = _extract_pubtator_identifier(annotation, infons)
-                                if entity_type is None or not mention_text or not concept_id:
-                                    skipped["annotation_missing_fields"] += 1
+                        handle = archive.extractfile(member)
+                        if handle is None:
+                            continue
+                        for _, document in etree.iterparse(handle, events=("end",), tag="document"):
+                            try:
+                                if on_progress is not None and yielded % _PROGRESS_REPORT_LINE_INTERVAL == 0:
+                                    on_progress(raw_handle.tell())
+                                pmid_text = (document.findtext("id") or "").strip()
+                                if not pmid_text.isdigit():
+                                    skipped["missing_pmid"] += 1
                                     continue
-                                annotation_ref = _annotation_reference(annotation, infons)
-                                if annotation_ref:
-                                    annotation_index.setdefault(annotation_ref, (concept_id, entity_type))
-                                locations = annotation.findall("location")
-                                if not locations:
-                                    skipped["annotation_missing_location"] += 1
-                                    continue
-                                for location in locations:
-                                    span = _location_span(location)
-                                    if span is None:
-                                        skipped["annotation_bad_offset"] += 1
-                                        continue
-                                    start_offset, end_offset = span
-                                    entity_key = (
-                                        start_offset,
-                                        end_offset,
-                                        concept_id,
-                                        ENTITY_RESOURCE_BIOCXML,
+                                pmid = int(pmid_text)
+                                annotation_index: dict[str, tuple[str, int]] = {}
+                                seen_entities: set[tuple[int, int, str, int]] = set()
+                                for passage in document.findall("passage"):
+                                    for annotation in passage.findall("annotation"):
+                                        infons = _extract_infons(annotation)
+                                        entity_type = ENTITY_TYPE_CODES.get((infons.get("type") or "").strip())
+                                        mention_text = (annotation.findtext("text") or "").strip()
+                                        concept_id = _extract_pubtator_identifier(annotation, infons)
+                                        if entity_type is None or not mention_text or not concept_id:
+                                            skipped["annotation_missing_fields"] += 1
+                                            continue
+                                        annotation_ref = _annotation_reference(annotation, infons)
+                                        if annotation_ref:
+                                            annotation_index.setdefault(annotation_ref, (concept_id, entity_type))
+                                        locations = annotation.findall("location")
+                                        if not locations:
+                                            skipped["annotation_missing_location"] += 1
+                                            continue
+                                        for location in locations:
+                                            span = _location_span(location)
+                                            if span is None:
+                                                skipped["annotation_bad_offset"] += 1
+                                                continue
+                                            start_offset, end_offset = span
+                                            entity_key = (
+                                                start_offset,
+                                                end_offset,
+                                                concept_id,
+                                                ENTITY_RESOURCE_BIOCXML,
+                                            )
+                                            if entity_key in seen_entities:
+                                                continue
+                                            seen_entities.add(entity_key)
+                                            yield {
+                                                "row_kind": "entity",
+                                                "pmid": pmid,
+                                                "start_offset": start_offset,
+                                                "end_offset": end_offset,
+                                                "entity_type": entity_type,
+                                                "mention_text": mention_text,
+                                                "concept_id_raw": concept_id,
+                                                "resource": ENTITY_RESOURCE_BIOCXML,
+                                            }
+                                            yielded += 1
+                                            if max_records is not None and yielded >= max_records:
+                                                return
+
+                                seen_relations: set[tuple[int, int, str, str, int]] = set()
+                                for relation in _iter_relation_elements(document):
+                                    relation_row = _relation_row_from_biocxml(
+                                        relation,
+                                        pmid=pmid,
+                                        annotation_index=annotation_index,
                                     )
-                                    if entity_key in seen_entities:
+                                    if relation_row is None:
+                                        skipped["relation_unresolved"] += 1
                                         continue
-                                    seen_entities.add(entity_key)
-                                    yield {
-                                        "row_kind": "entity",
-                                        "pmid": pmid,
-                                        "start_offset": start_offset,
-                                        "end_offset": end_offset,
-                                        "entity_type": entity_type,
-                                        "mention_text": mention_text,
-                                        "concept_id_raw": concept_id,
-                                        "resource": ENTITY_RESOURCE_BIOCXML,
-                                    }
+                                    relation_key = (
+                                        relation_row["pmid"],
+                                        relation_row["relation_type"],
+                                        relation_row["subject_entity_id"],
+                                        relation_row["object_entity_id"],
+                                        relation_row["relation_source"],
+                                    )
+                                    if relation_key in seen_relations:
+                                        continue
+                                    seen_relations.add(relation_key)
+                                    yield relation_row
                                     yielded += 1
                                     if max_records is not None and yielded >= max_records:
                                         return
-
-                        seen_relations: set[tuple[int, int, str, str, int]] = set()
-                        for relation in _iter_relation_elements(document):
-                            relation_row = _relation_row_from_biocxml(
-                                relation,
-                                pmid=pmid,
-                                annotation_index=annotation_index,
-                            )
-                            if relation_row is None:
-                                skipped["relation_unresolved"] += 1
-                                continue
-                            relation_key = (
-                                relation_row["pmid"],
-                                relation_row["relation_type"],
-                                relation_row["subject_entity_id"],
-                                relation_row["object_entity_id"],
-                                relation_row["relation_source"],
-                            )
-                            if relation_key in seen_relations:
-                                continue
-                            seen_relations.add(relation_key)
-                            yield relation_row
-                            yielded += 1
-                            if max_records is not None and yielded >= max_records:
-                                return
-                    finally:
-                        _clear_parsed_element(document)
+                            finally:
+                                _clear_parsed_element(document)
     finally:
+        if on_progress is not None:
+            on_progress(path.stat().st_size)
         if skipped:
             summary = ", ".join(
                 f"{key}={value}" for key, value in sorted(skipped.items()) if value > 0
@@ -271,50 +297,72 @@ def _stream_biocxml(path: Path, max_records: int | None) -> Iterator[dict[str, A
             LOGGER.warning("PubTator BioCXML dropped source rows for %s: %s", path.name, summary)
 
 
-def _stream_bioconcepts(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    with gzip.open(path, "rt") as handle:
-        for index, line in enumerate(handle):
-            if max_records is not None and index >= max_records:
-                return
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 5 or not parts[0].isdigit():
-                continue
-            entity_type = ENTITY_TYPE_CODES.get(parts[1])
-            if entity_type is None:
-                continue
-            yield {
-                "pmid": int(parts[0]),
-                "start_offset": index,
-                "end_offset": index + 1,
-                "entity_type": entity_type,
-                "mention_text": parts[3],
-                "concept_id_raw": parts[2],
-                "resource": ENTITY_RESOURCE_BIOCONCEPTS,
-            }
+def _stream_bioconcepts(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    with path.open("rb") as raw_handle:
+        with gzip.GzipFile(fileobj=raw_handle, mode="rb") as compressed_handle:
+            with io.TextIOWrapper(compressed_handle, encoding="utf-8") as handle:
+                for index, line in enumerate(handle):
+                    if on_progress is not None and index % _PROGRESS_REPORT_LINE_INTERVAL == 0:
+                        on_progress(raw_handle.tell())
+                    if max_records is not None and index >= max_records:
+                        return
+                    parts = line.rstrip("\n").split("\t")
+                    if len(parts) < 5 or not parts[0].isdigit():
+                        continue
+                    entity_type = ENTITY_TYPE_CODES.get(parts[1])
+                    if entity_type is None:
+                        continue
+                    yield {
+                        "pmid": int(parts[0]),
+                        "start_offset": index,
+                        "end_offset": index + 1,
+                        "entity_type": entity_type,
+                        "mention_text": parts[3],
+                        "concept_id_raw": parts[2],
+                        "resource": ENTITY_RESOURCE_BIOCONCEPTS,
+                    }
+        if on_progress is not None:
+            on_progress(path.stat().st_size)
 
 
-def _stream_relations(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    with gzip.open(path, "rt") as handle:
-        for index, line in enumerate(handle):
-            if max_records is not None and index >= max_records:
-                return
-            parts = line.rstrip("\n").split("\t")
-            if len(parts) < 4 or not parts[0].isdigit():
-                continue
-            relation_type = RELATION_TYPE_CODES.get(parts[1])
-            if relation_type is None:
-                continue
-            subject_type = _infer_entity_type(parts[2])
-            object_type = _infer_entity_type(parts[3])
-            yield {
-                "pmid": int(parts[0]),
-                "relation_type": relation_type,
-                "subject_entity_id": parts[2],
-                "object_entity_id": parts[3],
-                "subject_type": subject_type,
-                "object_type": object_type,
-                "relation_source": RELATION_SOURCE_TSV,
-            }
+def _stream_relations(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    with path.open("rb") as raw_handle:
+        with gzip.GzipFile(fileobj=raw_handle, mode="rb") as compressed_handle:
+            with io.TextIOWrapper(compressed_handle, encoding="utf-8") as handle:
+                for index, line in enumerate(handle):
+                    if on_progress is not None and index % _PROGRESS_REPORT_LINE_INTERVAL == 0:
+                        on_progress(raw_handle.tell())
+                    if max_records is not None and index >= max_records:
+                        return
+                    parts = line.rstrip("\n").split("\t")
+                    if len(parts) < 4 or not parts[0].isdigit():
+                        continue
+                    relation_type = RELATION_TYPE_CODES.get(parts[1])
+                    if relation_type is None:
+                        continue
+                    subject_type = _infer_entity_type(parts[2])
+                    object_type = _infer_entity_type(parts[3])
+                    yield {
+                        "pmid": int(parts[0]),
+                        "relation_type": relation_type,
+                        "subject_entity_id": parts[2],
+                        "object_entity_id": parts[3],
+                        "subject_type": subject_type,
+                        "object_type": object_type,
+                        "relation_source": RELATION_SOURCE_TSV,
+                    }
+        if on_progress is not None:
+            on_progress(path.stat().st_size)
 
 
 def _extract_pubtator_identifier(annotation: etree._Element, infons: dict[str, str]) -> str | None:
@@ -329,6 +377,8 @@ async def _backfill_entity_stage_corpus_ids(
     connection: asyncpg.Connection,
     source_release_id: int,
     resource_code: int,
+    *,
+    ingest_run_id: UUID,
 ) -> None:
     await connection.execute(
         """
@@ -337,11 +387,13 @@ async def _backfill_entity_stage_corpus_ids(
         FROM solemd.papers papers
         WHERE stage.source_release_id = $1
           AND stage.resource = $2
+          AND stage.last_seen_run_id = $3
           AND stage.pmid = papers.pmid
           AND stage.corpus_id IS DISTINCT FROM papers.corpus_id
         """,
         source_release_id,
         resource_code,
+        ingest_run_id,
     )
 
 
@@ -349,6 +401,8 @@ async def _backfill_relation_stage_corpus_ids(
     connection: asyncpg.Connection,
     source_release_id: int,
     relation_source_code: int,
+    *,
+    ingest_run_id: UUID,
 ) -> None:
     await connection.execute(
         """
@@ -357,11 +411,13 @@ async def _backfill_relation_stage_corpus_ids(
         FROM solemd.papers papers
         WHERE stage.source_release_id = $1
           AND stage.relation_source = $2
+          AND stage.last_seen_run_id = $3
           AND stage.pmid = papers.pmid
           AND stage.corpus_id IS DISTINCT FROM papers.corpus_id
         """,
         source_release_id,
         relation_source_code,
+        ingest_run_id,
     )
 
 

@@ -97,6 +97,40 @@ async def test_active_run_tracker_replaces_previous_phase_state() -> None:
         assert metric_sample_value("worker_active_run_info", indexing_labels) == 1
 
 
+@pytest.mark.asyncio
+async def test_active_run_tracker_clears_labels_when_body_raises() -> None:
+    labels = {
+        "worker_scope": "ingest",
+        "run_kind": "release_ingest",
+        "run_label": "s2:2026-04-21",
+        "phase": "loading",
+        "work_item": "citations",
+        "source_code": "s2",
+        "release_tag": "2026-04-21",
+        "selector_version": "",
+        "wave_policy_key": "",
+        "s2_release_tag": "",
+        "pt3_release_tag": "",
+    }
+
+    class SyntheticFailure(RuntimeError):
+        pass
+
+    with pytest.raises(SyntheticFailure):
+        async with track_active_worker_run(
+            worker_scope="ingest",
+            run_kind="release_ingest",
+            run_label="s2:2026-04-21",
+            source_code="s2",
+            release_tag="2026-04-21",
+        ) as tracker:
+            tracker.set_state(phase="loading", work_item="citations")
+            assert metric_sample_value("worker_active_run_info", labels) == 1
+            raise SyntheticFailure("boom")
+
+    assert metric_sample_value("worker_active_run_info", labels) == 0
+
+
 def test_corpus_selection_materialized_rows_counter_tracks_surface_labels() -> None:
     before_value = metric_sample_value(
         "corpus_selection_materialized_rows_total",

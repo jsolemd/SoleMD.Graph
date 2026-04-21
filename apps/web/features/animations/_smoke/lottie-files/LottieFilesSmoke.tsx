@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import Lottie from "lottie-react";
-import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { canvasReveal } from "@/lib/motion";
 
 type LottieJson = Record<string, unknown>;

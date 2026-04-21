@@ -14,7 +14,7 @@
  * pinned behavior is skipped and steps lay out vertically.
  */
 import { useEffect, useRef } from "react";
-import { useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 
 const STEPS = [
   { label: "Step 1", note: "TODO: initial state" },

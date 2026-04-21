@@ -9,6 +9,15 @@ import type {
   FieldStageItemState,
 } from "../scene/visual-presets";
 import type { FieldSectionManifestEntry } from "../surfaces/FieldLandingPage/field-landing-content";
+import type { FieldSceneStore } from "./field-scene-store";
+
+export {
+  getFieldChapterProgress,
+  getFieldChapterState,
+  getFieldChapterVisibility,
+  getFieldChapterProgressBucket,
+  isFieldChapterActive,
+} from "./scene-selectors";
 
 interface FieldScrollEntryState {
   active: boolean;
@@ -21,6 +30,7 @@ export interface BindFieldScrollStateOptions {
   heroSectionId: string;
   manifest: readonly FieldSectionManifestEntry[];
   reducedMotion: boolean;
+  sceneStore: FieldSceneStore;
   sceneStateRef: MutableRefObject<FieldSceneState>;
 }
 
@@ -87,26 +97,15 @@ function updateChapterState(
   chapter.visibility = visibility;
 }
 
-export function getFieldChapterProgress(
-  sceneState: FieldSceneState,
-  sectionId: string,
-) {
-  return sceneState.chapters[sectionId]?.progress ?? 0;
-}
-
-export function isFieldChapterActive(
-  sceneState: FieldSceneState,
-  sectionId: string,
-) {
-  return sceneState.chapters[sectionId]?.isActive ?? false;
-}
-
 export function bindFieldScrollState({
   heroSectionId,
   manifest,
   reducedMotion,
+  sceneStore,
   sceneStateRef,
 }: BindFieldScrollStateOptions): () => void {
+  sceneStore.setCurrentState(sceneStateRef.current);
+
   const triggers: ScrollTrigger[] = [];
   const entryStates = manifest.map<FieldScrollEntryState>((entry) => ({
     active: false,
@@ -131,11 +130,14 @@ export function bindFieldScrollState({
       chapter.progress = 0;
       chapter.visibility = 0;
     }
+    sceneStore.notify();
   };
 
   if (reducedMotion) {
     syncReducedMotionState();
-    return () => {};
+    return () => {
+      sceneStore.setCurrentState(null);
+    };
   }
 
   manifest.forEach((entry, index) => {
@@ -166,6 +168,7 @@ export function bindFieldScrollState({
           entryState.visibility,
         );
         recomputeStageItems(sceneState, entryStates);
+        sceneStore.notify();
       },
       onEnter: () => {
         const entryState = entryStates[index]!;
@@ -175,6 +178,7 @@ export function bindFieldScrollState({
         if (!sceneState) return;
         updateChapterState(sceneState, entry.sectionId, true, entryState.progress, 1);
         recomputeStageItems(sceneState, entryStates);
+        sceneStore.notify();
       },
       onEnterBack: () => {
         const entryState = entryStates[index]!;
@@ -184,6 +188,7 @@ export function bindFieldScrollState({
         if (!sceneState) return;
         updateChapterState(sceneState, entry.sectionId, true, entryState.progress, 1);
         recomputeStageItems(sceneState, entryStates);
+        sceneStore.notify();
       },
       onLeave: () => {
         const entryState = entryStates[index]!;
@@ -193,6 +198,7 @@ export function bindFieldScrollState({
         if (!sceneState) return;
         updateChapterState(sceneState, entry.sectionId, false, 1, 0);
         recomputeStageItems(sceneState, entryStates);
+        sceneStore.notify();
       },
       onLeaveBack: () => {
         const entryState = entryStates[index]!;
@@ -202,6 +208,7 @@ export function bindFieldScrollState({
         if (!sceneState) return;
         updateChapterState(sceneState, entry.sectionId, false, 0, 0);
         recomputeStageItems(sceneState, entryStates);
+        sceneStore.notify();
       },
     });
     triggers.push(trigger);
@@ -230,5 +237,6 @@ export function bindFieldScrollState({
 
   return () => {
     for (const trigger of triggers) trigger.kill();
+    sceneStore.setCurrentState(null);
   };
 }

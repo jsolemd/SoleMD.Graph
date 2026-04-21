@@ -5,6 +5,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
 import type { FieldController } from "../../controller/FieldController";
 import { createFieldSceneState } from "../../scene/visual-presets";
+import { createFieldSceneStore } from "../../scroll/field-scene-store";
 import {
   FixedStageManagerProvider,
   useFixedStageManager,
@@ -77,6 +78,7 @@ describe("FixedStageManagerProvider", () => {
     const sceneStateRef = {
       current: createFieldSceneState(),
     };
+    const sceneStore = createFieldSceneStore(sceneStateRef.current);
 
     render(
       <FixedStageManagerProvider
@@ -94,6 +96,7 @@ describe("FixedStageManagerProvider", () => {
           },
         ]}
         reducedMotion={false}
+        sceneStore={sceneStore}
         sceneStateRef={sceneStateRef}
       >
         <StageProbe

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useComputedColorScheme } from "@mantine/core";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });

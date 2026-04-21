@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import date, datetime
 import gzip
 import hashlib
+import io
 import json
 import re
 from pathlib import Path
@@ -38,6 +39,9 @@ from app.ingest.manifest_registry import (
     resolve_release_dir,
 )
 from app.ingest.models import FamilyPlan, IngestPlan, StartReleaseRequest
+
+
+_PROGRESS_REPORT_LINE_INTERVAL = 1_000
 
 
 def build_plan(settings: Settings, request: StartReleaseRequest) -> IngestPlan:
@@ -105,21 +109,22 @@ def stream_family(
     file_path: Path,
     *,
     max_records_per_file: int | None = None,
+    on_progress: Callable[[int], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
     if family_name == "publication_venues":
-        return _stream_publication_venues(file_path, max_records_per_file)
+        return _stream_publication_venues(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "authors":
-        return _stream_authors(file_path, max_records_per_file)
+        return _stream_authors(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "papers":
-        return _stream_papers(file_path, max_records_per_file)
+        return _stream_papers(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "abstracts":
-        return _stream_abstracts(file_path, max_records_per_file)
+        return _stream_abstracts(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "tldrs":
-        return _stream_tldrs(file_path, max_records_per_file)
+        return _stream_tldrs(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "citations":
-        return _stream_citations(file_path, max_records_per_file)
+        return _stream_citations(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "s2orc_v2":
-        return _stream_s2orc_documents(file_path, max_records_per_file)
+        return _stream_s2orc_documents(file_path, max_records_per_file, on_progress=on_progress)
     raise SourceSchemaDrift(f"unsupported S2 family {family_name}")
 
 
@@ -130,9 +135,13 @@ async def promote_family(
     source_release_id: int,
     ingest_run_id: UUID,
 ) -> None:
-    del plan, ingest_run_id
+    del plan
     if family_name == "papers":
-        await _backfill_selected_corpus_ids(connection, source_release_id)
+        await _backfill_selected_corpus_ids(
+            connection,
+            source_release_id,
+            ingest_run_id=ingest_run_id,
+        )
         return
 
 
@@ -153,19 +162,35 @@ def _target_tables_for_family(family_name: str) -> tuple[str, ...]:
     return mapping[family_name]
 
 
-def _stream_jsonl(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    with gzip.open(path, "rt") as handle:
-        for index, line in enumerate(handle):
-            if max_records is not None and index >= max_records:
-                return
-            payload = json.loads(line)
-            if not isinstance(payload, dict):
-                raise SourceSchemaDrift(f"expected object row in {path}")
-            yield payload
+def _stream_jsonl(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    with path.open("rb") as raw_handle:
+        with gzip.GzipFile(fileobj=raw_handle, mode="rb") as compressed_handle:
+            with io.TextIOWrapper(compressed_handle, encoding="utf-8") as handle:
+                for index, line in enumerate(handle):
+                    if on_progress is not None and index % _PROGRESS_REPORT_LINE_INTERVAL == 0:
+                        on_progress(raw_handle.tell())
+                    if max_records is not None and index >= max_records:
+                        return
+                    payload = json.loads(line)
+                    if not isinstance(payload, dict):
+                        raise SourceSchemaDrift(f"expected object row in {path}")
+                    yield payload
+        if on_progress is not None:
+            on_progress(path.stat().st_size)
 
 
-def _stream_publication_venues(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    for payload in _stream_jsonl(path, max_records):
+def _stream_publication_venues(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    for payload in _stream_jsonl(path, max_records, on_progress=on_progress):
         if "id" not in payload or "name" not in payload:
             raise SourceSchemaDrift(f"publication-venues row missing required keys in {path}")
         yield {
@@ -175,8 +200,13 @@ def _stream_publication_venues(path: Path, max_records: int | None) -> Iterator[
         }
 
 
-def _stream_authors(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    for payload in _stream_jsonl(path, max_records):
+def _stream_authors(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    for payload in _stream_jsonl(path, max_records, on_progress=on_progress):
         if "authorid" not in payload or "name" not in payload:
             raise SourceSchemaDrift(f"authors row missing required keys in {path}")
         external_ids = payload.get("externalids") or {}
@@ -187,8 +217,13 @@ def _stream_authors(path: Path, max_records: int | None) -> Iterator[dict[str, A
         }
 
 
-def _stream_papers(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    for payload in _stream_jsonl(path, max_records):
+def _stream_papers(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    for payload in _stream_jsonl(path, max_records, on_progress=on_progress):
         if "corpusid" not in payload or "title" not in payload:
             raise SourceSchemaDrift(f"papers row missing required keys in {path}")
         paper_id = str(payload["corpusid"])
@@ -252,22 +287,37 @@ def _stream_papers(path: Path, max_records: int | None) -> Iterator[dict[str, An
         }
 
 
-def _stream_abstracts(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    for payload in _stream_jsonl(path, max_records):
+def _stream_abstracts(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    for payload in _stream_jsonl(path, max_records, on_progress=on_progress):
         if "corpusid" not in payload or "abstract" not in payload:
             raise SourceSchemaDrift(f"abstracts row missing required keys in {path}")
         yield {"paper_id": str(payload["corpusid"]), "abstract": _coerce_text(payload.get("abstract"))}
 
 
-def _stream_tldrs(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    for payload in _stream_jsonl(path, max_records):
+def _stream_tldrs(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    for payload in _stream_jsonl(path, max_records, on_progress=on_progress):
         if "corpusid" not in payload or "text" not in payload:
             raise SourceSchemaDrift(f"tldrs row missing required keys in {path}")
         yield {"paper_id": str(payload["corpusid"]), "tldr": _coerce_text(payload.get("text"))}
 
 
-def _stream_citations(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    for ordinal, payload in enumerate(_stream_jsonl(path, max_records)):
+def _stream_citations(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    for ordinal, payload in enumerate(_stream_jsonl(path, max_records, on_progress=on_progress)):
         if "citingcorpusid" not in payload or "citedcorpusid" not in payload:
             raise SourceSchemaDrift(f"citations row missing required keys in {path}")
         intents = _normalize_intents(payload.get("intents"))
@@ -294,8 +344,13 @@ def _stream_citations(path: Path, max_records: int | None) -> Iterator[dict[str,
         }
 
 
-def _stream_s2orc_documents(path: Path, max_records: int | None) -> Iterator[dict[str, Any]]:
-    for payload in _stream_jsonl(path, max_records):
+def _stream_s2orc_documents(
+    path: Path,
+    max_records: int | None,
+    *,
+    on_progress: Callable[[int], None] | None = None,
+) -> Iterator[dict[str, Any]]:
+    for payload in _stream_jsonl(path, max_records, on_progress=on_progress):
         if "corpusid" not in payload or "body" not in payload:
             raise SourceSchemaDrift(f"s2orc_v2 row missing required keys in {path}")
         yield _parse_s2orc_document(payload)
@@ -431,6 +486,8 @@ def _parse_s2orc_document(payload: dict[str, Any]) -> dict[str, Any]:
 async def _backfill_selected_corpus_ids(
     connection: asyncpg.Connection,
     source_release_id: int,
+    *,
+    ingest_run_id: UUID,
 ) -> None:
     await connection.execute(
         """
@@ -438,10 +495,12 @@ async def _backfill_selected_corpus_ids(
         SET corpus_id = papers.corpus_id
         FROM solemd.papers papers
         WHERE raw.source_release_id = $1
+          AND raw.last_seen_run_id = $2
           AND raw.paper_id = papers.s2_paper_id
           AND raw.corpus_id IS DISTINCT FROM papers.corpus_id
         """,
         source_release_id,
+        ingest_run_id,
     )
 
 

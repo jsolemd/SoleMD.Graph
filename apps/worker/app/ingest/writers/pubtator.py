@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from uuid import UUID
 
@@ -57,6 +57,8 @@ async def load_family(
     ingest_run_id: UUID,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     family = next(item for item in plan.families if item.family == family_name)
     if family_name == "biocxml":
@@ -69,6 +71,8 @@ async def load_family(
             ingest_run_id,
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     if family_name == "bioconcepts":
         return await _load_entity_family(
@@ -81,6 +85,8 @@ async def load_family(
             ingest_run_id,
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     if family_name == "relations":
         return await _load_relations_family(
@@ -92,6 +98,8 @@ async def load_family(
             ingest_run_id,
             on_file_completed=on_file_completed,
             on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
         )
     raise ValueError(f"unsupported PubTator family {family_name}")
 
@@ -106,6 +114,8 @@ async def _load_biocxml_family(
     *,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     await _reset_release_resource(
         pool,
@@ -130,12 +140,18 @@ async def _load_biocxml_family(
             written = 0
             async for row_batch in iter_file_batches(
                 file_path,
-                row_iterator=lambda path: pubtator.stream_family(
+                row_iterator=lambda path, on_progress: pubtator.stream_family(
                     "biocxml",
                     path,
                     max_records_per_file=request.max_records_per_file,
+                    on_progress=on_progress,
                 ),
                 batch_size=settings.ingest_copy_batch_rows,
+                on_input_progress=(
+                    None
+                    if on_input_progress is None
+                    else lambda bytes_read: on_input_progress(file_path, bytes_read)
+                ),
             ):
                 entity_batch = [
                     (
@@ -175,6 +191,8 @@ async def _load_biocxml_family(
                         written += batch_written
                         if on_rows_written is not None and batch_written:
                             on_rows_written(file_path, batch_written)
+                        if on_batch_processed is not None and batch_written:
+                            await on_batch_processed(file_path, batch_written)
                     if relation_batch:
                         batch_written = await _merge_relation_stage_batch(
                             connection,
@@ -183,6 +201,8 @@ async def _load_biocxml_family(
                         written += batch_written
                         if on_rows_written is not None and batch_written:
                             on_rows_written(file_path, batch_written)
+                        if on_batch_processed is not None and batch_written:
+                            await on_batch_processed(file_path, batch_written)
             if on_file_completed is not None:
                 on_file_completed(file_path, written)
             return written
@@ -207,6 +227,8 @@ async def _load_entity_family(
     *,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     resource = (
         _BIOCXML_RESOURCE_CODE if family_name == "biocxml" else _BIOCONCEPTS_RESOURCE_CODE
@@ -233,11 +255,12 @@ async def _load_entity_family(
             ingest_run_id,
         )
 
-    def row_iterator(file_path):
+    def row_iterator(file_path, on_progress):
         return pubtator.stream_family(
             family_name,
             file_path,
             max_records_per_file=request.max_records_per_file,
+            on_progress=on_progress,
         )
 
     row_count = await _copy_stage_files_concurrently(
@@ -247,6 +270,8 @@ async def _load_entity_family(
         row_to_tuple=row_to_tuple,
         on_file_completed=on_file_completed,
         on_rows_written=on_rows_written,
+        on_input_progress=on_input_progress,
+        on_batch_processed=on_batch_processed,
         batch_size=settings.ingest_copy_batch_rows,
         concurrency=settings.ingest_max_concurrent_files,
         merge_batch=_merge_entity_stage_batch,
@@ -264,6 +289,8 @@ async def _load_relations_family(
     *,
     on_file_completed: Callable[[Path, int], None] | None = None,
     on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     await _reset_release_relation_source(
         pool,
@@ -287,11 +314,12 @@ async def _load_relations_family(
             ingest_run_id,
         )
 
-    def row_iterator(file_path):
+    def row_iterator(file_path, on_progress):
         return pubtator.stream_family(
             "relations",
             file_path,
             max_records_per_file=request.max_records_per_file,
+            on_progress=on_progress,
         )
 
     row_count = await _copy_stage_files_concurrently(
@@ -301,6 +329,8 @@ async def _load_relations_family(
         row_to_tuple=row_to_tuple,
         on_file_completed=on_file_completed,
         on_rows_written=on_rows_written,
+        on_input_progress=on_input_progress,
+        on_batch_processed=on_batch_processed,
         batch_size=settings.ingest_copy_batch_rows,
         concurrency=settings.ingest_max_concurrent_files,
         merge_batch=_merge_relation_stage_batch,
@@ -312,10 +342,12 @@ async def _copy_stage_files_concurrently(
     pool: asyncpg.Pool,
     file_paths: list[Path],
     *,
-    row_iterator: Callable[[Path], object],
+    row_iterator: Callable[[Path, Callable[[int], None] | None], object],
     row_to_tuple: Callable[[dict], tuple],
     on_file_completed: Callable[[Path, int], None] | None,
     on_rows_written: Callable[[Path, int], None] | None,
+    on_input_progress: Callable[[Path, int], None] | None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None,
     batch_size: int,
     concurrency: int,
     merge_batch: Callable[[asyncpg.Connection, list[tuple]], asyncio.Future | object],
@@ -333,6 +365,11 @@ async def _copy_stage_files_concurrently(
                 file_path,
                 row_iterator=row_iterator,
                 batch_size=batch_size,
+                on_input_progress=(
+                    None
+                    if on_input_progress is None
+                    else lambda bytes_read: on_input_progress(file_path, bytes_read)
+                ),
             ):
                 batch = [row_to_tuple(row) for row in row_batch]
                 async with connection.transaction():
@@ -340,6 +377,8 @@ async def _copy_stage_files_concurrently(
                 written += batch_written
                 if on_rows_written is not None and batch_written:
                     on_rows_written(file_path, batch_written)
+                if on_batch_processed is not None and batch_written:
+                    await on_batch_processed(file_path, batch_written)
             if on_file_completed is not None:
                 on_file_completed(file_path, written)
             return written
@@ -437,6 +476,13 @@ async def _merge_entity_stage_batch(
                 EXCLUDED.corpus_id
             ),
             last_seen_run_id = EXCLUDED.last_seen_run_id
+        WHERE pubtator.entity_annotations_stage.entity_type IS DISTINCT FROM EXCLUDED.entity_type
+           OR pubtator.entity_annotations_stage.mention_text IS DISTINCT FROM EXCLUDED.mention_text
+           OR pubtator.entity_annotations_stage.corpus_id IS DISTINCT FROM COALESCE(
+                pubtator.entity_annotations_stage.corpus_id,
+                EXCLUDED.corpus_id
+            )
+           OR pubtator.entity_annotations_stage.last_seen_run_id IS DISTINCT FROM EXCLUDED.last_seen_run_id
         """
     )
     return len(records)
@@ -513,6 +559,13 @@ async def _merge_relation_stage_batch(
                 EXCLUDED.corpus_id
             ),
             last_seen_run_id = EXCLUDED.last_seen_run_id
+        WHERE pubtator.relations_stage.subject_type IS DISTINCT FROM EXCLUDED.subject_type
+           OR pubtator.relations_stage.object_type IS DISTINCT FROM EXCLUDED.object_type
+           OR pubtator.relations_stage.corpus_id IS DISTINCT FROM COALESCE(
+                pubtator.relations_stage.corpus_id,
+                EXCLUDED.corpus_id
+            )
+           OR pubtator.relations_stage.last_seen_run_id IS DISTINCT FROM EXCLUDED.last_seen_run_id
         """
     )
     return len(records)

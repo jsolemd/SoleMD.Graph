@@ -1,0 +1,138 @@
+/*
+ * Chrome surface "auto" mode — descendants keyed off body.is-chrome-pill
+ * mirror the React-state pill/flush transition that used to live in
+ * FieldLandingPage. Fallback path; the @supports branch below drives the
+ * same visual change declaratively from scroll progress.
+ *
+ * Flush (top of page): transparent chrome — bg, shadow, border all hidden,
+ * nested .graph-icon-btn idle bg flattened so icons render as bare glyphs.
+ * Pill (scrolled past CHROME_PILL_THRESHOLD_PX): prompt-surface bg + shadow.
+ *
+ * Mirrors chromeFlushSurfaceStyle / chromePillSurfaceStyle / promptSurfaceStyle
+ * from features/graph/components/panels/PanelShell/panel-styles.ts.
+ */
+
+.chrome-surface-target,
+.chrome-surface-right-target,
+.chrome-toggle-target {
+  background-color: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
+  --graph-control-idle-bg: transparent;
+  transition:
+    background-color 300ms,
+    box-shadow 300ms;
+}
+
+.chrome-surface-right-target {
+  padding: calc(3px * var(--app-density, 0.8));
+}
+
+body.is-chrome-pill .chrome-surface-target,
+body.is-chrome-pill .chrome-surface-right-target {
+  background-color: var(--graph-prompt-bg);
+  box-shadow: var(--graph-prompt-shadow);
+}
+
+/* Solo (non-grouped) theme toggle needs the distinct pill pattern used by
+   pillToggleStyle — its idle bg flips to the prompt bg. */
+body.is-chrome-pill .chrome-toggle-target {
+  --graph-control-idle-bg: var(--graph-prompt-bg);
+  border: calc(1px * var(--app-density, 0.8)) solid transparent;
+  box-shadow: var(--graph-prompt-shadow);
+}
+
+/* Scroll cue — visible at flush (top), fades out as the chrome pill engages. */
+.field-scroll-cue {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+  transition:
+    opacity 140ms ease-out,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+body.is-chrome-pill .field-scroll-cue {
+  opacity: 0;
+  transform: translate3d(0, 10px, 0);
+}
+
+/* Keyframes hoisted to top level. @keyframes inside @supports is valid CSS
+   but some bundler pipelines (Turbopack + Tailwind 4) drop the whole import
+   silently. Keep the @supports block to scoped animation-* property writes
+   only. */
+@keyframes chrome-surface-pill {
+  from {
+    background-color: transparent;
+    box-shadow: none;
+  }
+  to {
+    background-color: var(--graph-prompt-bg);
+    box-shadow: var(--graph-prompt-shadow);
+  }
+}
+
+@keyframes chrome-toggle-pill {
+  from {
+    --graph-control-idle-bg: transparent;
+    box-shadow: none;
+  }
+  to {
+    --graph-control-idle-bg: var(--graph-prompt-bg);
+    box-shadow: var(--graph-prompt-shadow);
+  }
+}
+
+@keyframes field-scroll-cue-fade {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+}
+
+/*
+ * Progressive enhancement: when animation-timeline is supported, drive the
+ * same transition from scroll progress — no body-class class-toggle needed.
+ * 0-24px scroll interpolates flush → pill declaratively. The @supports block
+ * overrides the body-class rules above.
+ *
+ * Timeline source: `scroll(root block)`. The root (html) is the scroll
+ * container in the Next.js layout — body is not. A named timeline on body
+ * would be "inactive" in Chromium, and Chromium commits fill-forwards
+ * animations tied to inactive timelines to their `to` state, which made the
+ * pill appear at scroll=0. Anonymous `scroll(root block)` sidesteps this.
+ */
+@supports (animation-timeline: scroll()) {
+  .chrome-surface-target,
+  .chrome-surface-right-target {
+    animation: chrome-surface-pill 1ms linear forwards;
+    animation-timeline: scroll(root block);
+    animation-range: 0px 24px;
+  }
+
+  .chrome-toggle-target {
+    animation: chrome-toggle-pill 1ms linear forwards;
+    animation-timeline: scroll(root block);
+    animation-range: 0px 24px;
+  }
+
+  .field-scroll-cue {
+    animation: field-scroll-cue-fade 1ms linear forwards;
+    animation-timeline: scroll(root block);
+    animation-range: 0px 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome-surface-target,
+  .chrome-surface-right-target,
+  .chrome-toggle-target,
+  .field-scroll-cue {
+    transition: none;
+    animation: none !important;
+  }
+}

@@ -95,7 +95,7 @@ jest.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
   useDragControls: () => ({ start: jest.fn() }),
   useMotionValue: (v: number) => ({ get: () => v, set: jest.fn() }),
-  useReducedMotionConfig: jest.fn(() => true),
+  useReducedMotion: jest.fn(() => true),
   animate: jest.fn(),
 }));
 
