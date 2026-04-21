@@ -7,7 +7,7 @@ description: |
   modules, building interaction primitives/shells, working on features/learn/,
   or when the user mentions "learn", "module", "interactive lesson", "SHOW don't
   TELL", "interaction shell", "compound component", or specific modules like
-  "ai-for-mds". Companions: /ambient-field-modules (shared stage/background
+  "ai-for-mds". Companions: /module (shared stage/background
   runtime), /clean (engineering review), /animation-authoring (motion details).
   Do NOT use for: animation syntax (use /animation-authoring), graph panels
   (use /graph), styling (use /aesthetic).
@@ -23,7 +23,7 @@ version: 1.1.0
 
 If a learn module uses a persistent stage layer, ambient background, scroll
 chapters, GSAP choreography, or R3F/Three.js rendering, pair this skill with
-`/ambient-field-modules`.
+`/module`.
 
 Do not treat ambient motion as a decorative afterthought attached at the end of
 module work. In SoleMD.Graph, module surfaces and the ambient runtime are meant

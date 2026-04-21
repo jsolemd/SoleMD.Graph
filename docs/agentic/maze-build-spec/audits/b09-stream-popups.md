@@ -226,13 +226,13 @@ required** to land B9 — only additive work.
 
 ## Rebuild checklist for SoleMD
 
-Ordered steps, scoped to SoleMD ambient-field conventions (see SKILL.md
+Ordered steps, scoped to SoleMD field conventions (see SKILL.md
 § "Canonical Layer Ownership" and § "Required Runtime Pieces"). Each step
-names a file under `apps/web/features/ambient-field/` unless otherwise
+names a file under `apps/web/features/field/` unless otherwise
 noted. No code is written here; this is a build-spec input.
 
 1. **Author the marker config module** —
-   `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/stream-point-manifest.ts`.
+   `apps/web/features/field/surfaces/FieldLandingPage/stream-point-manifest.ts`.
    Exports an ordered array of 8 entries, each with:
    `{ id: "kdc"|"function"|"fpt"|"access"|"json"|"fou"|"image"|"framebuffer",
      domOrder: number, scheduleOrder: number, variant: "red"|"default",
@@ -244,22 +244,22 @@ noted. No code is written here; this is a build-spec input.
    multiply the base unit for timeline offset.
 
 2. **Author the rail SVG pair as React components with explicit path ids**
-   — `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/stream-rail-svg.tsx`
+   — `apps/web/features/field/surfaces/FieldLandingPage/stream-rail-svg.tsx`
    exporting `<StreamRailDesktop />` and `<StreamRailMobile />` with each
    `<path>` carrying an `id={pointId}` attribute. Keeps viewBox parity
    (`1204×535` desktop, `345×653` mobile). Imported as static SVG so Next.js
    serializes the geometry at build.
 
 3. **Create the DOM marker primitive** —
-   `apps/web/features/ambient-field/overlay/StreamPoint.tsx` rendering the
+   `apps/web/features/field/overlay/StreamPoint.tsx` rendering the
    `.c-stream__point` equivalent with SoleMD token classes (not Maze class
    names). Accepts `{ variant, popups, hotspotRef }`. Uses the existing
-   `AmbientFieldHotspotRing` primitive from
-   `overlay/AmbientFieldHotspotRing.tsx` for the pulsing ring — do not
+   `FieldHotspotRing` primitive from
+   `overlay/FieldHotspotRing.tsx` for the pulsing ring — do not
    duplicate the `.svg-circle` + keyframes pair.
 
 4. **Create the popup primitive** —
-   `apps/web/features/ambient-field/overlay/StreamPointPopup.tsx` rendering
+   `apps/web/features/field/overlay/StreamPointPopup.tsx` rendering
    category + name + label with `data-variant="red|default"`,
    `data-side="left|right"`, `data-mobile-side="left|right|center"` data
    attributes. Styling token file: `stream-point-popup.css` with
@@ -268,14 +268,14 @@ noted. No code is written here; this is a build-spec input.
    the hotspot ring).
 
 5. **Create the chapter shell component** —
-   `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/StreamChapterShell.tsx`.
+   `apps/web/features/field/surfaces/FieldLandingPage/StreamChapterShell.tsx`.
    Owns the `data-scroll="stream"` anchor (sibling or same element as the
    WebGL controller's `data-gfx="stream"` anchor), renders `<StreamRailDesktop
    />`, `<StreamRailMobile />`, and `.map` over the manifest to render 8
    `<StreamPoint>` children with refs for the timeline to consume.
 
 6. **Create the motion-path timeline adapter** —
-   `apps/web/features/ambient-field/scroll/chapters/landing-stream-chapter-points.ts`
+   `apps/web/features/field/scroll/chapters/landing-stream-chapter-points.ts`
    exporting `bindStreamPointTimeline(rootEl, manifest, options): () =>
    void`. Internal responsibilities:
    - register GSAP `MotionPathPlugin` via a shared
@@ -299,7 +299,7 @@ noted. No code is written here; this is a build-spec input.
      ScrollTrigger.
 
 7. **Wire the adapter into the scroll registry** —
-   extend `scroll/ambient-field-scroll-driver.ts` (or a
+   extend `scroll/field-scroll-driver.ts` (or a
    chapter-registration seam it exposes) to call `bindStreamPointTimeline`
    when a `[data-scroll="stream"]` anchor mounts, and invoke the returned
    disposer on unmount. This is the SoleMD analog of Maze's `$x["stream"]`
@@ -307,7 +307,7 @@ noted. No code is written here; this is a build-spec input.
 
 8. **Mount the chapter shell on the landing page** —
    add `<StreamChapterShell />` inside the existing stream section of
-   `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/*`
+   `apps/web/features/field/surfaces/FieldLandingPage/*`
    (exact file per B13/surface audit) so the DOM adapter and the
    `StreamController` WebGL anchor land on sibling nodes with coordinated
    scroll window. The chapter shell carries `data-scroll="stream"`; the
@@ -439,7 +439,7 @@ noted. No code is written here; this is a build-spec input.
    `.js-stream-point-popup`, `.popup`, `.popup__category`, `.popup__name`,
    `.popup__label`, `.popup--red`, `.popup--left`, `.popup--mobile-*`,
    `.hotspot`, `.hotspot--red`, `.svg-circle`, `.svg-flow-diagram-paths*`
-   with SoleMD token-aligned names under an ambient-field prefix (parallel
+   with SoleMD token-aligned names under an field prefix (parallel
    to `afr-` on the hotspot ring). Sanctioned per SKILL.md § "SoleMD
    Aesthetic, Maze Motion" — motion is Maze-parity, naming and shell are
    SoleMD.

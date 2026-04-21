@@ -1,37 +1,37 @@
-# Pilot audit — Scroll controller (`jt` / `Jr`) vs `ambient-field-scroll-driver.ts`
+# Pilot audit — Scroll controller (`jt` / `Jr`) vs `field-scroll-driver.ts`
 
 **Auditor**: pilot
 **Subsystem**: Scroll controller (pilot-inventory section 3)
 **Maze lines audited**: [49115, 49325]
-**SoleMD file audited**: apps/web/features/ambient-field/scroll/ambient-field-scroll-driver.ts
+**SoleMD file audited**: apps/web/features/field/scroll/field-scroll-driver.ts
 **Date**: 2026-04-19
 
 ## Summary
 
-SoleMD's scroll-driver implementation is a **landing-page-focused adapter** that handles the blob-carry timeline integration, hero progress tracking, and ScrollTrigger lifecycle management. Maze's `jt` class is a full-page scroll ownership system with global scroll state, body class toggling, hash-click navigation, scroll-position caching, multiple scroll adapters, and dynamic IntersectionObserver setup. The parity gap is significant: SoleMD has deliberately narrowed scope to the ambient-field landing surface (blob only), while Maze owns the entire page scroll runtime including navigation, scroll memory, header-relative positioning, and viewport-fraction thresholds. **This is a sanctioned architectural divergence** — SoleMD surfaces do not own scroll state at the page level. However, there are **5 distinct capability gaps** (hash-click navigation, body scroll-state classes, scroll-position caching, dynamic IntersectionObserver binding, scroll-viewport-fraction thresholds) that should be documented in the build spec as either future-scope or explicitly delegated to surface adapters.
+SoleMD's scroll-driver implementation is a **landing-page-focused adapter** that handles the blob-carry timeline integration, hero progress tracking, and ScrollTrigger lifecycle management. Maze's `jt` class is a full-page scroll ownership system with global scroll state, body class toggling, hash-click navigation, scroll-position caching, multiple scroll adapters, and dynamic IntersectionObserver setup. The parity gap is significant: SoleMD has deliberately narrowed scope to the field landing surface (blob only), while Maze owns the entire page scroll runtime including navigation, scroll memory, header-relative positioning, and viewport-fraction thresholds. **This is a sanctioned architectural divergence** — SoleMD surfaces do not own scroll state at the page level. However, there are **5 distinct capability gaps** (hash-click navigation, body scroll-state classes, scroll-position caching, dynamic IntersectionObserver binding, scroll-viewport-fraction thresholds) that should be documented in the build spec as either future-scope or explicitly delegated to surface adapters.
 
 ## Parity overview
 
 | Behavior                                        | Maze line               | SoleMD location                                               | State   |
 | ----------------------------------------------- | ----------------------- | ------------------------------------------------------------- | ------- |
-| Class construction / singleton                  | scripts.pretty.js:49116 | ambient-field-scroll-driver.ts (no class; function-based API) | drift   |
+| Class construction / singleton                  | scripts.pretty.js:49116 | field-scroll-driver.ts (no class; function-based API) | drift   |
 | Load/unload lifecycle                           | 49148–49165             | not implemented                                               | missing |
-| Setup + adapter loader                          | 49176–49231             | ambient-field-scroll-driver.ts:34–95 (blob only)              | drift   |
+| Setup + adapter loader                          | 49176–49231             | field-scroll-driver.ts:34–95 (blob only)              | drift   |
 | IntersectionObserver dual use                   | 49193–49230             | not implemented                                               | missing |
 | Scroll-state class toggling (is-scrolled, etc.) | 49244–49268             | not implemented                                               | missing |
 | Hash-click handler                              | 49166–49324             | not implemented                                               | missing |
 | scrollTo() public API                           | 49270–49323             | not implemented                                               | missing |
-| Tear-down on unload                             | 49154–49165             | ambient-field-scroll-driver.ts:108–112                        | parity  |
+| Tear-down on unload                             | 49154–49165             | field-scroll-driver.ts:108–112                        | parity  |
 
 ## Drift items
 
 ### D1. Singleton vs. function-based scroll driver
 
 - **Maze reference**: scripts.pretty.js:49116–49122 (class `jt` constructor with singleton instance tracking, static methods)
-- **SoleMD location**: ambient-field-scroll-driver.ts:34–113 (function export `bindAmbientFieldControllers`)
+- **SoleMD location**: field-scroll-driver.ts:34–113 (function export `bindFieldControllers`)
 - **Drift**: Maze uses a class with static methods (`jt.start()`, `jt.stop()`, `jt.enable()`, `jt.disable()`, `jt.resize()`) and singleton instance tracking (`jt.instance`). SoleMD uses imperative function binding with a return disposer. The abstraction models are fundamentally different: Maze centralizes scroll ownership as a singleton you can enable/disable/resize globally; SoleMD treats scroll binding as a landing-surface concern with explicit setup/teardown.
 - **Severity**: Should-fix
-- **Proposed fix**: Document in the build spec that SoleMD does not implement a page-global scroll controller. Future surfaces that need scroll-state observation (body classes, position caching, IntersectionObserver) must either (a) implement their own local scroll listener (following Maze's pattern of lightweight observer + class toggling) or (b) extend `bindAmbientFieldControllers` to wire those features into the controller lifecycle. Do not attempt to build a Maze-compatible global `jt` singleton in SoleMD; instead, clarify ownership boundaries in the build spec.
+- **Proposed fix**: Document in the build spec that SoleMD does not implement a page-global scroll controller. Future surfaces that need scroll-state observation (body classes, position caching, IntersectionObserver) must either (a) implement their own local scroll listener (following Maze's pattern of lightweight observer + class toggling) or (b) extend `bindFieldControllers` to wire those features into the controller lifecycle. Do not attempt to build a Maze-compatible global `jt` singleton in SoleMD; instead, clarify ownership boundaries in the build spec.
 - **Verification**: Read the build spec once drafted; confirm it explicitly states "scroll controller is not a page-global singleton in SoleMD" and names the surfaces responsible for scroll-state observation.
 
 ### D2. No scroll-state body class toggling
@@ -40,7 +40,7 @@ SoleMD's scroll-driver implementation is a **landing-page-focused adapter** that
 - **SoleMD location**: not implemented
 - **Drift**: Maze's scroll handler updates six CSS classes on `document.body` on every scroll frame (with debouncing via class toggle logic). SoleMD has no equivalent. This affects CSS-driven layout (e.g., "hide navbar when scrolled past 50vh"). The landing page and other surfaces would need this behavior.
 - **Severity**: Must-fix
-- **Proposed fix**: Create a separate `ambient-field-scroll-state.ts` module that exports a `bindScrollStateClasses(config: { headerEl?, vpFractions?: number[] }): () => void` function. Mount it once in the app shell (not in scroll-driver), so it runs independently of the blob timeline. Return a cleanup function that removes the listeners. This keeps scroll-state observation separate from blob choreography.
+- **Proposed fix**: Create a separate `field-scroll-state.ts` module that exports a `bindScrollStateClasses(config: { headerEl?, vpFractions?: number[] }): () => void` function. Mount it once in the app shell (not in scroll-driver), so it runs independently of the blob timeline. Return a cleanup function that removes the listeners. This keeps scroll-state observation separate from blob choreography.
 - **Verification**: Grep for `is-scrolled` in the landing page component; confirm a scroll-state listener is wired and toggling those classes on scroll events; unit test confirms all six variants are toggled correctly.
 
 ### D3. No scroll-position caching
@@ -49,7 +49,7 @@ SoleMD's scroll-driver implementation is a **landing-page-focused adapter** that
 - **SoleMD location**: not implemented
 - **Drift**: Maze caches scroll Y position per pathname so navigation back restores the previous scroll offset. SoleMD does not. This is a UX regression: users who navigate away and return expect to land at the same scroll position.
 - **Severity**: Should-fix
-- **Proposed fix**: Implement scroll-position restoration in the app shell layer or router middleware (not inside ambient-field). Observe window scroll, cache to sessionStorage keyed by `location.pathname`, and restore on mount. This is standard browser UX; do not tie it to the ambient-field controller. Document as "delegated to shell" in the build spec.
+- **Proposed fix**: Implement scroll-position restoration in the app shell layer or router middleware (not inside field). Observe window scroll, cache to sessionStorage keyed by `location.pathname`, and restore on mount. This is standard browser UX; do not tie it to the field controller. Document as "delegated to shell" in the build spec.
 - **Verification**: Scroll to 50%, navigate away, navigate back; confirm page restores to ~50% scroll position.
 
 ### D4. No hash-click navigation handler
@@ -58,7 +58,7 @@ SoleMD's scroll-driver implementation is a **landing-page-focused adapter** that
 - **SoleMD location**: not implemented
 - **Drift**: Maze intercepts clicks on anchor links (`a[href^="#"]`) and uses GSAP `scrollTo` with custom offsets and durations (e.g., `data-offset="100"` shifts the target by 100px). SoleMD has no equivalent. Links to page anchors use native browser behavior.
 - **Severity**: Nice-to-have
-- **Proposed fix**: This is a landing-page-specific affordance. If the landing page needs smooth scroll-to-anchor with offset support, implement it as a landing-surface adapter (not in the generic scroll-driver). Use `ScrollTrigger.scrollTo()` or GSAP's `scrollTo` plugin with a `data-*` attribute parser. Do not add this to the core ambient-field scroll controller.
+- **Proposed fix**: This is a landing-page-specific affordance. If the landing page needs smooth scroll-to-anchor with offset support, implement it as a landing-surface adapter (not in the generic scroll-driver). Use `ScrollTrigger.scrollTo()` or GSAP's `scrollTo` plugin with a `data-*` attribute parser. Do not add this to the core field scroll controller.
 - **Verification**: Add a test anchor with `data-offset="100"`, click it, confirm scroll lands 100px below the target element.
 
 ### D5. No dynamic IntersectionObserver for DOM state tracking
@@ -67,7 +67,7 @@ SoleMD's scroll-driver implementation is a **landing-page-focused adapter** that
 - **SoleMD location**: not implemented
 - **Drift**: Maze sets up IntersectionObserver callbacks to toggle `is-in-view`, `is-above`, `is-below` on elements. This enables CSS-driven fade-in/out on scroll. SoleMD does not. Elements that depend on these classes will not animate.
 - **Severity**: Should-fix
-- **Proposed fix**: Create a separate `ambient-field-dom-observers.ts` module that exports `bindDomStateObservers(config: { observeSelector?: string; progressSelector?: string }): () => void`. Wire it in the app shell, not in the scroll-driver. Each observer returns a cleanup function. This keeps DOM-state observation separate from blob choreography.
+- **Proposed fix**: Create a separate `field-dom-observers.ts` module that exports `bindDomStateObservers(config: { observeSelector?: string; progressSelector?: string }): () => void`. Wire it in the app shell, not in the scroll-driver. Each observer returns a cleanup function. This keeps DOM-state observation separate from blob choreography.
 - **Verification**: Add elements with `data-observe` and `data-observe="children"`, confirm they receive `is-in-view` / `is-above` / `is-below` classes on scroll.
 
 ### D6. No scroll-viewport-fraction thresholds (is-scrolled-vh-25/50/75)
@@ -81,7 +81,7 @@ SoleMD's scroll-driver implementation is a **landing-page-focused adapter** that
 
 ## Sanctioned deviations encountered
 
-1. **Landing-surface-only scroll binding** — SoleMD's scroll-driver is intentionally landing-page-focused. Per the `ambient-field-modules` SKILL.md § "Canonical Layer Ownership", the blob controller owns its own scroll timeline binding through `controller.bindScroll()`, and the driver wraps that with supplementary visibility/progress tracking. This is a deliberate narrowing from Maze's full-page scroll ownership. Sanctioned: yes, via SKILL.md § "Canonical Layer Ownership" and § "Homepage Section Inventory" (only section-welcome, section-graph, section-cta declare `data-gfx`).
+1. **Landing-surface-only scroll binding** — SoleMD's scroll-driver is intentionally landing-page-focused. Per the `module` SKILL.md § "Canonical Layer Ownership", the blob controller owns its own scroll timeline binding through `controller.bindScroll()`, and the driver wraps that with supplementary visibility/progress tracking. This is a deliberate narrowing from Maze's full-page scroll ownership. Sanctioned: yes, via SKILL.md § "Canonical Layer Ownership" and § "Homepage Section Inventory" (only section-welcome, section-graph, section-cta declare `data-gfx`).
 
 2. **No scroll caching at the scroll-driver level** — Maze's scroll caching is a page-level concern. SoleMD defers this to router/shell middleware. Sanctioned: yes, via project architecture (router owns navigation state, not field runtime).
 
@@ -91,7 +91,7 @@ SoleMD's scroll-driver implementation is a **landing-page-focused adapter** that
 
 1. **Scroll-state class ownership**: Does the build spec expect `is-scrolled` / `is-scrolling-down` / `is-scrolled-vh` to be wired on every SoleMD surface? Or is this a landing-page-only affordance? Recommend clarifying in the build spec which surfaces own scroll-state observation and how they integrate with the field controller.
 
-2. **Hash-click navigation scope**: Is smooth scroll-to-anchor a requirement for all SoleMD surfaces that use ambient-field, or only landing pages? Recommend documenting in the build spec whether `data-offset` / `data-duration` support is expected from the field controller or delegated to surface adapters.
+2. **Hash-click navigation scope**: Is smooth scroll-to-anchor a requirement for all SoleMD surfaces that use field, or only landing pages? Recommend documenting in the build spec whether `data-offset` / `data-duration` support is expected from the field controller or delegated to surface adapters.
 
 3. **IntersectionObserver coverage**: The Maze `[data-observe]` and `.js-progress` patterns suggest two separate observer instances with different thresholds. Should SoleMD consolidate these into one generic DOM-state observer, or keep them separate per use case? Recommend a decision in the build spec.
 

@@ -1,10 +1,5 @@
-import { connection } from "next/server";
-import { AmbientFieldLandingRoute } from "@/features/ambient-field/routes/AmbientFieldLandingRoute";
-import { fetchActiveGraphBundle } from "@/features/graph/lib/fetch";
+import { redirect } from "next/navigation";
 
-export default async function AmbientFieldLabPage() {
-  await connection();
-  const bundle = await fetchActiveGraphBundle().catch(() => null);
-
-  return <AmbientFieldLandingRoute bundle={bundle} />;
+export default function FieldLabLegacyRedirectPage() {
+  redirect("/field-lab");
 }

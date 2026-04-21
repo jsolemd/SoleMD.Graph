@@ -733,9 +733,10 @@ runtime shape tighter than the eventual full worker fleet:
 
 - `ingest.start_release` runs as one async actor on queue `ingest`.
 - Worker boot for that process uses `pool_names=("ingest_write",)` only.
-- Start with one process and one low-concurrency queue consumer
-  (`dramatiq app.ingest_worker --processes 1 --threads 1 --queues ingest` or the
-  equivalent wrapper). COPY fanout lives inside the actor via bounded asyncpg
+- Start with low thread count and, for the current operator default, two ingest
+  processes
+  (`dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest` or the
+  equivalent wrapper). COPY fanout lives inside each actor via bounded asyncpg
   coroutines; Dramatiq thread count is not the partition-concurrency knob.
 - Duplicate manifest/manual triggers should resolve through typed early exits
   or actor `throws=` for `IngestAlreadyPublished` and

@@ -16,7 +16,7 @@ Recon confirms the architecture is already shaped for this, even though nobody b
 - **The only 2D-specific leak is camera persistence.** `CameraSnapshot = { zoomLevel, transformX, transformY }` in `packages/graph/src/cosmograph/camera-persistence.ts` is Cosmograph-only, persisted to sessionStorage outside the store. A 3D camera can live alongside under a separate key.
 - **Cosmograph itself has no 3D path.** Confirmed via @cosmograph/react v2.1.0 docs: pure 2D d3-zoom viewport, no z, no orbit camera, no roadmap hint. 3D is not coming from the vendor.
 
-Research verdict on the 3D stack: **Raw R3F + drei + custom shader `THREE.Points` + GPU-ID picking + `yomotsu/camera-controls`**. Rationale: the landing already runs an R3F scene (ambient-field), so an R3F-based orb composes into the existing canvas or mounts cleanly as a sibling — no second WebGL context, no vendor framework stealing the scene. Reagraph is the tactical fallback if we want a globe running this week, but it owns its own `<Canvas>` and caps around 5k nodes. `react-force-graph-3d` is prototype-only. Cosmograph 3D, G6-3D, Sigma-3D, deck.gl are all wrong for this shop.
+Research verdict on the 3D stack: **Raw R3F + drei + custom shader `THREE.Points` + GPU-ID picking + `yomotsu/camera-controls`**. Rationale: the landing already runs an R3F scene (field), so an R3F-based orb composes into the existing canvas or mounts cleanly as a sibling — no second WebGL context, no vendor framework stealing the scene. Reagraph is the tactical fallback if we want a globe running this week, but it owns its own `<Canvas>` and caps around 5k nodes. `react-force-graph-3d` is prototype-only. Cosmograph 3D, G6-3D, Sigma-3D, deck.gl are all wrong for this shop.
 
 ## The shape of the change
 
@@ -30,7 +30,7 @@ One pipeline, two renderer faces, three surfaces.
 
 **Surfaces:**
 1. **Graph canvas** (`/graph` route today): add a `rendererMode: '2d' | '3d'` toggle. Same data, same selection, two faces — pick the one that fits the question. Cosmograph for analysis, orb for overview and semantic grokking.
-2. **Landing hero**: the blob story's final chapter morphs into `<GraphOrb>` itself — not a separate "globe transition frame," but the real component the user will interact with next. The morph *is* the handoff: blob particles relocate to their real paper positions on the sphere, cluster colors resolve in, ambient-field fades out, orb controls fade in, UI chrome appears. One continuous motion, and the "end" is a live explorable orb.
+2. **Landing hero**: the blob story's final chapter morphs into `<GraphOrb>` itself — not a separate "globe transition frame," but the real component the user will interact with next. The morph *is* the handoff: blob particles relocate to their real paper positions on the sphere, cluster colors resolve in, field fades out, orb controls fade in, UI chrome appears. One continuous motion, and the "end" is a live explorable orb.
 3. **Future modules**: the orb becomes a reusable primitive for any surface that wants the corpus as a 3D shape — wiki modules, learn shells, evidence overlays.
 
 ## The population: the evidence set, not base_points
@@ -83,7 +83,7 @@ Selection state lives in DuckDB's `selected_point_indices` table + `currentPoint
 - **Brush select**: hold-and-drag near the sphere surface adds points within a sphere-collider brush radius. 3D-native.
 - **Filter/timeline**: already renderer-agnostic. Both views honor the same scope SQL — the orb queries `current_points_orb_selection` which is just the orb-point view JOINed against the live scope.
 - **Selection persistence across toggle**: flipping from orb to Cosmograph keeps every selected paperId highlighted — they read the same table.
-- **Visual feedback**: selected points drive `aSelection` attribute (0..1) toward 1.0 over ~200ms; fragment shader boosts alpha + adds a halo. Dimming of non-selected is the existing pattern already in the ambient-field shader.
+- **Visual feedback**: selected points drive `aSelection` attribute (0..1) toward 1.0 over ~200ms; fragment shader boosts alpha + adds a halo. Dimming of non-selected is the existing pattern already in the field shader.
 
 ### Track 5 — Edges: references and beyond
 Rendering every citation edge at 100k-point scale is a million-plus segments and unreadable mud. Layered approach, tiered by user intent:
@@ -114,7 +114,7 @@ Point count is effectively free on GPU; edges and DOM are the ceiling.
 ### Track 7 — Landing handoff
 - Ambient-field preloads the graph bundle + DuckDB session at page mount (not on scroll). Session is shared with the orb that will mount at scroll-end.
 - Extend `field-shaders.ts` with `uGlobeMorph` + `aGlobePosition` attribute. In the blob's final scroll chapter (`BlobController.bindScroll` at `BlobController:480-627`), tween `uGlobeMorph: 0 → 1` over ~2s with `scrub: 1`. Color lerps from the rainbow stops to `aColor = hex_color`. Rotation continues.
-- `aGlobePosition` for the ambient-field particles comes from the same 3D parquet but is sampled to whatever particle count the blob runs (19k today — oversample the 2k orb subset with jitter so the blob has enough points, or render the orb at 19k matched).
+- `aGlobePosition` for the field particles comes from the same 3D parquet but is sampled to whatever particle count the blob runs (19k today — oversample the 2k orb subset with jitter so the blob has enough points, or render the orb at 19k matched).
 - At `uGlobeMorph ≈ 0.95`: `<GraphOrb>` mounts underneath, its shader reading the same positions, opacity 0 → 1 over 400ms. Ambient-field canvas opacity 1 → 0 over the next 300ms. UI chrome fades in on a staggered schedule.
 - If the bundle hasn't finished loading by the scroll beat, the morph stalls at `uGlobeMorph = 0.95` with idle rotation until ready. No spinner. No pop.
 - The "end" of the landing is not a 2D graph — it's the orb, live and explorable. The user can drag, click, hover immediately. The 2D toggle is one click away via the toolbar that fades in.
@@ -123,7 +123,7 @@ Point count is effectively free on GPU; edges and DOM are the ceiling.
 
 - **Native pipeline hijack, not overlay.** The orb reads the same DuckDB views Cosmograph reads; it doesn't recompute or duplicate data.
 - **Store is the contract.** Modules can subscribe to the same selection/filter/scope state the orb and Cosmograph share, and visualize or restrict based on what's currently live.
-- **Shader-uniform choreography for scroll/motion.** The ambient-field morph vocabulary (`uGlobeMorph`, `uPlaneMorph`, etc.) is the template for any module-level transform.
+- **Shader-uniform choreography for scroll/motion.** The field morph vocabulary (`uGlobeMorph`, `uPlaneMorph`, etc.) is the template for any module-level transform.
 - **One R3F canvas, many components.** Ambient-field, orb, and future module visualizations live in (or compose with) the same R3F scene graph — one WebGL context, one loop clock.
 
 ## Interaction capabilities (what "interact" means here)
@@ -156,10 +156,10 @@ Interactions that move points must be clear about *temporary vs permanent* — u
 - `apps/web/features/graph/components/canvas/GraphCanvas.tsx` — add renderer-mode switch (~15 lines)
 - `packages/graph/src/types/bundle.ts` — add optional `evidencePoints` + `points3d` assets to manifest
 - `apps/web/features/graph/duckdb/session/index.ts` — register `current_points_orb_*` views when the 3D assets are present
-- `apps/web/features/ambient-field/renderer/field-shaders.ts` — add `uGlobeMorph`, `aGlobePosition`, `aColor`; nested-mix position + color
-- `apps/web/features/ambient-field/asset/field-attribute-baker.ts:144` — bake real-paper positions into the blob's particle attributes
-- `apps/web/features/ambient-field/controller/BlobController.ts:480-627` — extend unified timeline with the morph-and-handoff chapter
-- `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx` — start bundle preload on mount, mount `<GraphOrb>` at the handoff moment, orchestrate the crossfade
+- `apps/web/features/field/renderer/field-shaders.ts` — add `uGlobeMorph`, `aGlobePosition`, `aColor`; nested-mix position + color
+- `apps/web/features/field/asset/field-attribute-baker.ts:144` — bake real-paper positions into the blob's particle attributes
+- `apps/web/features/field/controller/BlobController.ts:480-627` — extend unified timeline with the morph-and-handoff chapter
+- `apps/web/features/field/surfaces/FieldLandingPage/FieldLandingPage.tsx` — start bundle preload on mount, mount `<GraphOrb>` at the handoff moment, orchestrate the crossfade
 
 **To add:**
 - `apps/web/features/graph/components/orb/GraphOrb.tsx`
@@ -178,7 +178,7 @@ Interactions that move points must be clear about *temporary vs permanent* — u
 2. **Edges on a sphere look muddy.** Resolved in research: straight interior chords at low alpha read as "semantic connections," geodesics over-commit to the surface metaphor. Start with chords.
 3. **Picking precision under devicePixelRatio**. Use GPU-ID picking, not raycast on `Points` — raycast jitters past 5k at low DPR.
 4. **Edge count scaling past 10k.** LineSegments cost rises; budget by filtering to edges within current selection/scope at high counts. The store's scope SQL already gives us this for free.
-5. **Two R3F canvases on the landing** (ambient-field + orb). Solve by either mounting the orb inside the ambient-field's existing `<Canvas>` (preferred — one WebGL context), or crossfade two adjacent canvases then unmount the ambient one. Decide during implementation; default is shared canvas.
+5. **Two R3F canvases on the landing** (field + orb). Solve by either mounting the orb inside the field's existing `<Canvas>` (preferred — one WebGL context), or crossfade two adjacent canvases then unmount the ambient one. Decide during implementation; default is shared canvas.
 6. **Camera state collision** on toggle. 2D camera persists under the existing key; 3D camera under the new `solemd:camera-3d` key. No overlap, no store pollution.
 7. **Store rename friction**: `apps/web/features/graph/lib/cosmograph-selection.ts` has "cosmograph" in the filename but is renderer-agnostic. Leave for now; if the orb feels permanent, rename to `lib/graph-selection.ts` in a later commit.
 

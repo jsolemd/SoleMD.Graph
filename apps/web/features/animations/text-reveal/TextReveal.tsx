@@ -9,7 +9,6 @@ import {
 import {
   motion,
   useReducedMotionConfig as useReducedMotion,
-  type HTMLMotionProps,
   type Transition,
   type Variants,
 } from "framer-motion";

@@ -1,20 +1,20 @@
 # Round 12 Module Authoring Guide
 
-Authoritative step-by-step guide for building a new ambient-field module
+Authoritative step-by-step guide for building a new field module
 on top of the Round 12 primitives. Pair with:
 
-- `docs/map/ambient-field-maze-baseline-ledger-round-12.md` — canonical
+- `docs/map/field-maze-baseline-ledger-round-12.md` — canonical
   Source Ground Truth + Foundation Primitives + Phase Log.
-- `.claude/skills/ambient-field-modules/references/maze-rebuild-checklist.md`
+- `.claude/skills/module/references/maze-rebuild-checklist.md`
   — review gate for parity claims.
-- `.claude/skills/ambient-field-modules/references/maze-particle-runtime-architecture.md`
+- `.claude/skills/module/references/maze-particle-runtime-architecture.md`
   — runtime overview.
 
 **Rule of thumb**: a new module should add *data* (point source, bucket
 weights, preset, chapter events, anchor DOM). It should not add *control
 flow* (no new frame loop, no bespoke scroll listener, no hand-rolled
 tween). Every primitive below already exists in
-`apps/web/features/ambient-field/index.ts` — import from there, never
+`apps/web/features/field/index.ts` — import from there, never
 from subpaths.
 
 ---
@@ -65,7 +65,7 @@ import {
   bakeFieldAttributes,
   buildBucketIndex,
   type FieldSemanticBucket,
-} from "@/features/ambient-field";
+} from "@/features/field";
 
 const EVIDENCE_TIER_BUCKETS = [
   { id: "rct", weight: 0.2, motion: { aStreamFreq: 0.1, /* … */ } },
@@ -90,7 +90,7 @@ coherent.
 ### 3. Choose a preset
 
 Presets live in `scene/visual-presets.ts` as `visualPresets.blob |
-stream | pcb`. Each carries both the shader uniform values and the
+stream | objectFormation`. Each carries both the shader uniform values and the
 controller-plane fields (`sceneScale`, `rotationVelocity`,
 `entryFactor`, `rotate`, …).
 
@@ -106,7 +106,7 @@ Three rules for presets:
 3. **Author a fourth entry when it's a new slug.** Stream variants,
    radically different geometries, or mobile-only presets belong in
    `visual-presets.ts` as a fourth keyed entry (`mri`, `synthesis`, …).
-   Add the slug to `AMBIENT_FIELD_STAGE_ITEM_IDS` so it is type-safe
+   Add the slug to `FIELD_STAGE_ITEM_IDS` so it is type-safe
    everywhere.
 
 Color pair convention (from the shader): `rColor/gColor/bColor` is the
@@ -125,7 +125,7 @@ bits that differ per slug.
 |---|---|---|
 | `BlobController` | Hero sphere + hotspot state container. | Hotspot DOM pool (Phase 7 primitive). |
 | `StreamController` | Flow stream. | `updateScale` → `250 * (innerW/innerH) / (1512/748)` desktop, `168` mobile. |
-| `PcbController` | Near-horizontal bitmap grid. | `updateScale` for the x=-80° tilt aspect ratio. |
+| `ObjectFormationController` | Near-horizontal authored-shape grid. | `updateScale` for the x=-80° tilt aspect ratio. |
 
 For a new module, either:
 
@@ -149,23 +149,25 @@ Scroll-driven choreography is **declarative**. Every module authors a
 - **Events**: each event has an `atProgress` (0–1 within the chapter
   span), a `duration`, and one of `set` / `to` / `from` / `fromTo`
   directives.
-- **Pipeline**: `createFieldChapterTimeline({ events, scrubber,
-  initialTargets })` computes the current target for every key at
-  `setProgress(p)`; `applyTargets(dtMs)` steps through the
-  `UniformScrubber` (1 s half-life) to get smoothed values.
+- **Pipeline**: `createFieldChapterTimeline(events)` computes the current
+  target map for a chapter progress value. Controllers read shared chapter
+  progress from `field-scroll-state.ts` and smooth toward those
+  targets inside `tick()` with the existing motion decay helpers.
 
 Author the chapter alongside `scroll/chapters/*.ts` so it is reusable
 and diff-able. Never inline events inside a component.
 
-### 6. Bind to a `[data-gfx]` anchor + scroll root
+### 6. Bind through the stage manifest + shared chapter ids
 
-The stage scans `[data-gfx="<slug>"]` anchors under the surface
-component's DOM root. A module adds the anchor in its section JSX:
+Do not add controller-local scroll listeners. Add authored chapter ids in the
+surface JSX, then register the controller windows through the module's stage
+manifest:
 
 ```tsx
 <section
   ref={sectionRef}
-  data-gfx="synthesis"
+  id="section-synthesis"
+  data-section-id="section-synthesis"
   className="relative h-[240vh]"
 >
   <h2 className="sticky top-0">Synthesis</h2>
@@ -173,17 +175,27 @@ component's DOM root. A module adds the anchor in its section JSX:
 </section>
 ```
 
-The scroll root is the surface's scroll container. On the landing page
-that is `div.relative.h-screen.overflow-y-auto.overflow-x-clip`, not
-`window`. `IntersectionObserver` / `getBoundingClientRect` calls inside
-the module must resolve relative to the same element.
+Then add a manifest row like:
+
+```ts
+{
+  sectionId: "section-synthesis",
+  stageItemId: "synthesis",
+  endSectionId: "section-next",
+  presetId: "synthesis",
+}
+```
+
+`FixedStageManager` will prewarm the active point sources, wait for controller
+attachment readiness, and then let `field-scroll-state.ts` produce the
+shared chapter progress that your controller consumes.
 
 ### 7. (Optional) Hotspot overlays
 
 If the module surfaces callouts or annotations on top of the point
 cloud, use the existing overlay primitives:
 
-- `AmbientFieldHotspotRing` — React component that draws the ring +
+- `FieldHotspotRing` — React component that draws the ring +
   inner dot + optional card slot, keyed by `seedKey` and `phase`
   (`"idle" | "animating" | "reds"`).
 - `createHotspotLifecycleController({ count, samplePosition,
@@ -203,11 +215,11 @@ import {
   createBurstController,
   PHASE_TO_BUCKET,
   SOLEMD_BURST_COLORS,
-  AMBIENT_FIELD_BUCKET_INDEX,
-} from "@/features/ambient-field";
+  FIELD_BUCKET_INDEX,
+} from "@/features/field";
 
 const burst = createBurstController({
-  bucketIndex: AMBIENT_FIELD_BUCKET_INDEX,
+  bucketIndex: FIELD_BUCKET_INDEX,
   semanticColorMap: SOLEMD_BURST_COLORS,
   regionScale: 1.2,
   softness: 0.2,
@@ -235,10 +247,10 @@ toggles. Mixing the two is the visible-jitter failure mode.
 Before calling the module done:
 
 1. Parity to reference — compare against the Round 12 ledger §18
-   "Current ambient-field gaps" list and confirm none reappeared.
+   "Current field gaps" list and confirm none reappeared.
 2. No `uTime` reset — unmount and remount the module; the point cloud
    must not twitch. The singleton
-   `getAmbientFieldElapsedSeconds()` guarantees this as long as the
+   `getFieldElapsedSeconds()` guarantees this as long as the
    module reads through it.
 3. Smooth scroll — flick the scroll root hard; uniforms should visibly
    trail (1 s half-life) rather than snap.
@@ -251,7 +263,7 @@ Before calling the module done:
 
 ## Worked Example 1 — Landing Blob
 
-The canonical ambient-field module; this is what `AmbientFieldLandingPage`
+The canonical field module; this is what `FieldLandingPage`
 mounts today. Use it as the template to copy when authoring anything
 sphere-shaped.
 
@@ -296,16 +308,16 @@ const timeline = createFieldChapterTimeline({
 });
 
 // 6. Anchor — <section data-gfx="blob" …> inside
-//    AmbientFieldLandingPage.tsx.
+//    FieldLandingPage.tsx.
 
-// 7. Hotspots — AmbientFieldHotspotRing × HOTSPOT_COUNT (~30),
+// 7. Hotspots — FieldHotspotRing × HOTSPOT_COUNT (~30),
 //    reseeded by createHotspotLifecycleController on animationend.
 
 // 8. Burst — createBurstController routed by PHASE_TO_BUCKET each
 //    frame inside useFrame.
 
 // 9. Text reveals — toggleActions (not scrub) on the hero headline +
-//    CTA copy. See surfaces/AmbientFieldLandingPage.
+//    CTA copy. See surfaces/FieldLandingPage.
 
 // 10. Verify — 8 suites / 45 tests currently green.
 ```
@@ -316,14 +328,15 @@ end-of-chapter y-drift to exit the viewport.
 
 ---
 
-## Worked Example 2 — Landing PCB
+## Worked Example 2 — Convergence Plane Module
 
-Same primitives, different point source and preset. PCB is how the
-"mesh extending into horizon" effect lands.
+Same primitives, different point source and preset. Use the
+objectFormation family when a non-landing module needs a near-horizontal
+bitmap plane or a future shape-formation runway.
 
 ```ts
 // 1. Point source — bitmap-to-points through the async image wrapper.
-const geometry = await createImagePointGeometry("/particles/pcb.png", {
+const geometry = await createImagePointGeometry("/particles/object-formation.png", {
   textureScale: 0.5,
   thickness: 0,
   layers: 1,
@@ -336,28 +349,24 @@ const geometry = await createImagePointGeometry("/particles/pcb.png", {
 //    semantics; buckets only color the bursts.
 bakeFieldAttributes(geometry, { buckets: SOLEMD_DEFAULT_BUCKETS });
 
-// 3. Preset — visualPresets.pcb. The x=-80° tilt + uFrequency 0.1 are
+// 3. Preset — visualPresets.objectFormation. The x=-80° tilt + uFrequency 0.1 are
 //    non-negotiable for the horizon look.
-const preset = visualPresets.pcb;
+const preset = visualPresets.objectFormation;
 
-// 4. Controller — PcbController (scaffolded, extends FieldController).
-const controller = new PcbController({ id: "pcb", preset });
+// 4. Controller — ObjectFormationController (scaffolded, extends FieldController).
+const controller = new ObjectFormationController({
+  id: "objectFormation",
+  preset,
+});
 controller.attach({ view, wrapper, mouseWrapper, model, material });
 
-// 5. Chapter — LANDING_PCB_CHAPTER. Core event: wrapper.position.z
-//    scrubs -200 → 0 across the chapter span.
-const scrubber = createUniformScrubber<LandingPcbChapterKey>({
-  halfLifeMs: 1000,
-  initial: { wrapperZ: -200, uAlpha: preset.shader.alpha },
-});
-const timeline = createFieldChapterTimeline({
-  events: LANDING_PCB_CHAPTER,
-  scrubber,
-});
+// 5. Chapter — author an object-formation chapter target list and read
+//    it from the controller's `tick()` using shared chapter progress.
+const timeline = createFieldChapterTimeline(OBJECT_FORMATION_CHAPTER);
 
-// 6. Anchor — <section data-gfx="pcb" …>.
-// 7. Hotspots — none (PCB surface doesn't carry them in Maze).
-// 8. Burst — optional; PCB stays on the Maze base palette by default.
+// 6. Manifest — register the module chapter in FIELD_SECTION_MANIFEST.
+// 7. Hotspots — none (the object-formation surface doesn't carry them in Maze).
+// 8. Burst — optional; keep the baseline palette unless the module contract says otherwise.
 // 9. Text reveals — toggleActions on the feature-copy headline.
 // 10. Verify — bitmap must round-trip through OffscreenCanvas; jsdom
 //     tests use the ImageLikeData shortcut so the test suite stays
@@ -459,7 +468,7 @@ const timeline = createFieldChapterTimeline({
 
 // 6. Anchor — <section data-gfx="mri" …> inside the module surface.
 
-// 7. Hotspots — AmbientFieldHotspotRing per annotation (e.g. tumor
+// 7. Hotspots — FieldHotspotRing per annotation (e.g. tumor
 //    boundary). samplePosition draws a random vertex from the tumor
 //    bucket only:
 const lifecycle = createHotspotLifecycleController({
@@ -490,7 +499,7 @@ Notes that generalize beyond MRI:
   custom preset is the right tool for *visual* tuning. Do not conflate
   them.
 - Adding a new slug (`mri` above) means updating
-  `AMBIENT_FIELD_STAGE_ITEM_IDS` in `scene/visual-presets.ts` so the
+  `FIELD_STAGE_ITEM_IDS` in `scene/visual-presets.ts` so the
   type system covers the new entry.
 
 ---
@@ -500,7 +509,7 @@ Notes that generalize beyond MRI:
 Essential:
 
 - **Never re-implement the frame loop.** `FieldController.loop(dtSec)` +
-  `getAmbientFieldElapsedSeconds()` are canonical. A module-local rAF
+  `getFieldElapsedSeconds()` are canonical. A module-local rAF
   loop creates two clocks; the module that desyncs visibly jitters.
 - **Always scrub scroll-driven uniforms through `UniformScrubber`.**
   The 1 s half-life is the difference between "breathing" and
@@ -513,7 +522,7 @@ Essential:
 
 Strong defaults:
 
-- Import from `@/features/ambient-field` (the barrel). Subpath imports
+- Import from `@/features/field` (the barrel). Subpath imports
   are a refactor trap.
 - Reuse `SOLEMD_DEFAULT_BUCKETS` + existing presets + existing chapter
   files first. Author a new one only when behavior genuinely differs.
@@ -544,18 +553,18 @@ Anti-patterns:
 | Async image | `createImagePointGeometry` |
 | Async model | `createModelPointGeometry` |
 | Attribute bake + buckets | `bakeFieldAttributes`, `SOLEMD_DEFAULT_BUCKETS`, `buildBucketIndex` |
-| Presets | `visualPresets`, `AMBIENT_FIELD_STAGE_ITEM_IDS` |
+| Presets | `visualPresets`, `FIELD_STAGE_ITEM_IDS` |
 | Base controller | `FieldController`, `tnEase` |
-| Controller subclasses | `BlobController`, `StreamController`, `PcbController` |
+| Controller subclasses | `BlobController`, `StreamController`, `ObjectFormationController` |
 | Mouse parallax | `attachMouseParallax` |
-| Singleton clock | `getAmbientFieldElapsedSeconds`, `getAmbientFieldElapsedMs` |
+| Singleton clock | `getFieldElapsedSeconds`, `getFieldElapsedMs` |
 | Uniform low-pass | `createUniformScrubber` |
 | Declarative chapters | `createFieldChapterTimeline` |
 | Pre-authored landing chapters | `LANDING_BLOB_CHAPTER`, `LANDING_PCB_CHAPTER`, `LANDING_STREAM_CHAPTER` |
-| Burst tint | `createBurstController`, `PHASE_TO_BUCKET`, `SOLEMD_BURST_COLORS`, `AMBIENT_FIELD_BUCKET_INDEX` |
-| Hotspot ring + lifecycle | `AmbientFieldHotspotRing`, `createHotspotLifecycleController` |
+| Burst tint | `createBurstController`, `PHASE_TO_BUCKET`, `SOLEMD_BURST_COLORS`, `FIELD_BUCKET_INDEX` |
+| Hotspot ring + lifecycle | `FieldHotspotRing`, `createHotspotLifecycleController` |
 
-Every one of these is exported from `@/features/ambient-field`. If a
+Every one of these is exported from `@/features/field`. If a
 new module feels like it needs something that isn't in this table, the
 right move is to add the primitive to the barrel (with a test) before
 authoring the module.

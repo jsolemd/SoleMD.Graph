@@ -219,6 +219,36 @@ CREATE TABLE IF NOT EXISTS solemd.s2_paper_authors_raw (
 ALTER TABLE solemd.s2_paper_authors_raw SET (fillfactor = 100);
 ALTER TABLE solemd.s2_paper_authors_raw ALTER COLUMN affiliation_raw SET COMPRESSION lz4;
 
+CREATE TABLE IF NOT EXISTS solemd.s2_authors_raw (
+    source_release_id INTEGER NOT NULL
+        REFERENCES solemd.source_releases (source_release_id)
+        ON DELETE RESTRICT,
+    source_author_id TEXT NOT NULL,
+    orcid TEXT,
+    display_name TEXT NOT NULL,
+    last_seen_run_id UUID
+        REFERENCES solemd.ingest_runs (ingest_run_id)
+        ON DELETE SET NULL,
+    PRIMARY KEY (source_release_id, source_author_id)
+);
+ALTER TABLE solemd.s2_authors_raw SET (fillfactor = 100);
+
+CREATE TABLE IF NOT EXISTS solemd.s2_paper_reference_metrics_raw (
+    source_release_id INTEGER NOT NULL
+        REFERENCES solemd.source_releases (source_release_id)
+        ON DELETE RESTRICT,
+    citing_paper_id TEXT NOT NULL,
+    reference_out_count INTEGER NOT NULL DEFAULT 0,
+    influential_reference_count INTEGER NOT NULL DEFAULT 0,
+    linked_reference_count INTEGER NOT NULL DEFAULT 0,
+    orphan_reference_count INTEGER NOT NULL DEFAULT 0,
+    last_seen_run_id UUID
+        REFERENCES solemd.ingest_runs (ingest_run_id)
+        ON DELETE SET NULL,
+    PRIMARY KEY (source_release_id, citing_paper_id)
+);
+ALTER TABLE solemd.s2_paper_reference_metrics_raw SET (fillfactor = 100);
+
 CREATE TABLE IF NOT EXISTS solemd.s2_paper_references_raw (
     source_release_id INTEGER NOT NULL
         REFERENCES solemd.source_releases (source_release_id)

@@ -1,13 +1,13 @@
 # Motion + Color + Parallax Audit Report
 **Date**: 2026-04-19  
-**Scope**: SoleMD.Graph ambient-field motion, color cycling, and parallax subsystems vs. Maze HQ reference  
+**Scope**: SoleMD.Graph field motion, color cycling, and parallax subsystems vs. Maze HQ reference  
 **Status**: Read-only audit with cross-system findings
 
 ---
 
 ## Executive Summary
 
-SoleMD's ambient-field motion diverges from Maze in three material ways: **(1)** idle blob rotation spins **2× faster** than Maze's frame increment, **(2)** intro depth ramp duration **shortened to 0.9s** (from Maze's 1.4s in animateIn), and **(3)** animation architecture shifted from updateVisibility frame-by-frame gates to ScrollTrigger scroll-scrubbed timeline ownership. Color cycle and mouse-parallax mechanics are structurally sound. Findings below flagged for intentional deviation (rolling rainbow) or misalignment (spin velocity).
+SoleMD's field motion diverges from Maze in three material ways: **(1)** idle blob rotation spins **2× faster** than Maze's frame increment, **(2)** intro depth ramp duration **shortened to 0.9s** (from Maze's 1.4s in animateIn), and **(3)** animation architecture shifted from updateVisibility frame-by-frame gates to ScrollTrigger scroll-scrubbed timeline ownership. Color cycle and mouse-parallax mechanics are structurally sound. Findings below flagged for intentional deviation (rolling rainbow) or misalignment (spin velocity).
 
 ---
 

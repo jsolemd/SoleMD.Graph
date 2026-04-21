@@ -634,6 +634,15 @@ should answer:
 - what run is active right now, in what phase, on what family/work item, and
   whether it is making live progress
 
+Locked next-batch observability requirement:
+
+- once corpus materialization is split into corpus-baseline and mapped-surface
+  phases, telemetry and dashboards must split with it
+- a single opaque `canonical_materialization` block is no longer sufficient for
+  operator analysis
+- Grafana should expose separate active-run phases and phase-duration series for
+  baseline corpus materialization versus mapped-heavy surface materialization
+
 Exemplar emit helper (§0 rule):
 
 ```python

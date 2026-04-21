@@ -400,6 +400,28 @@ and referenced by `manifest_uri` on `ingest_runs`.
 - PK `(paper_id, author_ordinal)`.
 - Btree `(source_author_id)`.
 
+#### `solemd.s2_authors_raw`
+
+- `source_release_id` INTEGER, `source_author_id` TEXT, `orcid` TEXT,
+  `display_name` TEXT, `last_seen_run_id` UUID.
+- PK `(source_release_id, source_author_id)`.
+- Btree `(source_author_id)`.
+- This is the raw author-registry surface loaded directly from the S2
+  `authors/` dataset. Per-paper authorship fanout still lands in
+  `s2_paper_authors_raw` from the `papers/` dataset.
+
+#### `solemd.s2_paper_reference_metrics_raw`
+
+- `source_release_id` INTEGER, `citing_paper_id` TEXT,
+  `reference_out_count` INTEGER, `influential_reference_count` INTEGER,
+  `linked_reference_count` INTEGER, `orphan_reference_count` INTEGER,
+  `last_seen_run_id` UUID.
+- PK `(source_release_id, citing_paper_id)`.
+- Btree `(source_release_id, citing_paper_id)`.
+- This is the default broad raw citation surface under the locked stage
+  contract. It supports corpus and mapped gating without forcing full
+  citation-edge persistence before mapped.
+
 #### `solemd.s2_paper_references_raw`
 
 - `source_release_id` INTEGER, `citing_paper_id` TEXT,
@@ -413,12 +435,29 @@ and referenced by `manifest_uri` on `ingest_runs`.
 - Btree `(source_release_id, linkage_status, citing_paper_id)`.
 - Reverse btree `(source_release_id, cited_paper_id, citing_paper_id)`.
 
+Transitional note:
+
+- The current broad raw edge table remains documented because it exists in the
+  implementation inventory today.
+- The locked next implementation batch introduces a broad pre-mapped aggregate
+  citation surface carrying at least `reference_out_count` and
+  `influential_reference_count`, ideally also `linked_reference_count`.
+- Full citation-edge persistence should become mapped-owned or child-wave
+  enrichment rather than the default broad raw contract.
+
 #### `solemd.s2_paper_assets_raw`
 
 - `paper_id` TEXT, `asset_kind` TEXT, `asset_url` TEXT,
   `content_type` TEXT, `availability_raw` TEXT, `asset_checksum` TEXT.
 - PK `(paper_id, asset_kind, asset_url)`.
 - Btree `(paper_id)`.
+
+Stage-ownership note:
+
+- `pubtator.*_stage` remains the broad raw PT3 substrate.
+- Under the locked next stage contract, canonical
+  `pubtator.entity_annotations` / `pubtator.relations` become mapped-owned
+  surfaces rather than corpus-baseline surfaces for every admitted paper.
 
 #### `pubtator.entity_annotations`
 
@@ -575,6 +614,12 @@ Indexes:
 - Fillfactor 90. Btree on `normalized_name`.
 
 #### `solemd.paper_authors`
+
+Mapped-ownership note:
+
+- Under the locked next stage contract, `paper_authors` is a mapped-owned
+  canonical fanout surface. Broad raw author helpers may still exist, but
+  canonical author materialization is no longer a corpus-baseline requirement.
 
 - `corpus_id` BIGINT FK → `corpus`.
 - `author_id` BIGINT FK → `authors`.
@@ -834,6 +879,11 @@ Locked first-wave evidence-wave policy carried in `plan_manifest` for
 Heavy per-paper fact tables that power graph, RAG priors, and API
 detail. Narrow edge tables; heavy context text in a sibling table so
 edge scans stay cheap.
+
+Under the locked next stage contract, these heavier fanout tables are not
+corpus-baseline requirements for every admitted paper. `paper_selection_summary`
+remains the pre-mapped gating surface; `paper_authors` and `paper_citations`
+become mapped-owned or child-wave enrichments.
 
 #### `solemd.paper_citations`
 

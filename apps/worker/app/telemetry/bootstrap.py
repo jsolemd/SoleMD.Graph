@@ -37,8 +37,6 @@ def prepare_worker_metrics_environment(
         if clean_on_boot is None
         else clean_on_boot
     )
-    if should_clean:
-        _clear_directory(metrics_dir)
 
     http_port = runtime_settings.worker_metrics_port
     if http_port is None:
@@ -71,6 +69,9 @@ def prepare_worker_metrics_environment(
 def _clear_directory(directory: Path) -> None:
     for entry in directory.iterdir():
         if entry.is_dir():
-            shutil.rmtree(entry)
+            shutil.rmtree(entry, ignore_errors=True)
             continue
-        entry.unlink()
+        try:
+            entry.unlink()
+        except FileNotFoundError:
+            continue

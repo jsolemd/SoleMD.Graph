@@ -15,20 +15,16 @@
 > bulk release-backed lane. One ingest cycle outputs a published `ingest_runs`
 > row plus the broad upstream raw/stage warehouse surfaces the cycle wrote
 > (`s2_*_raw`, `pubtator.*_stage`, and source-local raw helpers such as
-> `s2_paper_authors_raw` / `s2_paper_references_raw`). The **selected canonical
-> corpus** is the operational warehouse universe
-> (`corpus`, `papers`, `paper_text`, `paper_authors`, `paper_citations`,
-> `pubtator.entity_annotations`, `pubtator.relations`), but the durable
-> ownership of that boundary belongs to `05e-corpus-selection.md`: corpus work
-> decides `raw -> corpus -> mapped` membership and idempotently
-> promotes/backfills selected-paper facts into those canonical surfaces.
-> `corpus` is the broad admitted canonical corpus. `mapped` is the stricter
-> paper-level active universe inside that corpus. Current code still includes
-> some broad S2 canonical promotion helpers as transitional machinery; that
-> reality does not redefine raw-ingest ownership. Full-text document spine,
-> chunking, grounded mention/concept/relation families, evidence units, and
-> targeted PMC BioC refresh remain downstream evidence-lane child work (`05a`,
-> `05f`).
+> `s2_paper_authors_raw` and the current transitional citation helpers). The
+> locked next-batch direction for broad raw is: S2 paper/abstract/venue inputs,
+> raw authors, paper-level citation aggregates, and `pubtator.*_stage`. The
+> **selected canonical corpus** remains owned by `05e-corpus-selection.md`.
+> Under the locked stage contract, `corpus` owns `corpus` membership plus
+> baseline canonical `papers` / `paper_text`; `mapped` owns heavier canonical
+> PT3 / authorship and any citation-edge enrichment actually required
+> downstream; `evidence` owns full-document payloads, chunking, and grounding.
+> Current code still includes some broad canonical promotion helpers as
+> transitional machinery; that reality does not redefine raw-ingest ownership.
 >
 > **Schema authority**: `02-warehouse-schema.md` is PG-native authority for
 > table shapes. This doc is authority for the ingest worker's runtime
@@ -148,12 +144,12 @@ set. Per-shard sizes from a 2026-04-16 listing of
 
 | Dataset | On-disk shape | Shards | Maps to (`02 §4`) |
 |---|---|---:|---|
-| `papers` | `papers/papers-NNNN.jsonl.gz` (1 GB shards) | 60 | `s2_papers_raw`; `05e` promotes mapped-paper rows into `papers` + `paper_text` |
-| `paper-ids` | `paper-ids/paper-ids-NNNN.jsonl.gz` | 30 | raw identifier input; `05e` backfills canonical `papers` ids for mapped papers |
-| `abstracts` | `abstracts/abstracts-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.abstract` for mapped papers |
-| `authors` | `authors/authors-NNNN.jsonl.gz` | 30 | `s2_paper_authors_raw`; `05e` promotes mapped-paper authorship into `authors` + `paper_authors` |
-| `citations` | `citations/citations-NNNN.jsonl.gz` (largest) | 358 | `s2_paper_references_raw`; `05e` backfills `paper_citations` for mapped papers |
-| `tldrs` | `tldrs/tldrs-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.tldr` for mapped papers |
+| `papers` | `papers/papers-NNNN.jsonl.gz` (1 GB shards) | 60 | `s2_papers_raw`; `05e` promotes admitted-corpus rows into canonical `papers` + `paper_text` |
+| `paper-ids` | `paper-ids/paper-ids-NNNN.jsonl.gz` | 30 | raw identifier input; `05e` backfills canonical `papers` ids for admitted corpus papers |
+| `abstracts` | `abstracts/abstracts-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.abstract` for admitted corpus papers |
+| `authors` | `authors/authors-NNNN.jsonl.gz` | 30 | `s2_authors_raw`; per-paper author fanout still lands in `s2_paper_authors_raw` from `papers`, and `05e` promotes mapped-paper authorship into `authors` + `paper_authors` |
+| `citations` | `citations/citations-NNNN.jsonl.gz` (largest) | 358 | locked next-batch target: broad paper-level citation aggregates by default; full citation-edge rows only when a mapped/graph wave actually needs them |
+| `tldrs` | `tldrs/tldrs-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.tldr` for admitted corpus papers |
 | `publication-venues` | one shard | 1 | raw venue input for selection and later canonical backfill |
 | `s2orc` | `s2orc/`, `s2orc-v2/`, `s2orc_v2/` (empty today; slot reserved) | 0 | downstream child-wave document-spine input, not broad raw-ingest ownership |
 | `embeddings-specter_v2` | not present in 2026-03-10 release; reserved | 0 | `paper_embeddings_graph` halfvec(768) per `02 §4.6` |
@@ -285,8 +281,10 @@ with `manifest_checksum = IngestPlan.release_checksum`;
 (3) `ingest_runs.status = loading-code`.
 
 Default S2 build order lands the broad raw/source-local inputs:
-`s2_papers_raw`, abstract / TLDR / external-id inputs, `s2_paper_authors_raw`,
-`s2_paper_references_raw`, venue payloads, and `paper_embeddings_graph` when
+`s2_papers_raw`, abstract / TLDR / external-id inputs, `s2_authors_raw`,
+per-paper author rows in `s2_paper_authors_raw`, citation aggregates in
+`s2_paper_reference_metrics_raw`, venue payloads, and
+`paper_embeddings_graph` when
 SPECTER2 shards are present. Current code still carries transitional broad S2
 promotion helpers into canonical paper tables, but the steady-state ownership
 of canonical `papers` / `paper_text` / `paper_authors` / `paper_citations`
@@ -507,22 +505,22 @@ durable contract is that `05e` promotes/backfills mapped-paper rows into
 the canonical paper layer idempotently so those tables reflect the
 selected universe rather than the full raw release breadth.
 
-**`citations` → `s2_paper_references_raw`; selected-paper
-`paper_citations` backfill is owned by `05e`.** Largest dataset — 358 shards, ~330 GB
-compressed. Same DuckDB stream pattern. After raw load, one
-warehouse-local follow-on owned by `05e` resolves mapped-paper
-`citing_corpus_id` / `cited_corpus_id` and backfills canonical
-`paper_citations`. This is still the load shape that benefits most from
-UNLOGGED on the broad upstream side — WAL avoidance saves >100 GB of WAL
-writes per cycle on citations alone.
+**`citations` should converge on a broad aggregate surface, not broad edge
+persistence.** Largest dataset — 358 shards, ~330 GB compressed. The locked
+next implementation batch replaces broad pre-corpus citation-edge persistence
+with paper-level aggregate metrics such as `reference_out_count`,
+`influential_reference_count`, and ideally `linked_reference_count`. Full
+`paper_citations` backfill remains a mapped-owned or child-wave enrichment when
+graph / retrieval work actually needs edge rows.
 
 **`abstracts`** remain raw text input until `05e` backfills
 `paper_text.abstract` for mapped papers. Storage remains `EXTERNAL` per
 `02 §4.2`.
 
-**`authors` → `s2_paper_authors_raw`.** `05e` promotes mapped-paper
-authorship into canonical `authors` + `paper_authors`. Author dedup is
-still keyed on `(orcid, normalized_name)` per `02 §4.2`.
+**`authors` → `s2_authors_raw`, with per-paper author fanout still landing
+under `papers` in `s2_paper_authors_raw`.** `05e` promotes mapped-paper
+authorship into canonical `authors` + `paper_authors`. Author dedup is still
+keyed on `(orcid, normalized_name)` per `02 §4.2`.
 
 **`paper-ids`** remain raw identifier input until `05e` backfills
 canonical `papers.pmid`, `doi_norm`, `pmc_id`, and `s2_paper_id` for
@@ -801,7 +799,7 @@ async def project_ingest(source_code, release_tag, plan):
 |---|---|---|
 | Schema drift in source dataset (column missing, type changed vs registry) | **abort** the family before any COPY; raise `SourceSchemaDrift` with diff. | locked |
 | Row-count drift > 5 % vs prior published release | **warn**; require operator ack via `requested_status = continue-code`. Default: pause. | provisional (5 % threshold tunable; gate-pause-ack pattern locked) |
-| Orphan citation (cites a `corpus_id` not in this release) | **mark `linkage_status = orphan`** in `s2_paper_references_raw`; do not promote. Log + count. | locked |
+| Citation aggregate row has orphaned or unresolved references | **record them in `orphan_reference_count`** on `s2_paper_reference_metrics_raw`; do not force broad citation-edge promotion. Log + count. | locked |
 | Duplicate `paper_id` within source `papers` shard | **abort** — source bug; cannot decide which row wins. | locked |
 | Missing `<id>` on PT3 `<document>` | **drop row, count.** | locked |
 | BioCXML `<annotation>` with unparsable offsets | **drop annotation, count, log.** | locked |
@@ -1116,11 +1114,13 @@ Source-specific notes that should stay explicit:
 - Bound in-family concurrency with a small `asyncio.TaskGroup` or semaphore
   over partitions/shards. The concurrency knob is the number of concurrent
   COPY coroutines, not the Dramatiq thread count.
-- Start the raw ingest worker with one process and a low thread count
-  (`dramatiq app.ingest_worker --processes 1 --threads 1 --queues ingest` or the
+- Start the raw ingest worker with low thread count and, for the current mixed
+  S2 + PT3 operator topology, two ingest processes
+  (`dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest` or the
   equivalent wrapper). Dramatiq's AsyncIO middleware still schedules async
-  actors on its event-loop thread; extra worker threads only multiply message
-  concurrency and connection pressure.
+  actors on each process event-loop thread; keep thread count low and scale
+  message concurrency with worker processes only when the release-level locks
+  and warehouse pressure are understood.
 - Deterministic bad-input failures such as `IngestAlreadyPublished`,
   `IngestAlreadyInProgress`, `PlanDrift`, or `SourceSchemaDrift` should be
   typed exceptions surfaced through actor `throws=` or explicit early exits so
@@ -1151,8 +1151,9 @@ The next implementation PR should not stop at actor stubs. Minimum acceptance:
 - one integration test per source proves plan build + deterministic resume
 - one end-to-end local sample ingest writes real warehouse rows and updates
   `ingest_runs`
-- S2 citations remain refresh-safe in `solemd.s2_paper_references_raw` with
-  linkage-status promotion; canonical `paper_citations` stays deferred
+- S2 citations now default to refresh-safe aggregate metrics in
+  `solemd.s2_paper_reference_metrics_raw`; canonical `paper_citations` stays
+  deferred unless a mapped/graph wave explicitly needs edge rows
 - docs move with code if the file layout, queue names, or role boundaries
   change
 - chunking stays downstream of the raw ingest lane rather than being
@@ -1188,20 +1189,23 @@ Beyond `02 §5`:
 
 The ingest worker is the only writer of: `solemd.source_releases` (§11
 poll), `solemd.ingest_runs` (entirety), all `s2_*_raw` tables,
-source-local S2 raw helpers such as `s2_paper_authors_raw` and
-`s2_paper_references_raw`, all `pubtator.*_stage` tables, all `umls.*`
+source-local S2 raw helpers such as `s2_paper_authors_raw` and the current
+transitional citation helpers, all `pubtator.*_stage` tables, all `umls.*`
 raw tables, and the release-manifest / checksum staging needed to land a
 source release. `vocab_terms` / `vocab_term_aliases` are still written
 during the manually-triggered curated cycle.
 
-The operational selected canonical corpus
-(`solemd.corpus`, `papers`, `paper_text`, `paper_authors`,
-`paper_citations`, `pubtator.entity_annotations`, `pubtator.relations`)
-is owned by `05e` as the `raw -> corpus -> mapped` membership +
-promotion/backfill boundary.
-Current code still includes some broad S2 canonical promotion helpers on
-`ingest_write`; treat those as transitional implementation inventory
-rather than the durable ownership line.
+The operational selected stage contract is owned by `05e` as the
+`raw -> corpus -> mapped` membership + promotion boundary:
+
+- `corpus` owns `solemd.corpus`, `papers`, `paper_text`, and the selection
+  audit surfaces
+- `mapped` owns heavier canonical PT3 / authorship and any citation-edge
+  enrichment actually required downstream
+
+Current code still includes some broad canonical promotion helpers on
+`ingest_write`; treat those as transitional implementation inventory rather
+than the durable ownership line.
 
 The full-text document spine (`paper_documents` / `paper_sections` /
 `paper_blocks` / `paper_sentences`), grounded mention/concept/relation
@@ -1249,7 +1253,7 @@ implementation contract, and no FDW surface belongs here.
 | One UPDATE for publish; no swap | No live readers; no rename needed. |
 | Publish flip is projection trigger via `04` pg_cron polling | LISTEN/NOTIFY deferred per `04` open items. |
 | Schema drift / duplicate `paper_id` / manifest-checksum drift abort | Silent coercion + dedup races poison downstream joins. |
-| Orphan citations mark `linkage_status = orphan`; do not promote | Inherits `02 §5` spirit and now matches `02 §4.1`. |
+| Orphan citations increment `orphan_reference_count`; do not force broad edge promotion | Inherits `02 §5` spirit and now matches the aggregate raw citation contract in `02 §4.1`. |
 | Concept `concept_id_raw` not mapped inserts `concept_id=NULL` | `02 §5` invariant 3. |
 | BioCXML annotations with unparsable offsets dropped + counted | Silent data quality, not corruption. |
 | Cross-cluster FK enforcement in worker code, not DB | `04 §2.4`. |

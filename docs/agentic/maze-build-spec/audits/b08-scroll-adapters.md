@@ -3,7 +3,7 @@
 **Auditor**: agent-2 (Phase 3)
 **Priority**: P0
 **Date**: 2026-04-19
-**SoleMD counterpart**: Partial (AmbientFieldHeroSection + AmbientFieldCtaSection); **Missing — medium** for registry + 4 other adapters + typography call sites
+**SoleMD counterpart**: Partial (FieldHeroSection + FieldCtaSection); **Missing — medium** for registry + 4 other adapters + typography call sites
 
 ## Summary
 
@@ -19,9 +19,9 @@ loops — all layered on top of GSAP `ScrollTrigger`/`matchMedia` and the
 vendored `lo`/`US` SplitText class used by B14.
 
 SoleMD's landing does not have a counterpart registry. The two confirmed
-partial counterparts are `AmbientFieldHeroSection.tsx` (welcome parity —
+partial counterparts are `FieldHeroSection.tsx` (welcome parity —
 eyebrow/title/subtitle/button entrance, but on-mount Framer Motion rather
-than scroll-triggered SplitText) and `AmbientFieldCtaSection.tsx` (cta
+than scroll-triggered SplitText) and `FieldCtaSection.tsx` (cta
 parity — same structural reveal, but `whileInView` Framer Motion with
 character-grain preserved only as word-grain). No SoleMD component covers
 `clients`, `graphRibbon`, `events`, or `moveNew`; those Maze chapters do
@@ -85,7 +85,7 @@ $x = {
   timeline).
 - **DOM contract**: Element carries `data-scroll="welcome"` and contains
   `.js-title`, `.js-subtitle`, `.a-button` descendants.
-- **SoleMD counterpart**: `AmbientFieldHeroSection.tsx` (partial)
+- **SoleMD counterpart**: `FieldHeroSection.tsx` (partial)
   - Same structural unit (`<section>` with eyebrow `<p>` → `<h1>` →
     body `<p>` → button row).
   - Uses Framer Motion `initial`/`animate` with `smooth` easing; runs
@@ -158,7 +158,7 @@ $x = {
   composition underneath. This is Maze's signature "graph chapter"
   reveal — multi-layer compositional entrance over a single
   ScrollTrigger.
-- **SoleMD counterpart**: `AmbientFieldGraphSection.tsx` (candidate,
+- **SoleMD counterpart**: `FieldGraphSection.tsx` (candidate,
   but conceptually different — it stages a live graph warm-up action,
   not a composed SVG ribbon reveal). No staggered group entrance.
 - **Drift items**: D6 (composed multi-target scroll-triggered reveal
@@ -209,7 +209,7 @@ $x = {
   `scrollTrigger` and welcome does not.
 - **DOM contract**: `data-scroll="cta"`, `.js-title`, `.js-subtitle`,
   `.a-button` × N.
-- **SoleMD counterpart**: `AmbientFieldCtaSection.tsx` (partial).
+- **SoleMD counterpart**: `FieldCtaSection.tsx` (partial).
   - Same structural unit (eyebrow → `<h2>` → body `<p>` → two button
     row).
   - Uses Framer Motion `whileInView` with `viewport={{ once: true,
@@ -287,25 +287,25 @@ chapter adapter contract.
 
 **Proposed shape** (naming per `/naming` conventions):
 
-- `apps/web/features/ambient-field/scroll/chapter-adapters/` — new
+- `apps/web/features/field/scroll/chapter-adapters/` — new
   directory containing one file per adapter.
 - `types.ts`: `export type ChapterAdapter = (el: HTMLElement, opts: {
   reducedMotion: boolean }) => { dispose(): void }`.
-- `registry.ts`: `export const ambientFieldChapterAdapters: Record<
-  AmbientFieldChapterKey, ChapterAdapter>` — a typed record keyed by a
+- `registry.ts`: `export const fieldChapterAdapters: Record<
+  FieldChapterKey, ChapterAdapter>` — a typed record keyed by a
   string union (`"welcome" | "moveNew" | "clients" | "graphRibbon" |
   "events" | "cta"`). Mirrors `$x` structurally.
 - `useChapterAdapter.ts`: `export function useChapterAdapter(ref:
-  RefObject<HTMLElement>, key: AmbientFieldChapterKey): void` — effect
+  RefObject<HTMLElement>, key: FieldChapterKey): void` — effect
   hook that resolves the adapter from the registry and wires
   lifecycle; safe re-run on reducedMotion change.
-- Each chapter component (`AmbientFieldHeroSection`, `AmbientFieldCtaSection`,
+- Each chapter component (`FieldHeroSection`, `FieldCtaSection`,
   …) calls the hook with its own ref and a static key. The adapter is
   free to use GSAP/ScrollTrigger or Framer Motion imperatively; the
   component renders declarative markup only.
 
 **Why not a `ScrollProvider` config object**: the landing surface is
-a single route with a single scroll ownership (`ambient-field-scroll-driver.ts`).
+a single route with a single scroll ownership (`field-scroll-driver.ts`).
 A centralized provider/config introduces indirection without a payoff.
 Hook-per-chapter keeps the contract local and tree-shakeable, and does
 not require the caller to import the registry at the top of the tree.
@@ -319,7 +319,7 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
 ### D1. Title/subtitle text reveal is paragraph-grain, not word/character-grain
 
 - **Maze ref**: scripts.pretty.js:49043, 49052, 48644, 48645 (`new lo(..., { type: "words" }).words` with GSAP stagger)
-- **SoleMD location**: `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldHeroSection.tsx:44–53` and `AmbientFieldCtaSection.tsx:51–62`
+- **SoleMD location**: `apps/web/features/field/surfaces/FieldLandingPage/FieldHeroSection.tsx:44–53` and `FieldCtaSection.tsx:51–62`
 - **Drift**: Maze reveals each word as a separately animated DOM span
   (`x: "2em", opacity: 0, stagger.each: 0.2`). SoleMD animates the
   whole `<h1>` / `<h2>` / `<p>` as one motion node. This flattens the
@@ -335,25 +335,25 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
   emit `motion.span` per word; wrap in `display: inline-block` and
   preserve original spaces with `whiteSpace: "pre"` on space entries.
 - **Verification**: Open landing, watch hero title reveal staggered
-  word-by-word; grep `AmbientFieldHeroSection` for `TextReveal` import;
+  word-by-word; grep `FieldHeroSection` for `TextReveal` import;
   confirm `reduced` branch still renders as a single static heading.
 
 ### D2. No `is-welcome-ready` broadcast on hero reveal completion
 
 - **Maze ref**: scripts.pretty.js:49061, 49065 (`onComplete: () =>
   document.body.classList.add("is-welcome-ready")`)
-- **SoleMD location**: `AmbientFieldHeroSection.tsx` — not emitted
+- **SoleMD location**: `FieldHeroSection.tsx` — not emitted
 - **Drift**: Maze publishes a "welcome finished" signal on `body` so
   downstream CSS / chrome can transition (e.g., reveal the progress
   bar or chrome pill). SoleMD's chrome pill transition is instead driven
   by `CHROME_SURFACE_TRANSITION_SCROLL_PX` scroll threshold in
-  `AmbientFieldLandingPage.tsx:67, 149–155`, which is a different
+  `FieldLandingPage.tsx:67, 149–155`, which is a different
   mechanism entirely (scroll-Y rather than hero-complete).
 - **Severity**: **Nice-to-have**
 - **Proposed fix**: Delegate to the existing scroll-threshold pattern
   unless Phase 4 identifies a concrete consumer that needs the
   hero-complete event. If needed, fire a custom event
-  (`window.dispatchEvent(new Event("ambient-field:welcome-ready"))`)
+  (`window.dispatchEvent(new Event("field:welcome-ready"))`)
   from the TextReveal `onComplete`, rather than mutating `body`.
 - **Verification**: Decide in Phase 4; document the choice in the build
   spec.
@@ -361,8 +361,8 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
 ### D3. Hero eyebrow (`eyebrow` p element) is a SoleMD-only addition
 
 - **Maze ref**: no equivalent in `JS`.
-- **SoleMD location**: `AmbientFieldHeroSection.tsx:27–41` and
-  `AmbientFieldCtaSection.tsx:34–49`.
+- **SoleMD location**: `FieldHeroSection.tsx:27–41` and
+  `FieldCtaSection.tsx:34–49`.
 - **Drift**: **Not drift — sanctioned addition.** Eyebrows are part of
   the project's aesthetic skill (uppercase micro-label above a headline)
   and give the title a semantic frame Maze does not use. Record as
@@ -400,14 +400,14 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
 ### D6. No composed multi-target scroll-triggered reveal for the graph chapter
 
 - **Maze ref**: scripts.pretty.js:48732–48832 (`qS`)
-- **SoleMD location**: `AmbientFieldGraphSection.tsx` (exists, but is a
+- **SoleMD location**: `FieldGraphSection.tsx` (exists, but is a
   live-graph warm-up action wrapper, not a composed SVG ribbon reveal)
 - **Drift**: Maze's `graphRibbon` does a 7-target staggered + clip-
   path-chained entrance over a single ScrollTrigger. SoleMD's graph
   section doesn't attempt this kind of multi-layer choreography.
 - **Severity**: **Should-fix**
 - **Proposed fix**: Add a chapter-local entrance timeline to
-  `AmbientFieldGraphSection.tsx` using Framer Motion variants with
+  `FieldGraphSection.tsx` using Framer Motion variants with
   `staggerChildren`. The composition doesn't need to match Maze's SVG
   structure — what's load-bearing is *some* staggered reveal of the
   graph-chapter visual elements (warm-up control, caption, any cards)
@@ -475,7 +475,7 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
 
 - **Maze ref**: scripts.pretty.js:48660 (`n` → `{ scale: 0.75, opacity: 0,
   stagger: 0.15 }` where `n` is `r.querySelectorAll(".a-button")`)
-- **SoleMD location**: `AmbientFieldCtaSection.tsx:82–116` — both buttons
+- **SoleMD location**: `FieldCtaSection.tsx:82–116` — both buttons
   share one parent motion.div with `delay: 0.08`, so they enter
   simultaneously, not staggered.
 - **Drift**: Two-button stagger not preserved. Small but visible.
@@ -499,11 +499,11 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
   chapter drifts further.
 - **Severity**: **Should-fix**
 - **Proposed fix**: Implement the hook-based port described in
-  "Registry port recommendation" above. Migrate `AmbientFieldHeroSection`
-  and `AmbientFieldCtaSection` onto it first; leave a stub entry for
+  "Registry port recommendation" above. Migrate `FieldHeroSection`
+  and `FieldCtaSection` onto it first; leave a stub entry for
   each of `moveNew`, `clients`, `graphRibbon`, `events` that throws
   a `console.warn` until its chapter is built.
-- **Verification**: `features/ambient-field/scroll/chapter-adapters/`
+- **Verification**: `features/field/scroll/chapter-adapters/`
   directory exists with `registry.ts`, `useChapterAdapter.ts`, and per-
   chapter adapter files; Hero+CTA components call `useChapterAdapter`.
 
@@ -518,7 +518,7 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
 - **Proposed fix**: Promote to `apps/web/features/animations/text-reveal/`,
   generalise API, add tests, then wire into Hero+CTA via D1.
 - **Verification**: Grep for `TextReveal` import in
-  `AmbientFieldHeroSection.tsx` and `AmbientFieldCtaSection.tsx` yields
+  `FieldHeroSection.tsx` and `FieldCtaSection.tsx` yields
   matches.
 
 ### D14. No shared debounced-resize → refresh wiring
@@ -526,7 +526,7 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
 - **Maze ref**: scripts.pretty.js:48722–48727, 48823–48828 (both `WS`
   and `qS` register `window.addEventListener("resize", ml(() =>
   scrollTrigger.refresh(), 1e3))`)
-- **SoleMD location**: `ambient-field-scroll-driver.ts:106` calls
+- **SoleMD location**: `field-scroll-driver.ts:106` calls
   `ScrollTrigger.refresh()` once at bind time; no resize listener.
 - **Drift**: SoleMD's scroll driver does not refresh on resize. Any
   future ScrollTrigger-bound chapter will lose alignment after a
@@ -556,7 +556,7 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
    the `animation-authoring` skill. Applies to D1 (TextReveal is Framer
    Motion), D6 (graph chapter reveal), D11 (CTA button stagger). GSAP
    is still used where ScrollTrigger integration is load-bearing
-   (`ambient-field-scroll-driver.ts`), which is itself a pilot-audited
+   (`field-scroll-driver.ts`), which is itself a pilot-audited
    sanctioned deviation (pilot audit § "Sanctioned deviations" item 1).
 
 2. **On-mount Framer Motion for hero entrance** (D1) matches Maze's
@@ -596,10 +596,10 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
 2. **Is the adapter registry (D12) a required port, or is per-chapter
    Framer Motion hand-authoring acceptable?** If the landing stays at
    2 chapters (Hero + CTA), the registry may be overengineering. Once
-   a third ambient-field chapter lands, the registry earns its weight.
+   a third field chapter lands, the registry earns its weight.
 
 3. **Does the TextReveal promotion (D13) belong inside `features/animations/`
-   or `features/ambient-field/`?** Recommend `features/animations/text-reveal/`
+   or `features/field/`?** Recommend `features/animations/text-reveal/`
    as a project-wide primitive, so wiki modules and future surfaces
    can also consume it.
 
@@ -613,7 +613,7 @@ their adapters directly. Abandon Maze's DOM-scan-driven binding.
    `ScrollTrigger` turned up `apps/web/features/animations/_smoke/scroll-fade/ScrollFade.tsx`
    and `_smoke/scroll-mechanism/ScrollMechanism.tsx` — both smoke tests.
    `ScrollyPin.tsx` in `wiki/module-runtime/primitives` is the only
-   production consumer of ScrollTrigger outside the ambient-field
+   production consumer of ScrollTrigger outside the field
    scroll-driver. No registry pattern discovered. Confirming: no
    pre-existing chapter-adapter pattern on the SoleMD side — this is a
    true greenfield.

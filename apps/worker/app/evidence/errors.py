@@ -6,15 +6,15 @@ if TYPE_CHECKING:
     from app.evidence.models import ResolvedLocator
 
 
-class HotTextError(RuntimeError):
+class EvidenceTextAcquisitionError(RuntimeError):
     """Base error for the targeted evidence-text acquisition lane."""
 
 
-class PaperNotFound(HotTextError):
+class PaperNotFound(EvidenceTextAcquisitionError):
     """The requested corpus_id does not exist in the warehouse."""
 
 
-class PaperTextUnavailable(HotTextError):
+class PaperTextUnavailable(EvidenceTextAcquisitionError):
     """No eligible external full-text surface could be resolved for the paper."""
 
     def __init__(self, message: str, *, locator: "ResolvedLocator | None" = None) -> None:
@@ -22,7 +22,7 @@ class PaperTextUnavailable(HotTextError):
         self.locator = locator
 
 
-class PaperTextFetchFailed(HotTextError):
+class PaperTextFetchFailed(EvidenceTextAcquisitionError):
     """The upstream fetch failed in a way that should stop the acquisition run."""
 
     def __init__(self, message: str, *, locator: "ResolvedLocator | None" = None) -> None:
@@ -30,5 +30,5 @@ class PaperTextFetchFailed(HotTextError):
         self.locator = locator
 
 
-class InvalidPmcBiocPayload(HotTextError):
+class InvalidPmcBiocPayload(EvidenceTextAcquisitionError):
     """The fetched PMC BioC payload could not be parsed into the canonical spine."""

@@ -43,7 +43,7 @@ Within the 3 homepage-active entries:
 | `Cg.findCurrentItem()` (pathname-matching active link)   | 55066–55072       | `useGraphModeController` + `ModeToggleBar` active-mode highlight   | analogue           | parity-adjacent (different mechanism) |
 | `Cg.updateUnderlinePosition()` (GSAP underline slide)    | 55073–55082       | *none* — SoleMD active mode uses background fill + expand-label    | product divergence | sanctioned deviation             |
 | `Cg` resize listener (debounced underline reposition)    | 55109–55114       | Mantine / Framer handle resize; no manual listener needed          | delegated          | parity-adjacent                  |
-| Progress class `gg` (registry entry only)                | 55272             | `AmbientFieldStoryProgress.tsx` (see b12 audit)                    | Agent 10 audit     | *see b12-progress.md*            |
+| Progress class `gg` (registry entry only)                | 55272             | `FieldStoryProgress.tsx` (see b12 audit)                    | Agent 10 audit     | *see b12-progress.md*            |
 | SwiperSlider class `wg` (Swiper.js carousel wrapper)     | 53996–54050       | *none*                                                             | product divergence | sanctioned omission              |
 
 ## Drift items
@@ -54,8 +54,8 @@ Within the 3 homepage-active entries:
 - **SoleMD location**: no equivalent. Chrome composition is direct JSX: `Wordmark.tsx` → `BrandWordmarkButton` + `ChromeBar`, and `ChromeBar` → `ThemeToggle` + pills + tray menus + `TimelineBar`.
 - **Drift**: Maze's `Rg` is a runtime DOM-scan attach mechanism (`document.querySelectorAll("[data-component]")` at construction) paired with a class-map `xy` for lookup. It exists because Maze's app shell `by` uses AJAX swap + manual DOM mount cycles — the registry gives every page a uniform way to attach JS behavior to freshly swapped HTML. SoleMD uses Next.js App Router (React Server Components / client components); component attach is compile-time JSX, not runtime DOM scan.
 - **Severity**: Delegated (sanctioned deviation)
-- **Proposed fix**: None. Build spec should state explicitly that the `Rg` / `xy` / `yy` registry pattern is replaced wholesale by Next.js App Router + React composition. No runtime `[data-component]` scan is to be introduced on SoleMD surfaces. Related pattern — `[data-gfx]` + controller registry `jx` — is a separate audit (Agent 3 / B7); that pattern *is* recommended for port because the ambient-field controllers are DOM-anchored, unlike generic chrome.
-- **Canonical reference**: `.claude/skills/ambient-field-modules/SKILL.md` (React composition owns chrome); catalog § B2 / B13 cross-edge.
+- **Proposed fix**: None. Build spec should state explicitly that the `Rg` / `xy` / `yy` registry pattern is replaced wholesale by Next.js App Router + React composition. No runtime `[data-component]` scan is to be introduced on SoleMD surfaces. Related pattern — `[data-gfx]` + controller registry `jx` — is a separate audit (Agent 3 / B7); that pattern *is* recommended for port because the field controllers are DOM-anchored, unlike generic chrome.
+- **Canonical reference**: `.claude/skills/module/SKILL.md` (React composition owns chrome); catalog § B2 / B13 cross-edge.
 - **Verification**: Confirm no file in `apps/web/features/graph/components/chrome/` runs `document.querySelectorAll("[data-component]")`. (Confirmed: none does.)
 
 ### D2. Header (`Cg`) structural divergence — sliding underline vs. pill+tray chrome
@@ -81,8 +81,8 @@ Within the 3 homepage-active entries:
 ### D4. Progress (`gg`) registry entry — cross-reference only
 
 - **Maze reference**: scripts.pretty.js:55272 (`Progress: gg` in `xy` map). Class body at 50178–50255.
-- **SoleMD location**: `apps/web/features/ambient-field/AmbientFieldStoryProgress.tsx`.
-- **Drift**: Not re-audited here. See Agent 10 output at `docs/agentic/maze-build-spec/audits/b12-progress.md` for the progress-controller parity audit. Registry-level note: in Maze, `Progress` is instantiated twice (index.html:323, 718 — both story chapters). SoleMD's React tree renders `AmbientFieldStoryProgress` at the appropriate surface positions via JSX composition rather than DOM scan. The instantiate-twice behavior is preserved structurally (one render per chapter) but via React, not registry scan.
+- **SoleMD location**: `apps/web/features/field/FieldStoryProgress.tsx`.
+- **Drift**: Not re-audited here. See Agent 10 output at `docs/agentic/maze-build-spec/audits/b12-progress.md` for the progress-controller parity audit. Registry-level note: in Maze, `Progress` is instantiated twice (index.html:323, 718 — both story chapters). SoleMD's React tree renders `FieldStoryProgress` at the appropriate surface positions via JSX composition rather than DOM scan. The instantiate-twice behavior is preserved structurally (one render per chapter) but via React, not registry scan.
 - **Severity**: Cross-reference (delegated to Agent 10)
 - **Proposed fix**: See `b12-progress.md`.
 - **Canonical reference**: `b12-progress.md`.
@@ -128,7 +128,7 @@ None of these are required for **broader parity** either, because SoleMD's produ
 | Maze `xy` entry    | Maze class | Homepage-active | SoleMD counterpart                                             | Disposition                         |
 | ------------------ | ---------- | :-------------: | -------------------------------------------------------------- | ----------------------------------- |
 | `Header`           | `Cg`       | yes             | `ChromeBar.tsx` + `BrandWordmarkButton.tsx` + `Wordmark.tsx` + `ModeToggleBar.tsx` + `ThemeToggle.tsx` + `TimelineBar.tsx` | **sanctioned product divergence** — graph-UI toolbar, not marketing nav; no underline port |
-| `Progress`         | `gg`       | yes (x2)        | `AmbientFieldStoryProgress.tsx`                                | **~1:1 port** (see b12 audit)       |
+| `Progress`         | `gg`       | yes (x2)        | `FieldStoryProgress.tsx`                                | **~1:1 port** (see b12 audit)       |
 | `SwiperSlider`     | `wg`       | yes             | *none*                                                         | **sanctioned omission** — no marketing carousel on SoleMD homepage |
 | `FormsPagination`  | `fg`       | no              | *none*                                                         | **sanctioned omission** — no multi-step forms in scope |
 | `ArticleNav`       | `pg`       | no              | *none*                                                         | **sanctioned omission** — no article routes in scope |

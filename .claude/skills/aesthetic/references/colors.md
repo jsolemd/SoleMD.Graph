@@ -8,15 +8,16 @@ All colors live in `app/styles/tokens.css`. This document enumerates them by cat
 |------|-------------|-------------|
 | Soft Blue | `#a8c5e9` | `--color-soft-blue` |
 | Muted Indigo | `#747caa` | `--color-muted-indigo` |
-| Golden Yellow | `#fbb44e` | `--color-golden-yellow` |
+| Golden Yellow | `#e5c799` | `--color-golden-yellow` |
 | Fresh Green | `#aedc93` | `--color-fresh-green` |
 | Warm Coral | `#ffada4` | `--color-warm-coral` |
-| Soft Pink | `#eda8c4` | `--color-soft-pink` |
+| Soft Pink | `#e0aed8` | `--color-soft-pink` |
 | Soft Lavender | `#d8bee9` | `--color-soft-lavender` |
-| Paper | `#d4c5a0` → dark `#a89b78` | `--color-paper` |
+| Paper | `#d4c5a0` | `--color-paper` |
 | Teal | `#7ecfb0` | `--color-teal` |
 
-Dark-mode values are desaturated ~25–35% lightness, ~20–30% saturation.
+On the live site, dark mode keeps these pastels lively against a pure-black
+canvas instead of pre-desaturating them into charcoal.
 
 ## Extended Pastels (DotToc rainbow cycle, 12)
 
@@ -48,14 +49,14 @@ Consumed via `lib/pastel-tokens.ts` → `dotTocPastelColorSequence` (20-color cy
 
 | Variable | Light | Dark | Purpose |
 |----------|-------|------|---------|
-| `--background` | `#fafafa` | `#18181b` | Page background |
-| `--foreground` | `#1a1b1e` | `#e4e4e9` | Primary text |
-| `--surface` | `#ffffff` | `#1c1d21` | Card/panel surfaces |
-| `--surface-alt` | `#f5f6f8` | `#232427` | Inputs, toolbars |
-| `--text-primary` | `#1a1b1e` | `#e4e4e9` | Main text |
-| `--text-secondary` | `#5c5f66` | `#a1a1aa` | Secondary text |
-| `--text-tertiary` | `#9ca3af` | `#6b6b73` | Muted text |
-| `--border-default` | `#eaedf0` | `#2a2c31` | Primary borders |
+| `--background` | `#faf9f7` | `#000000` | Page background |
+| `--surface` | `#fffffe` | `#0F1012` | Card/panel surfaces |
+| `--surface-alt` | `#f5f4f1` | `#1A1B1E` | Inputs, toolbars |
+| `--surface-raised` | `#ffffff` | `#2A2C30` | Prompts, popovers, lifted surfaces |
+| `--text-primary` | `#1a1817` | `#E4E6EB` | Main text |
+| `--text-secondary` | `#5e5c58` | `#AEB1B7` | Secondary text |
+| `--text-tertiary` | `#9e9c97` | `#70747A` | Muted text |
+| `--border-default` | `#eae8e4` | `#26272B` | Semantic/error borders |
 | `--border-subtle` | `rgba(0,0,0,0.06)` | `rgba(255,255,255,0.06)` | Subtle dividers |
 | `--brand-accent` | `#747caa` | `#a8c5e9` | Primary accent |
 | `--brand-accent-alt` | `#a8c5e9` | `#89a3bf` | Secondary accent |
@@ -72,14 +73,15 @@ Consumed via `lib/pastel-tokens.ts` → `dotTocPastelColorSequence` (20-color cy
 
 ## Mode Accent Spectrum
 
-`ModeColorSync` sets `--mode-accent` on `<html>` to the active mode's `colorVar` (see `lib/graph/modes.ts`). The subtle/hover/border tokens derive via `color-mix()` so they auto-update.
+`ModeColorSync` sets `--mode-accent` on `<html>` to the active mode's
+`colorVar` (see `apps/web/features/graph/lib/modes.ts`). The subtle/hover
+tokens derive via `color-mix()` so they auto-update.
 
 | Variable | Opacity | Purpose |
 |----------|---------|---------|
 | `--mode-accent` | 100% | Full accent color |
-| `--mode-accent-subtle` | ~10% | Background fills |
-| `--mode-accent-hover` | ~18% | Hover states |
-| `--mode-accent-border` | ~30% | Colored borders |
+| `--mode-accent-subtle` | dynamic `color-mix()` | Background fills |
+| `--mode-accent-hover` | dynamic `color-mix()` | Hover states |
 
 Mode colors: Ask → `--color-soft-blue`, Explore → `--color-golden-yellow`, Learn → `--color-fresh-green`, Write → `--color-warm-coral`.
 
@@ -158,7 +160,7 @@ Consume by setting `data-entity-type` on a container and reading `var(--entity-a
 |----------|---------|
 | `--graph-icon-color` | Shared idle icon tint across graph chrome + wordmark |
 | `--graph-control-idle-bg` | Base shell background |
-| `--graph-control-hover-bg`, `--graph-control-pressed-bg`, `--graph-control-active-bg` | Interaction states |
+| Hover/pressed/active shell states | Derived in `graph-ui.css` from the idle bg + accent system, not separate tokens |
 
 Wired by `.graph-icon-btn` / `.panel-icon-btn` rules in `graph-ui.css`.
 
@@ -201,16 +203,19 @@ From `lib/pastel-tokens.ts` → `mantineBrandColorsTuple` (primary shade index =
 
 ## Dark Mode Design Rule
 
-- Lightness −25 to −35%
-- Saturation −20 to −30%
-- Slight hue shift toward neutral
+- Start from the real dark substrate in use: `#000000` for field/viewport
+  backgrounds, tokenized near-black surfaces for chrome
+- Lower lightness only as needed for readability and layering
+- Preserve pastel identity instead of flattening everything toward gray
+- Rebalance warmth/chroma per token family; do not apply one global formula
 
-Goal: muted, calm variants that never feel neon against `#18181b`. Never invert — desaturate.
+Goal: lively but controlled pastels that stay legible on black and dark surfaces.
+Do not invert blindly, and do not gray the whole palette out.
 
 ## Anti-Patterns
 
-- **Pure black** `#000000` for dark bg → use `#18181b` (warm charcoal)
-- **Pure white** `#fafafa`-adjacent → use `#fafafa` (warm off-white)
+- **Charcoal dark-mode fallback** → the canonical dark canvas is `#000000`
+- **Cool gray page white** → the canonical light background is `#faf9f7`
 - **Hardcoded hex** in components → always `var(--token)`; use `brand-colors.ts` only for WebGL React props
 - **`isDark` ternaries** → tokens auto-swap via `.dark`
 - **New tokens in `globals.css`** → add to `app/styles/tokens.css`

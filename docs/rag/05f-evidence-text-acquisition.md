@@ -71,8 +71,9 @@ paper-level work.
    membership and it never substitutes for the raw Semantic Scholar / PubTator
    release backbone.
 6. **PubTator remains the broad annotation substrate.** This lane acquires full
-   text only. Broad entity / relation coverage still comes from the canonical
-   PubTator release tables already in warehouse.
+   text only. Broad PT3 coverage comes from `pubtator.*_stage`, while canonical
+   PT3 tables remain a mapped-owned materialization surface rather than a
+   prerequisite for every admitted corpus paper.
 7. **Mapped and evidence stay separate.** `mapped` is the paper-level active
    universe. `evidence` is the smaller full-text parsed/chunked/grounded
    subset inside mapped. This lane is an evidence-wave input, not a mapped
@@ -88,8 +89,9 @@ The parent/child handoff is now explicit rather than implied:
   'mapped'`.
 - `corpus.dispatch_evidence_wave` owns the first evidence-wave selection and
   enqueues `evidence.acquire_for_paper`.
-- `05e` also owns the boundary that ensures canonical paper/fact tables reflect
-  that mapped universe rather than raw release breadth.
+- `05e` also owns the stage boundary: corpus baseline materialization for the
+  broad admitted universe, then mapped-owned heavy surfaces for the stricter
+  active paper universe.
 - The first landed policy is `evidence_missing_pmc_bioc`, which selects mapped
   papers lacking a canonical PMC BioC document in warehouse and emits one
   paper-level actor message per evidence-wave member.

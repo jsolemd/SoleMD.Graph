@@ -130,7 +130,7 @@ That means:
 ### 1. Use one governed runtime family, not a one-off geo page
 
 The world surface should reuse the same product-level runtime ideas already
-established for the ambient field:
+established for the field:
 
 - release-scoped static assets
 - semantic scene state

@@ -1,0 +1,1 @@
+export const FIELD_NON_DESKTOP_BREAKPOINT = 1024;

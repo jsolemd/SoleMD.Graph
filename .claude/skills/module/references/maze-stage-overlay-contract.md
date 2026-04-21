@@ -4,7 +4,7 @@ Use this reference when a task touches stage ownership, scene controllers,
 projection, hotspots, stream markers, progress bars, or chapter choreography.
 
 The Round 12 canonical ledger is
-`docs/map/ambient-field-maze-baseline-ledger-round-12.md`. Line citations below
+`docs/map/field-maze-baseline-ledger-round-12.md`. Line citations below
 are to `scripts.pretty.js` unless otherwise noted.
 
 ## Fixed Stage Ownership
@@ -40,13 +40,13 @@ controller per slug:
 - `pcb`
 
 In Round 12, SoleMD mirrors Maze's class hierarchy (`yr` / `mm` / `ug` / `_m`)
-with a typed controller hierarchy under `apps/web/features/ambient-field/`:
+with a typed controller hierarchy under `apps/web/features/field/`:
 
 - `controller/FieldController.ts` — abstract base (`yr`,
   `scripts.pretty.js:43013-43254`)
 - `controller/BlobController.ts` — subclass (`mm`, `:43257-43526`)
 - `controller/StreamController.ts` — subclass (`ug`, `:49326-49345`)
-- `controller/PcbController.ts` — subclass (`_m`, `:43615-43630`)
+- `controller/ObjectFormationController.ts` — subclass (`_m`, `:43615-43630`)
 
 Each controller owns:
 
@@ -82,7 +82,7 @@ Maze's base controller (`yr`, `scripts.pretty.js:43189-43196`) wires a
 mousemove parallax that rotates a dedicated `mouseWrapper` group. SoleMD
 Round 12 ships this as:
 
-- `apps/web/features/ambient-field/renderer/mouse-parallax-wrapper.ts`
+- `apps/web/features/field/renderer/mouse-parallax-wrapper.ts`
 - export: `attachMouseParallax(group, options)`
 - GSAP `sine.out` tween, 1s duration
 - ±3e-4 rad/px on x, ±5e-4 rad/px on y
@@ -91,7 +91,7 @@ Round 12 ships this as:
 SoleMD rule:
 
 - mouse parallax is **opt-in per module**, not a global landing-page default
-- the landing-page ambient-field surface does **not** attach parallax to its
+- the landing-page field surface does **not** attach parallax to its
   background blob (Round 13 removed the homepage `useEffect`); the
   `mouseWrapper` group still exists per stage item as an identity group so
   future modules can target it without remounting the tree
@@ -129,15 +129,15 @@ Maze predeclares a hotspot pool directly inside `.s-gfx`:
 - the remaining `38` are bare ring affordances
 
 DOM shape: `index.html:87-149`. CSS keyframes: extracted in
-`docs/map/ambient-field-maze-baseline-ledger-round-12.md` §13. Pool + projection
+`docs/map/field-maze-baseline-ledger-round-12.md` §13. Pool + projection
 logic: `scripts.pretty.js:43421-43524`.
 
 ### SoleMD Primitives
 
 Round 12 replaces the pre-R12 inline `FieldScene` hotspot DOM logic with three
-named primitives under `apps/web/features/ambient-field/overlay/`:
+named primitives under `apps/web/features/field/overlay/`:
 
-- `AmbientFieldHotspotRing.tsx` — React component for a single hotspot.
+- `FieldHotspotRing.tsx` — React component for a single hotspot.
   Props:
   - `variant`: `'cyan' | 'red'`
   - `phase`: `'idle' | 'animating' | 'only-reds' | 'only-single' | 'hidden'`
@@ -147,10 +147,10 @@ named primitives under `apps/web/features/ambient-field/overlay/`:
   - `cardOffset`
   - `projection` — screen-space x/y/scale/opacity from the projection step
   - `onAnimationEnd` — wired to per-hotspot reseed
-- `ambient-field-hotspot-ring.css` — ports Maze's hotspot keyframes verbatim
+- `field-hotspot-ring.css` — ports Maze's hotspot keyframes verbatim
   under an `afr-` prefix. Anything referencing Maze's original class names
   should use the `afr-hotspot*` equivalents here.
-- `ambient-field-hotspot-lifecycle.ts` — exports
+- `field-hotspot-lifecycle.ts` — exports
   `createHotspotLifecycleController({ count, samplePosition, sampleDelayMs,
   durationMs, maxRetries })`.
   - Each hotspot's `animationend` handler triggers `reseed(index)` for
@@ -176,12 +176,12 @@ deferred to a later `/clean` pass. Hotspot rejection rules live at
 
 SoleMD rule:
 
-- use `AmbientFieldHotspotRing` + `createHotspotLifecycleController` for any
+- use `FieldHotspotRing` + `createHotspotLifecycleController` for any
   new hotspot surface
 - do not ship bespoke DOM pools
 - do not drive reseed from a global interval
-- `AmbientFieldHotspotRing` + co-located `ambient-field-hotspot-ring.css`
-  are the canonical ring primitive across every ambient-field surface (SVG
+- `FieldHotspotRing` + co-located `field-hotspot-ring.css`
+  are the canonical ring primitive across every field surface (SVG
   stroke-dasharray `128`, `0.5` opacity, `6px` inner dot, `2s` per-hotspot
   pulse). The landing page mounts instances inside `.afr-stage` and drives
   `opacity` / `transform` imperatively via refs — no ad-hoc CSS-in-JS
@@ -290,7 +290,7 @@ Maze separates these layers cleanly:
   - points, shaders, controller transforms
   - `uTime` fed from the field-loop clock singleton
 - projected hotspot DOM:
-  - `AmbientFieldHotspotRing` instances driven by
+  - `FieldHotspotRing` instances driven by
     `createHotspotLifecycleController`
   - per-hotspot `animationend` reseed (no shared timer)
 - stream DOM/SVG overlay layer:
@@ -310,7 +310,7 @@ UI into the particle layer.
 - attach pointer parallax via `attachMouseParallax`, never bespoke listeners
 - read elapsed time from `renderer/field-loop-clock`, never from a
   component-local clock
-- build hotspots from `AmbientFieldHotspotRing` +
+- build hotspots from `FieldHotspotRing` +
   `createHotspotLifecycleController`; reseed per-hotspot on `animationend`
 - use the `tnEase` cubic-bezier (`cubic-bezier(0.5, 0, 0.1, 1)`) wherever
   Maze calls its `CustomEase("tnEase")` — documented divergence because the

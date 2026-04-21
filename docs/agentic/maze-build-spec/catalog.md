@@ -46,7 +46,7 @@ Maze-authored code occupies roughly 13,500 lines (~24%) of the 55,957-line `scri
 - **Aggregate Maze LOC**: 146
 - **Key Maze symbols**: `cs` (object literal with 12 scene configs: blob, stream, pcb, hex, shield, cubes, sphere, blobProduct, users, logo, default, plus variants)
 - **DOM anchors involved**: indirect via `yr.params = cs[slug]`
-- **SoleMD counterpart(s)**: `apps/web/features/ambient-field/scene/visual-presets.ts`
+- **SoleMD counterpart(s)**: `apps/web/features/field/scene/visual-presets.ts`
 - **Cross-bucket edges**: consumed by B6 (base controller `yr` constructor at 43041)
 - **Audit priority**: P1 (tuning values are production levers; per-key parity matters)
 - **Estimated auditor context load**: ~150 Maze lines + 1 SoleMD file
@@ -57,7 +57,7 @@ Maze-authored code occupies roughly 13,500 lines (~24%) of the 55,957-line `scri
 - **Aggregate Maze LOC**: ~360
 - **Key Maze symbols**: `gd`, `Fl`, `jo`, `jo.fromVertices()`, `jo.fromTexture()`, `jo.generate()`, `jo.addParams()`, stream funnel uniforms [42583, 42593], shader attributes `aStreamFreq`, `aSelection`, `aMove`, `aSpeed`, `aRandomness`
 - **DOM anchors involved**: none (consumed by controllers)
-- **SoleMD counterpart(s)**: `apps/web/features/ambient-field/renderer/field-shaders.ts` (material) + `apps/web/features/ambient-field/asset/*` (geometry generation)
+- **SoleMD counterpart(s)**: `apps/web/features/field/renderer/field-shaders.ts` (material) + `apps/web/features/field/asset/*` (geometry generation)
 - **Cross-bucket edges**: consumes B1 (three.js `ShaderMaterial`, `BufferGeometry`); consumed by B5 (asset registry), B6 (controllers)
 - **Audit priority**: P1 (parity-critical; source-specific attributes are load-bearing)
 - **Estimated auditor context load**: ~400 Maze lines + shader source + SoleMD asset modules (~800 total)
@@ -68,7 +68,7 @@ Maze-authored code occupies roughly 13,500 lines (~24%) of the 55,957-line `scri
 - **Aggregate Maze LOC**: ~340
 - **Key Maze symbols**: `vd`, `ku`, `fm`, `md`, entries for `logo`, `pcb`, `shield`, `cubes`, `net`, `world`, `users`, `stars`
 - **DOM anchors involved**: none (lookups keyed by `data-gfx` slug via controller registry)
-- **SoleMD counterpart(s)**: `apps/web/features/ambient-field/asset/point-source-registry.ts`
+- **SoleMD counterpart(s)**: `apps/web/features/field/asset/point-source-registry.ts`
 - **Cross-bucket edges**: consumes B4 (geometry generator `jo`), B1 (FBXLoader, TextureLoader); consumed by B6 (controllers) and B11 (stage runtime `xi` preload)
 - **Audit priority**: P1 (registry shape determines which scenes work)
 - **Estimated auditor context load**: ~400 Maze lines + SoleMD registry module
@@ -79,7 +79,7 @@ Maze-authored code occupies roughly 13,500 lines (~24%) of the 55,957-line `scri
 - **Aggregate Maze LOC**: ~740
 - **Key Maze symbols**: `Ll`, `Ei`, `yr`, `mm`, `gm`, `xm`, `ym`, `_m`, `bm`, `Sm`, `ug`, hotspot labels (`stats`, `hotspots`, `diagram`, `shrink`, `quickly`, `respond`, `end`)
 - **DOM anchors involved**: `data-gfx="blob"` → `mm`; `data-gfx="stream"` → `ug`; `data-gfx="pcb"` → `_m`; plus `.js-hotspot` children
-- **SoleMD counterpart(s)**: `apps/web/features/ambient-field/controller/FieldController.ts` (base) + `BlobController.ts` + `StreamController.ts` + `PcbController.ts`
+- **SoleMD counterpart(s)**: `apps/web/features/field/controller/FieldController.ts` (base) + `BlobController.ts` + `StreamController.ts` + `PcbController.ts`
 - **Cross-bucket edges**: consumes B3 (scene params `cs`), B4 (materials, geometry), B5 (asset registry), B10 (scroll driver `Jr`), B11 (stage runtime `xi` for viewport/camera); consumed by B7 (controller registry `jx`)
 - **Audit priority**: P1 (substantive drift likely — base lifecycle contract and hotspot pool are parity-critical; concrete controllers may be partial in SoleMD)
 - **Estimated auditor context load**: ~900 Maze lines + 3–5 SoleMD controller files (~1,500 total)
@@ -123,7 +123,7 @@ Maze-authored code occupies roughly 13,500 lines (~24%) of the 55,957-line `scri
 - **Aggregate Maze LOC**: ~212
 - **Key Maze symbols**: `jt`, `Jr`, `cg.ScrollTrigger`, `IntersectionObserver`, scroll-state classes (`is-scrolled`, `is-scrolling-down`, `is-scrolled-vh`, `is-scrolled-header-height`), hash-click handler, adapter loader at [49176, 49191]
 - **DOM anchors involved**: scans all `[data-scroll]` nodes (7 homepage values per B8+B9)
-- **SoleMD counterpart(s)**: `apps/web/features/ambient-field/scroll/ambient-field-scroll-driver.ts` (already pilot-audited per Phase 0)
+- **SoleMD counterpart(s)**: `apps/web/features/field/scroll/field-scroll-driver.ts` (already pilot-audited per Phase 0)
 - **Cross-bucket edges**: consumes B1 (GSAP ScrollTrigger), B8+B9 (adapter registry and handlers); consumed by B2 (app shell `by`), B6 (controllers bind via `Jr.scrollTo`), B11 (stage runtime reacts to scroll)
 - **Audit priority**: P2 (already pilot-audited; routine re-verify against latest driver)
 - **Estimated auditor context load**: ~250 Maze lines + SoleMD driver (~400 total)
@@ -134,7 +134,7 @@ Maze-authored code occupies roughly 13,500 lines (~24%) of the 55,957-line `scri
 - **Aggregate Maze LOC**: ~230
 - **Key Maze symbols**: `Os`, `xi`, `hg`, WebGL renderer + scene + camera construction [49518, 49541], DOM scan [49546, 49559], RAF loop [49573, 49585], `ku.loadAll()` preload
 - **DOM anchors involved**: `.js-gfx` (root stage mount), scans `[data-gfx]`
-- **SoleMD counterpart(s)**: `apps/web/features/ambient-field/renderer/FieldScene.tsx`
+- **SoleMD counterpart(s)**: `apps/web/features/field/renderer/FieldScene.tsx`
 - **Cross-bucket edges**: consumes B1 (three.js), B5 (asset registry), B7 (controller registry), B10 (scroll driver); consumed by B2 (app shell)
 - **Audit priority**: P1 (parity-critical render loop and preload chain)
 - **Estimated auditor context load**: ~300 Maze lines + SoleMD `FieldScene.tsx` + context (~600 total)
@@ -145,7 +145,7 @@ Maze-authored code occupies roughly 13,500 lines (~24%) of the 55,957-line `scri
 - **Aggregate Maze LOC**: 78
 - **Key Maze symbols**: `gg`, `.js-progress-bar`, `--progress-N` CSS custom properties, `data-current-visible` attribute, `calculateSectionProgress()`, GSAP `.to()` for smooth updates
 - **DOM anchors involved**: **`data-component="Progress"` (2 instances at `index.html:323`, `718`)**
-- **SoleMD counterpart(s)**: `apps/web/features/ambient-field/AmbientFieldStoryProgress.tsx`
+- **SoleMD counterpart(s)**: `apps/web/features/field/FieldStoryProgress.tsx`
 - **Cross-bucket edges**: consumes B10 (scroll events), extends B6 base `Ei`; consumed by B13 (instantiated via component registry `xy`)
 - **Audit priority**: P1 (two active DOM instances; CSS custom property writes are parity-critical)
 - **Estimated auditor context load**: ~100 Maze lines + SoleMD progress component

@@ -2,7 +2,7 @@
 
 **Audit Date:** 2026-04-19  
 **Auditor:** threejs-audit  
-**Scope:** SoleMD.Graph ambient-field Three.js runtime vs Maze HQ scripts.pretty.js (2026-04-18)
+**Scope:** SoleMD.Graph field Three.js runtime vs Maze HQ scripts.pretty.js (2026-04-18)
 
 ---
 
@@ -40,7 +40,7 @@ SoleMD's Three.js runtime is **faithful to Maze's core architecture** with inten
 | **pointTexture creation** | scripts.pretty.js:42560 inline: `new yo().load(gd.PARTICLE_TEXTURE)` per call | field-point-texture.ts:16 lazy singleton: `new TextureLoader().load("/research/maze-particle.png")` cached at module scope | Optimization | SoleMD loads once; Maze reloads per getMaterial call. Both reference `/public/theme/images/particle.png` (Maze) vs `/research/maze-particle.png` (SoleMD) |
 | **pointTexture filters** | Inferred: default linear | field-point-texture.ts:18–20 explicit: `minFilter: LinearFilter, magFilter: LinearFilter, format: RGBAFormat` | Clarity | SoleMD documents filter settings; Maze relies on defaults |
 | **pointTexture disposal** | Not visible in excerpt | field-point-texture.ts: singleton never disposed | Potential concern | Cache survives component unmount; no `.dispose()` call. Risk: GPU memory leak on repeated mounts if not managed by caller |
-| **Per-frame uTime update** | GSAP timeline advances continuously | FieldScene.tsx:191 `getAmbientFieldElapsedSeconds()` passed to tick | ✓ Match | Both update uTime every frame; source differs intentionally |
+| **Per-frame uTime update** | GSAP timeline advances continuously | FieldScene.tsx:191 `getFieldElapsedSeconds()` passed to tick | ✓ Match | Both update uTime every frame; source differs intentionally |
 | **Per-frame uPixelRatio update** | Likely updated once or rarely | BlobController.tick updates via context | ✓ Match | Both advance at frame cadence |
 | **Per-frame uScale update** | Updated by layer | BlobController.tick: camera & viewport-driven | ✓ Match | Scale recalculated per frame from viewport dimensions |
 | **Per-frame uSize update** | From preset | BlobController.tick: from preset uniforms | ✓ Match | Size driven by visual preset config |

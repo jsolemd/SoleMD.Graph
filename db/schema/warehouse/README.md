@@ -22,9 +22,12 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
 - raw Semantic Scholar ingest staging tables:
   - `solemd.s2_papers_raw`
   - `solemd.s2_paper_authors_raw`
+  - `solemd.s2_authors_raw`
   - `solemd.s2orc_documents_raw`
-  - `solemd.s2_paper_references_raw`
+  - `solemd.s2_paper_reference_metrics_raw`
   - `solemd.s2_paper_assets_raw`
+  - `solemd.s2_paper_references_raw` as an optional legacy/raw-edge surface, not the default
+    corpus-gating contract
 - PubTator stage plus selection-owned canonical tables:
   - `pubtator.entity_annotations_stage`
   - `pubtator.entity_annotations`

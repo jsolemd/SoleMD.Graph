@@ -32,9 +32,9 @@ import {
 |--------|-----------------|---------|
 | `panelSurfaceStyle` | `--graph-panel-bg` / `--graph-panel-shadow` | Docked panels |
 | `promptSurfaceStyle` | `--graph-prompt-bg` / transparent border / `--graph-prompt-shadow` | Floating prompt overlay |
-| `panelCardStyle` + `panelCardClassName` | `--graph-panel-input-bg` / `--graph-panel-border` / `rounded-lg px-2 py-1.5` | Neutral card (input-ish) |
-| `panelAccentCardStyle` + `panelAccentCardClassName` | `--mode-accent-subtle` / `--mode-accent-border` / `rounded-xl px-3 py-3` | Mode-accent preview |
-| `panelAccentCardEntityStyle` + `panelAccentCardEntityClassName` | `color-mix()` of `--entity-accent` (fallback `--mode-accent`) against panel bg/border | Wiki entity profile cards |
+| `panelCardStyle` + `panelCardClassName` | `--surface-alt` / rim-light / transparent border / `rounded-lg px-2 py-1.5` | Neutral matte card stacked on a panel |
+| `panelAccentCardStyle` + `panelAccentCardClassName` | `color-mix()` of `--mode-accent` against `--graph-panel-bg` / rim-light / transparent border / `rounded-xl px-3 py-3` | Mode-accent preview |
+| `panelAccentCardEntityStyle` + `panelAccentCardEntityClassName` | `color-mix()` of `--entity-accent` (fallback `--mode-accent`) against `--graph-panel-bg` / rim-light / transparent border | Wiki entity profile cards |
 | `panelErrorStyle` | `--feedback-danger-bg` / `--feedback-danger-border` | Error surfaces |
 
 ### Text tiers
@@ -125,7 +125,7 @@ They represent different elevation tiers. The prompt floats over the canvas at i
 How it works:
 
 1. `tokens.css` has `[data-entity-type="disease"] { --entity-accent: var(--wiki-graph-node-diso); }` (and 8 more selectors).
-2. `panelAccentCardEntityStyle` uses `color-mix()` to tint the card bg (12%) and border (20%) with `var(--entity-accent, var(--mode-accent))` against the panel surface.
+2. `panelAccentCardEntityStyle` uses `color-mix()` to tint the card background with `var(--entity-accent, var(--mode-accent))` against the panel surface. The card remains borderless in the normal state; rim-light carries the stacked read in dark mode.
 3. The same `--entity-accent` cascades into children for animated scale bars, SVG fills, pill tints.
 
 To add a new entity type:

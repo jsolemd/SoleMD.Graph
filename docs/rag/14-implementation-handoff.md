@@ -441,9 +441,10 @@ Current starting point:
   materialization, and mapped-wave dispatch now exist in `apps/worker/app/corpus`.
 - `solemd.corpus.admission_reason` and `solemd.corpus.domain_status` already
   exist in `02` and are the right durable selection ledger.
-- The operational selected canonical corpus should be read as
-  `corpus`, `papers`, `paper_text`, `paper_authors`, `paper_citations`,
-  `pubtator.entity_annotations`, and `pubtator.relations`.
+- The runtime now materializes explicit corpus baseline (`corpus`, `papers`,
+  `paper_text`, selection audit surfaces) and mapped-owned heavy surfaces
+  (`paper_authors`, canonical PT3, and any citation-edge enrichment that
+  downstream mapped waves actually require) as separate phases.
 - `paper_selection_summary` is now the stable warehouse-local ranking and
   audit surface for downstream waves. It already carries `publication_year`,
   `has_locator_candidate`, mapped-rule booleans, mapped-rule counts, and
@@ -456,13 +457,17 @@ Current starting point:
   shows the prior selection logic: venue/journal normalization, curated
   vocab aliases, PubTator evidence, and promotion from `corpus` to `mapped`.
 
-Scope for that agent:
+Scope for the next agent:
 
 - Extend `apps/worker/app`, using the existing Dramatiq broker and pool
   bootstrap.
 - Keep raw/stage ingest in `05` and keep downstream child waves in `05a` /
   `05f`; this follow-on should calibrate, not redefine, the locked corpus
   contract between them.
+- Treat the raw citation contract as paper-level aggregates before mapped, and
+  reserve full citation edges for mapped-owned or child-wave enrichment.
+- Build on the landed baseline-vs-mapped materialization split rather than
+  reopening it.
 - Preview and tune cohort sizes over real warehouse releases so corpus breadth,
   mapped precision, and evidence-wave ceilings can be adjusted by policy
   parameters rather than structural rewrites.
@@ -483,15 +488,10 @@ Non-goals for that slice:
 
 Implementation sequence for that agent:
 
-1. Use `paper_selection_summary` and the durable signal ledger to preview real
-   cohort sizes before changing thresholds.
-2. Tune policy parameters rather than changing the durable status model:
-   corpus admission breadth, mapped rule floors, and evidence-wave thresholds.
-3. Add evidence-source fallback and locator/readiness improvements without
-   rebuilding the selection orchestration.
-4. Preserve warehouse-local, set-based execution and deterministic resume
-   semantics while extending the policy.
-5. Leave chunking, graph embedding, and mapped paper-level retrieval rollout as
+1. Run monitored real releases against the landed staged contract.
+2. Tune policy parameters and evidence-source fallback on top of that staged
+   runtime.
+3. Leave chunking, graph embedding, and mapped paper-level retrieval rollout as
    downstream child waves operating on the selected corpus.
 
 Definition of done:
@@ -501,8 +501,8 @@ Definition of done:
 - The selected corpus is queryable by one durable warehouse predicate
   (`c.domain_status IN ('corpus', 'mapped')`), and the mapped paper-level
   universe is queryable by `c.domain_status = 'mapped'`.
-- The canonical paper/fact tables reflect that canonical corpus universe rather
-  than the full raw release breadth.
+- Corpus-baseline surfaces reflect the admitted corpus universe, while
+  mapped-owned heavy surfaces reflect only the mapped active universe.
 - Evidence-wave membership remains a child-wave policy, not a new paper status,
   and is reproducible under `wave_policy_key = 'evidence_missing_pmc_bioc'`.
 - Chunking, graph-embedding, and mapped-paper rollout agents all inherit the

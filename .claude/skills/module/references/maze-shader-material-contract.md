@@ -12,8 +12,8 @@ Source ground truth:
 - `?blending` URL param: `scripts.pretty.js:42580`
 
 Current SoleMD implementation lives in
-`apps/web/features/ambient-field/renderer/field-shaders.ts` and
-`apps/web/features/ambient-field/scene/visual-presets.ts`. The old pulse-era
+`apps/web/features/field/renderer/field-shaders.ts` and
+`apps/web/features/field/scene/visual-presets.ts`. The old pulse-era
 uniform family (`uPulseRate`, `uPulseStrength`, `uPulseThreshold`,
 `uPulseSoftness`) and the later bucket-accent / burst-overlay experiment are
 fully retired. The shipped SoleMD shader uses one vec3 base/noise pair

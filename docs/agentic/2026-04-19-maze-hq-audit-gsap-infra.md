@@ -1,6 +1,6 @@
 # GSAP Infrastructure Audit — SoleMD.Graph vs Maze HQ
 
-**Scope**: `FieldController.ts`, `ambient-field-scroll-driver.ts`, Maze reference lines 43013-43254, 49176-49192, 55882.
+**Scope**: `FieldController.ts`, `field-scroll-driver.ts`, Maze reference lines 43013-43254, 49176-49192, 55882.
 
 ## Drift Summary
 

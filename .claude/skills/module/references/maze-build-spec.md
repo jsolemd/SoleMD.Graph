@@ -1,17 +1,24 @@
-# Maze HQ build spec — canonical parity reference for SoleMD ambient-field modules
+# Maze HQ build spec — canonical parity reference for SoleMD field modules
 
 **Status**: canonical first-read
-**Scope**: every SoleMD ambient-field surface (landing, wiki modules, expanded module views, CTA sections, non-landing ambient-field surfaces)
+**Scope**: every SoleMD field surface (landing, wiki modules, expanded module views, CTA sections, non-landing field surfaces)
 **Date**: 2026-04-19
 **Supersedes**: `image-particle-conformation.md` as the root reference entry point (that file remains a specialist reference for the image→particle pattern and is still required reading before adding any bitmap- or model-backed point layer)
 
 ## How to use this document
 
-This document is **half audit, half backlog**. Every Maze HQ subsystem that matters for SoleMD ambient-field parity is paired to either (a) its SoleMD counterpart plus a drift list and rebuild notes, or (b) a rehydration checklist when the counterpart does not yet exist. Section numbering matches the subsystem buckets (B1–B14) established in `docs/agentic/maze-build-spec/catalog.md`. Each section cites the audit that produced it so implementers can drill into the line-level source.
+This document is **half audit, half backlog**. Every Maze HQ subsystem that matters for SoleMD field parity is paired to either (a) its SoleMD counterpart plus a drift list and rebuild notes, or (b) a rehydration checklist when the counterpart does not yet exist. Section numbering matches the subsystem buckets (B1–B14) established in `docs/agentic/maze-build-spec/catalog.md`. Each section cites the audit that produced it so implementers can drill into the line-level source.
 
 For an implementation task, start from the bucket that matches the surface you are touching and work from its "How to rebuild / what to change" block. Every bucket links forward into the specialist `maze-*.md` references for deeper treatment of shader uniforms, asset primitives, mobile rules, or the image→particle pattern. Do **not** read those references before this document — they assume the bucket ownership this spec defines.
 
 When a behavior is missing in SoleMD, check section 13 first: it is the prioritized backlog. When a behavior is intentionally different, check section 12: it is the consolidated sanctioned-deviation list. When in doubt about whether a sanctioned deviation covers a change you want to make, the answer is almost always "no, ask first". The spec reinforces two patterns at every level: **React composition replaces DOM-scan registries**, and **hijack native pipeline uniforms for visual changes instead of adding overlays or parallel subsystems**.
+
+Maze names inside this document are source-artifact labels only. Current
+SoleMD naming authority lives in the live code plus
+`docs/map/modules/module-terminology.md`. When this document references the
+current SoleMD runtime, prefer `objectFormation`, `sectionId`,
+`stageItemId`, and `presetId` over legacy labels such as `pcb`,
+`anchorId`, `controllerSlug`, and `gfxPreset`.
 
 ## Source footprint (Maze homepage archive)
 
@@ -27,7 +34,7 @@ Maze-authored source is ~13,500 lines of a 55,957-line `scripts.pretty.js`. The 
 ## 1. Page runtime shell (`by`) — B2
 
 **Maze**: scripts.pretty.js:55770–55907 (`by` bootstrap); app-shell utilities at 50256–50462; AJAX/`Fs` at 49840–50091. ~345 lines total.
-**SoleMD**: `apps/web/app/layout.tsx` + `apps/web/app/page.tsx` + `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/*` + `apps/web/app/providers.tsx`. Responsibility is distributed across six layers (App Router, `MantineProvider` + `DarkClassSync`, dynamic-imported landing page, `useShellVariant`, `useGraphWarmup` + `useGraphBundle`, `bindAmbientFieldControllers`).
+**SoleMD**: `apps/web/app/layout.tsx` + `apps/web/app/page.tsx` + `apps/web/features/field/surfaces/FieldLandingPage/*` + `apps/web/app/providers.tsx`. Responsibility is distributed across six layers (App Router, `MantineProvider` + `DarkClassSync`, dynamic-imported landing page, `useShellVariant`, `useGraphWarmup` + `useGraphBundle`, `bindFieldControllers`).
 
 ### Parity state
 
@@ -41,16 +48,16 @@ Maze-authored source is ~13,500 lines of a 55,957-line `scripts.pretty.js`. The 
 
 ### How to rebuild / what to change
 
-- **Must-fix**: introduce an explicit preload promise in the surface adapter layer. Shape: `await prewarmAmbientFieldPointSources({ ids })` and `await controller.whenReady()` must both resolve before `bindAmbientFieldControllers` binds scroll and before the controller drives the render loop. This belongs inside the `FixedStageManager` seam described in SKILL.md § "Default Architectural Shape". The render loop is R3F-owned; the gate is whether `BlobController.tick` is permitted to write uniforms, not whether `useFrame` ticks.
+- **Must-fix**: introduce an explicit preload promise in the surface adapter layer. Shape: `await prewarmFieldPointSources({ ids })` and `await controller.whenReady()` must both resolve before `bindFieldControllers` binds scroll and before the controller drives the render loop. This belongs inside the `FixedStageManager` seam described in SKILL.md § "Default Architectural Shape". The render loop is R3F-owned; the gate is whether `BlobController.tick` is permitted to write uniforms, not whether `useFrame` ticks.
 - **Should-fix (body classes)**: author `apps/web/app/shell/bind-shell-state-classes.ts` mounted once in `layout.tsx`. Exports `bindShellStateClasses()` that adds `is-loaded` on DOMContentLoaded, `is-resizing` on resize (250 ms debounce matching Maze's `o2 = 250`), reserves `is-rendering` / `is-not-ready` for router view transitions. This utility also absorbs scroll-driver D2 (`is-scrolled`, `is-scrolling-down`, `is-scrolled-vh-*`, `is-scrolled-header-height`) — both audits converge on the same shell utility.
-- **Should-fix (section manifest)**: do **not** port Maze's `[data-gfx]` DOM scan. Introduce `FieldSectionManifest[]` authored in `ambient-field-landing-content.ts` enumerating `{ anchorId, controllerSlug, endAnchorId?, gfxPreset }`. Shell iterates and calls `bindAmbientFieldControllers` per entry. This is the B7 port recommendation reified at the shell layer.
+- **Should-fix (section manifest)**: do **not** port Maze's `[data-gfx]` DOM scan. Introduce `FieldSectionManifest[]` authored in `field-landing-content.ts` enumerating `{ sectionId, stageItemId, endSectionId?, presetId }`. Shell iterates and calls `bindFieldControllers` per entry. This is the B7 port recommendation reified at the shell layer.
 
 ### Sanctioned deviations (key rows; full set in § 12)
 
 - `Fs` AJAX page-swap is **not** required. Next.js App Router (`<Link>` + RSC streaming + `router.push`/`replace`/`back` + `metadata.title` + `AnimatePresence` + `error.tsx`/`not-found.tsx`) is a strict superset. The Maze-step → Next.js-step lifecycle translation table is authoritative and lives in `b02-app-shell.md § "Sanctioned deviations" item 1`.
 - No `yy` page-class registry or `[data-page]` DOM scan (Next.js file-based routing replaces it).
 - No `ih.bind` component wiring (React component tree replaces the runtime scan).
-- No GSAP `CustomEase("custom", "0.5, 0, 0.1, 1")` registered globally; Framer Motion is SoleMD's primary motion substrate, GSAP is scoped to ambient-field scroll-driver + future chapter adapters.
+- No GSAP `CustomEase("custom", "0.5, 0, 0.1, 1")` registered globally; Framer Motion is SoleMD's primary motion substrate, GSAP is scoped to field scroll-driver + future chapter adapters.
 - Pointer/desktop detection via `useShellVariant` (`matchMedia` pointer/hover + ≤960 px width) replaces `Qo = A1()` / `yi = _y()`.
 
 ### Cross-reference
@@ -60,11 +67,11 @@ Maze-authored source is ~13,500 lines of a 55,957-line `scripts.pretty.js`. The 
 ## 2. Stage runtime (`Os`/`xi`) + controller registry (`jx`) — B11 + B7
 
 **Maze**: scripts.pretty.js:49427–49588 (`Os` / `xi` stage runtime); 49347–49357 (`jx` controller registry); 49359–49425 (`hg` starfield, `?stars`-gated).
-**SoleMD**: `apps/web/features/ambient-field/renderer/FieldScene.tsx` + `renderer/FieldCanvas.tsx` + `renderer/field-loop-clock.ts`. `BlobController` is instantiated directly via `useMemo` at `FieldScene.tsx:133`; `StreamController` and `PcbController` exist but have no current mount site (landing is blob-only).
+**SoleMD**: `apps/web/features/field/renderer/FieldScene.tsx` + `renderer/FieldCanvas.tsx` + `renderer/field-loop-clock.ts`. `BlobController` is instantiated directly inside `FieldScene.tsx`; `StreamController` and `ObjectFormationController` exist as canonical stage families even when landing only activates the manifest-declared subset.
 
 ### Agent 3 recommendation (locked)
 
-**Do not port `jx` as a string-keyed registry.** React composition already solves what `jx` solves. The `FieldControllerInit.id` slug (`"blob" | "stream" | "pcb"`) is the semantic equivalent of `data-gfx` at the data layer; dispatch happens through JSX and static imports rather than DOM scan. Missing controllers are compile-time errors, which is strictly safer than Maze's silent fallback to `jx.default = yr`. `FieldSectionManifest → SceneResolver` (SKILL.md § "Required Runtime Pieces") is the higher-abstraction replacement.
+**Do not port `jx` as a string-keyed registry.** React composition already solves what `jx` solves. The `FieldControllerInit.id` slug (`"blob" | "stream" | "objectFormation"`) is the semantic equivalent of `data-gfx` at the data layer; dispatch happens through JSX and static imports rather than DOM scan. Missing controllers are compile-time errors, which is strictly safer than Maze's silent fallback to `jx.default = yr`. `FieldSectionManifest → SceneResolver` (SKILL.md § "Required Runtime Pieces") is the higher-abstraction replacement.
 
 ### Parity state
 
@@ -98,7 +105,7 @@ Maze-authored source is ~13,500 lines of a 55,957-line `scripts.pretty.js`. The 
 ## 3. Scene parameter registry (`cs.*`) — B3
 
 **Maze**: scripts.pretty.js:42399–42544. 12 scene configs (`default`, `blob`, `blobProduct`, `sphere`, `pcb`, `stream`, `hex`, `shield`, `cubes`, `users`, `globe`, `error`) with a prototype-merge contract (`yr.params = { ...cs.default, ...cs[slug] }` at 43041).
-**SoleMD**: `apps/web/features/ambient-field/scene/visual-presets.ts` — three homepage-active presets (`blob`, `stream`, `pcb`) with a flat, explicitly-typed shape. No `cs.default` inheritance.
+**SoleMD**: `apps/web/features/field/scene/visual-presets.ts` — three canonical presets (`blob`, `stream`, `objectFormation`) with a flat, explicitly-typed shape. No `cs.default` inheritance.
 
 ### Parity overview (all values include post-`cs.default` merge)
 
@@ -121,7 +128,7 @@ All three presets are missing `positionMobile` keys (D11) and `mousemove` (D10).
 
 ### How to rebuild / what to change
 
-- Walk D1–D8 in order. D1/D4 are product-or-parity decisions; pick one and record inline. D2/D3/D5/D6 require cross-checking shader semantics with `BlobController` / `StreamController` / `PcbController` tween paths — the `*Out` uniforms are either raw uniforms or scalar multipliers. This bleeds into B4 and B6; do not resolve in isolation.
+- Walk D1–D8 in order. D1/D4 are product-or-parity decisions; pick one and record inline. D2/D3/D5/D6 require cross-checking shader semantics with `BlobController` / `StreamController` / `ObjectFormationController` tween paths — the `*Out` uniforms are either raw uniforms or scalar multipliers. This bleeds into B4 and B6; do not resolve in isolation.
 - D7 must trace the commit that introduced `pcb.scrollRotation = [0, 0.12, 0]`. If no product rationale, zero it.
 - Add a one-line comment at the top of `visual-presets.ts` listing the effective Maze defaults (`cs.default` values) so future auditors can verify inherited values without cross-referencing this spec.
 
@@ -141,7 +148,7 @@ All three presets are missing `positionMobile` keys (D11) and `mousemove` (D10).
 ## 4. Material + geometry shader pipeline — B4
 
 **Maze**: scripts.pretty.js:42545–42632 (`gd` shader material factory), 42633 (`Fl = gd` alias), 42666–42940 (`jo` geometry generator), 42583–42593 (stream funnel uniforms), `index.html:2119–2393` (inline GLSL). ~360 lines.
-**SoleMD**: `apps/web/features/ambient-field/renderer/field-shaders.ts`, `renderer/FieldScene.tsx` (R3F `<shaderMaterial>` seam), `controller/FieldController.ts` (`createLayerUniforms`), `asset/field-geometry.ts` (`sphere`, `stream`, `fromTexture`, `fromVertices`), `asset/field-attribute-baker.ts`, `asset/point-source-registry.ts`, `asset/image-point-source.ts`, `asset/model-point-source.ts`.
+**SoleMD**: `apps/web/features/field/renderer/field-shaders.ts`, `renderer/FieldScene.tsx` (R3F `<shaderMaterial>` seam), `controller/FieldController.ts` (`createLayerUniforms`), `asset/field-geometry.ts` (`sphere`, `stream`, `fromTexture`, `fromVertices`), `asset/field-attribute-baker.ts`, `asset/point-source-registry.ts`, `asset/image-point-source.ts`, `asset/model-point-source.ts`.
 
 ### Shader parity
 
@@ -182,13 +189,13 @@ Per the memory policy: **hijack native pipeline uniforms for visual changes inst
 ## 5. Asset registry + bitmap/FBX sources — B5
 
 **Maze**: scripts.pretty.js:42133–42343 (`fm` OBJ), 42344–42398 (`md` FBX/image loader), 42941–43012 (`vd` URL-keyed registry + `ku` loader). ~340 lines.
-**SoleMD**: `apps/web/features/ambient-field/asset/point-source-registry.ts` + `image-point-source.ts` + `model-point-source.ts` + `field-geometry.ts` + `field-attribute-baker.ts` + `point-source-types.ts`.
+**SoleMD**: `apps/web/features/field/asset/point-source-registry.ts` + `image-point-source.ts` + `model-point-source.ts` + `field-geometry.ts` + `field-attribute-baker.ts` + `point-source-types.ts`.
 
 ### Architectural split (sanctioned)
 
 Maze: `vd` URL dictionary + `ku` async loader → `jo.fromTexture`/`fromVertices`/`generate` + `jo.addParams` → `geometry.center()` → `Fl.getMaterial("Shader", slug)` → wraps in `Ts` (`THREE.Points`) → caches `{ model: THREE.Points }` by slug. `ku.loadAll()` is a single eager Promise.all called from `Os`/`xi` at boot.
 
-SoleMD: slug-keyed lazy in-memory cache `AmbientFieldPointSourceRegistry` emitting **typed-array buffers** (position + baked attributes), not materialized meshes. Keyed on composite `env:density:id` (mobile/desktop + density scale + slug). Materializes on demand during `resolve({ densityScale, isMobile, ids })`. Idempotent `prewarm(...)` equivalent to opportunistic `resolve(...)`. Material construction lives in `renderer/*`, not asset/*.
+SoleMD: slug-keyed lazy in-memory cache `FieldPointSourceRegistry` emitting **typed-array buffers** (position + baked attributes), not materialized meshes. Keyed on composite `env:density:id` (mobile/desktop + density scale + slug). Materializes on demand during `resolve({ densityScale, isMobile, ids })`. Idempotent `prewarm(...)` equivalent to opportunistic `resolve(...)`. Material construction lives in `renderer/*`, not asset/*.
 
 ### Preload contract parity: **partial**
 
@@ -204,8 +211,8 @@ SoleMD: slug-keyed lazy in-memory cache `AmbientFieldPointSourceRegistry` emitti
 ### How to rebuild / what to change
 
 - **Before any URL-backed slug lands**: formalize `POINT_SOURCE_MANIFEST: Record<slug, { source: "procedural" | "image" | "model"; url?: string; samplingPresets?: TextureGeometryOptions }>` in `point-source-registry.ts` (or sibling `asset-manifest.ts`). Use explicit `source` discriminant, not Maze's `.split(".").pop()` extension switch.
-- **Add `loadAll({ densityScale, isMobile })`** when the first async source lands. Have it walk every id in `AMBIENT_FIELD_STAGE_ITEM_IDS`. Change `resolve` to `Promise<Record<slug, source>>` on the async branch.
-- **Add model loader module** `features/ambient-field/asset/model-loader.ts` owning `GLTFLoader` construction + error handling + `loadModelPoints(url, options) → Promise<THREE.BufferGeometry>`. Do not re-port `md`; use three's first-party `GLTFLoader`.
+- **Add `loadAll({ densityScale, isMobile })`** when the first async source lands. Have it walk every id in `FIELD_STAGE_ITEM_IDS`. Change `resolve` to `Promise<Record<slug, source>>` on the async branch.
+- **Add model loader module** `features/field/asset/model-loader.ts` owning `GLTFLoader` construction + error handling + `loadModelPoints(url, options) → Promise<THREE.BufferGeometry>`. Do not re-port `md`; use three's first-party `GLTFLoader`.
 - **When pcb URL-asset parity is restored**, route through `createImagePointGeometry` with `{ channel: "r", colorThreshold: 200, textureScale: 0.5, gridRandomness: 0, thickness: 0, layers: 1 }` and drop the hand-authored bitmap. Table these as `samplingPresets[id]` in the manifest.
 
 ### Sanctioned deviations
@@ -225,7 +232,7 @@ SoleMD: slug-keyed lazy in-memory cache `AmbientFieldPointSourceRegistry` emitti
 ## 6. Base controller + concrete controllers — B6
 
 **Maze**: scripts.pretty.js:35565–35617 (`Ll` event emitter + `Ei` DOM controller base); 43013–43256 (`yr` particle base); 43257–43526 (`mm` blob); 43527–43528 (`gm` stub); 43529–43580 (`xm` floor/graph); 43581–43614 (`ym` hotspot-popup); 43615–43632 (`_m` pcb); 43633–43654 (`bm` user/quote); 43655–43703 (`Sm` stars); 49326–49346 (`ug` stream). Three-layer class tree.
-**SoleMD**: `apps/web/features/ambient-field/controller/FieldController.ts` (base, fuses `Ei` + `yr`), `BlobController.ts`, `StreamController.ts`, `PcbController.ts`. Two-layer tree.
+**SoleMD**: `apps/web/features/field/controller/FieldController.ts` (base, fuses `Ei` + `yr`), `BlobController.ts`, `StreamController.ts`, `ObjectFormationController.ts`. Two-layer tree.
 
 ### Parity — base layer
 
@@ -254,9 +261,16 @@ SoleMD: slug-keyed lazy in-memory cache `AmbientFieldPointSourceRegistry` emitti
 
 ### How to rebuild / what to change
 
-- **D1 (Must-fix)**: either delete `updateVisibility` + `entryFactor` / `exitFactor` from `FieldController` and document ScrollTrigger timeline as the carry-window authority, or retain as explicit fallback for surfaces that cannot use ScrollTrigger and wire it from `FieldScene`'s per-frame path. Prefer deletion; `BlobController.bindScroll` is the authority.
+- **D1 (Must-fix)**: landing no longer treats controller-local ScrollTrigger
+  timelines as the authority. Shared chapter progress now lives in
+  `field-scroll-state.ts`, and controllers read declarative chapter
+  targets during `tick()`. Keep `updateVisibility` only as a fallback seam for
+  future non-landing surfaces that truly cannot use the shared scroll-state
+  contract.
 - **D3 (Must-fix)**: divide `toScreenPosition` x/y results by `renderer.getPixelRatio()` when projecting for DOM overlays. Apply the same fix to `BlobController.projectBlobHotspotCandidate` (`BlobController.ts:146–172`) — same bug, masked because the blob hotspot pool uses the candidate projector directly rather than the base method.
-- **Every future `FieldController` subclass** must either override `bindScroll()` with a chapter timeline **or** explicitly call `updateVisibility()` from its `tick()`. State this as a class-level invariant.
+- **Every future `FieldController` subclass** should prefer the shared
+  chapter-progress contract. Only add controller-local scroll listeners when a
+  surface is intentionally outside the fixed-stage runtime.
 
 ### Mobile branching parity
 
@@ -279,13 +293,13 @@ Partial. `scaleFactorMobile`, `positionMobile`, `uIsMobile` writes, mobile parti
 
 #### 11-step rebuild checklist (from `b09-stream-popups.md § "Rebuild checklist"`)
 
-1. **Author the marker config module** — `surfaces/AmbientFieldLandingPage/stream-point-manifest.ts`. 8 entries, each `{ id, domOrder, scheduleOrder, variant: "red"|"default", popups: [{ category?, name, label?, side?, mobileSide? }] }`. `scheduleOrder` is the canonical integer multiplier for timeline offset (replaces Maze's `o` enum).
-2. **Rail SVG pair as React components with explicit path ids** — `surfaces/AmbientFieldLandingPage/stream-rail-svg.tsx` exporting `<StreamRailDesktop />` and `<StreamRailMobile />`. Each `<path>` carries `id={pointId}`. ViewBox parity (`1204×535` desktop, `345×653` mobile).
-3. **DOM marker primitive** — `overlay/StreamPoint.tsx` rendering the point equivalent with SoleMD token classes. Reuse the existing `overlay/AmbientFieldHotspotRing.tsx` primitive.
+1. **Author the marker config module** — `surfaces/FieldLandingPage/stream-point-manifest.ts`. 8 entries, each `{ id, domOrder, scheduleOrder, variant: "red"|"default", popups: [{ category?, name, label?, side?, mobileSide? }] }`. `scheduleOrder` is the canonical integer multiplier for timeline offset (replaces Maze's `o` enum).
+2. **Rail SVG pair as React components with explicit path ids** — `surfaces/FieldLandingPage/stream-rail-svg.tsx` exporting `<StreamRailDesktop />` and `<StreamRailMobile />`. Each `<path>` carries `id={pointId}`. ViewBox parity (`1204×535` desktop, `345×653` mobile).
+3. **DOM marker primitive** — `overlay/StreamPoint.tsx` rendering the point equivalent with SoleMD token classes. Reuse the existing `overlay/FieldHotspotRing.tsx` primitive.
 4. **Popup primitive** — `overlay/StreamPointPopup.tsx` with `data-variant` / `data-side` / `data-mobile-side`. Styling in `stream-point-popup.css` under `afsp-` prefix (parallel to hotspot-ring's `afr-`).
-5. **Chapter shell component** — `surfaces/AmbientFieldLandingPage/StreamChapterShell.tsx`. Owns `data-scroll="stream"` anchor, renders both rails, maps manifest to 8 `<StreamPoint>` children with refs.
+5. **Chapter shell component** — `surfaces/FieldLandingPage/StreamChapterShell.tsx`. Owns `data-scroll="stream"` anchor, renders both rails, maps manifest to 8 `<StreamPoint>` children with refs.
 6. **Motion-path timeline adapter** — `scroll/chapters/landing-stream-chapter-points.ts`. `bindStreamPointTimeline(rootEl, manifest, options): () => void`. Register `MotionPathPlugin` via `ensureGsapMotionPathRegistered()` helper. One ScrollTrigger (`start: "top bottom"`, `end: "bottom top"`, `toggleActions: "play pause resume reset"`, `invalidateOnRefresh: true`). Master `gsap.timeline({ repeat: -1, scrollTrigger })`. `gsap.matchMedia()` branches for desktop (`(min-width: 1024px)`) and mobile. Per manifest entry, child sub-timeline with same call grid as `KS`: marker visibility, motionPath `.from` tween (duration `unit * 3`, `align`/`alignOrigin`/`ease: "none"`), cascaded popup show/hide at `0, unit, unit*2, unit*3` with 2-popup/3-popup switches preserved, `scheduleOrder * unit` offset.
-7. **Wire adapter into scroll registry** — extend `scroll/ambient-field-scroll-driver.ts` (or the chapter-registration seam it exposes) to call `bindStreamPointTimeline` when a `[data-scroll="stream"]` anchor mounts.
+7. **Wire adapter into scroll registry** — extend `scroll/field-scroll-driver.ts` (or the chapter-registration seam it exposes) to call `bindStreamPointTimeline` when a `[data-scroll="stream"]` anchor mounts.
 8. **Mount chapter shell on landing** — sibling to `StreamController` WebGL anchor. Shell carries `data-scroll="stream"`, stage mount carries `data-gfx="stream"`. **Must not be the same React node** (Maze co-mounts only because of its flat DOM model).
 9. **Reduced-motion fallback** — timeline adapter short-circuits on `prefers-reduced-motion: reduce` and adds `is-reduced-motion` on the shell so CSS can statically show popups.
 10. **Manifest validation** — assert 8 entries, unique `id`s matching the 8 path ids, `scheduleOrder` forms a permutation of `0..7`.
@@ -309,22 +323,22 @@ Partial. `scaleFactorMobile`, `positionMobile`, `uIsMobile` writes, mobile parti
 
 **Do not port `$x` as a JS object + DOM-scan lookup.** Expose a React-side hook-based chapter adapter contract (`b08-scroll-adapters.md § "Registry port recommendation"`):
 
-- `apps/web/features/ambient-field/scroll/chapter-adapters/`
+- `apps/web/features/field/scroll/chapter-adapters/`
   - `types.ts` — `export type ChapterAdapter = (el: HTMLElement, opts: { reducedMotion: boolean }) => { dispose(): void }`
-  - `registry.ts` — `export const ambientFieldChapterAdapters: Record<AmbientFieldChapterKey, ChapterAdapter>` (typed record keyed by `"welcome" | "moveNew" | "clients" | "graphRibbon" | "events" | "cta"`)
-  - `useChapterAdapter.ts` — `export function useChapterAdapter(ref: RefObject<HTMLElement>, key: AmbientFieldChapterKey): void`
+  - `registry.ts` — `export const fieldChapterAdapters: Record<FieldChapterKey, ChapterAdapter>` (typed record keyed by `"welcome" | "moveNew" | "clients" | "graphRibbon" | "events" | "cta"`)
+  - `useChapterAdapter.ts` — `export function useChapterAdapter(ref: RefObject<HTMLElement>, key: FieldChapterKey): void`
   - one file per adapter
 
 Each chapter component calls `useChapterAdapter` with its own ref. No DOM scan. Registry is tree-shakeable. Abandon `(el, delay, quick)` signature — use `(el, { reducedMotion })`.
 
 #### Per-adapter inventory
 
-- **welcome** (`JS`, 49037–49066): GSAP timeline with word-split title/subtitle + scaled-in button. On-load, no ScrollTrigger. Adds `is-welcome-ready` on body on complete. **SoleMD counterpart**: `AmbientFieldHeroSection.tsx` (partial — paragraph-grain, not word-grain; no `is-welcome-ready` broadcast; eyebrow is sanctioned addition).
+- **welcome** (`JS`, 49037–49066): GSAP timeline with word-split title/subtitle + scaled-in button. On-load, no ScrollTrigger. Adds `is-welcome-ready` on body on complete. **SoleMD counterpart**: `FieldHeroSection.tsx` (partial — paragraph-grain, not word-grain; no `is-welcome-ready` broadcast; eyebrow is sanctioned addition).
 - **moveNew** (`QS`, 49069–49099): mobile-only marquee, `gsap.matchMedia().add("(max-width: 1023px)", ...)`. **SoleMD**: missing (scope question).
 - **clients** (`HS`, 48597–48614): `gsap.from(.js-item, {...scale:0.8...})` with breakpoint+attribute-conditional stagger. **SoleMD**: missing (scope question).
-- **graphRibbon** (`qS`, 48732–48832): multi-target scroll-triggered timeline, SVG clip-path draw-ins, debounced resize→refresh. **SoleMD**: `AmbientFieldGraphSection.tsx` exists but wraps live Cosmograph warm-up, not SVG ribbon reveal (sanctioned product divergence + choreography gap).
+- **graphRibbon** (`qS`, 48732–48832): multi-target scroll-triggered timeline, SVG clip-path draw-ins, debounced resize→refresh. **SoleMD**: `FieldGraphSection.tsx` exists but wraps live Cosmograph warm-up, not SVG ribbon reveal (sanctioned product divergence + choreography gap).
 - **events** (`WS`, 48665–48731): nested timeline per `.js-event-subitem`, DrawSVG checkmark stroke-in, `"-=0.35"` overlap. **SoleMD**: missing (DrawSVG is paid GSAP Club; Framer Motion `pathLength` is the sanctioned alternative).
-- **cta** (`GS`, 48639–48663): same structural timeline as `JS` welcome + scroll-triggered. **SoleMD counterpart**: `AmbientFieldCtaSection.tsx` (partial — paragraph-grain, flat button stagger).
+- **cta** (`GS`, 48639–48663): same structural timeline as `JS` welcome + scroll-triggered. **SoleMD counterpart**: `FieldCtaSection.tsx` (partial — paragraph-grain, flat button stagger).
 
 #### B14 typography reveal (folded into B8)
 
@@ -355,7 +369,7 @@ SplitText (`lo`) consumers: welcome word-split, cta word-split, contact line-spl
 ## 8. Scroll ownership (scroll driver `jt` / `Jr`) — B10
 
 **Maze**: scripts.pretty.js:49115–49325 (`jt` class, ~212 lines). Page-global singleton owning scroll, body-class state, hash-click, scroll caching, IntersectionObservers.
-**SoleMD**: `apps/web/features/ambient-field/scroll/ambient-field-scroll-driver.ts` (~114 lines). Landing-surface-only function-based binding with disposer.
+**SoleMD**: `apps/web/features/field/scroll/field-scroll-driver.ts` (~114 lines). Landing-surface-only function-based binding with disposer.
 
 Pilot-audited in Phase 0 and re-verified in Phase 3 (`b10-scroll-driver-reverify.md`). All 6 pilot drift items confirmed; no false positives; no already-fixed items.
 
@@ -388,13 +402,15 @@ Pilot-audited in Phase 0 and re-verified in Phase 3 (`b10-scroll-driver-reverify
   4. `is-scrolled-vh-{25,50,75}` viewport-fraction (configurable via `vpFractions` option).
   5. `is-scrolled-header-height` threshold.
 - Author `apps/web/app/shell/bind-dom-state-observers.ts` with one generic IntersectionObserver (not two) covering `[data-observe]` / `[data-observe="children"]` → `is-in-view` / `is-above` / `is-below` class toggles.
-- Defer scroll-position caching + hash-click navigation to router / shell / landing-surface-local adapters; do not grow the ambient-field scroll driver.
+- Defer scroll-position caching + hash-click navigation to router / shell / landing-surface-local adapters; do not grow the field scroll driver.
 
 ### Sanctioned deviations (all three re-confirmed against SKILL.md)
 
-1. Landing-surface-only scroll binding; scroll-driver delegates blob timeline to `BlobController.bindScroll` (driver line 48).
+1. Scroll-driver is now a shared chapter-progress producer for the fixed stage,
+   not a delegate into controller-local timelines.
 2. No scroll caching at scroll-driver level (router/shell concern).
-3. No global scroll-state observer in scroll-driver (shell concern, delegated to `bindScrollStateClasses`).
+3. Shell-level body-class observers still live outside the field scroll
+   driver.
 
 ### Cross-reference
 
@@ -403,7 +419,7 @@ Pilot-audited in Phase 0 and re-verified in Phase 3 (`b10-scroll-driver-reverify
 ## 9. Progress controller (`gg`) — B12
 
 **Maze**: scripts.pretty.js:50178–50255 (78 lines) + `index.html:323` (story-1) + `index.html:718` (story-2). **Two live instances.**
-**SoleMD**: `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldStoryProgress.tsx` (102 lines). **One live instance** (Story 1 only).
+**SoleMD**: `apps/web/features/field/surfaces/FieldLandingPage/FieldStoryProgress.tsx` (102 lines). **One live instance** (Story 1 only).
 
 ### Parity-critical drift items (Must-fix / Should-fix)
 
@@ -420,7 +436,7 @@ Pilot-audited in Phase 0 and re-verified in Phase 3 (`b10-scroll-driver-reverify
 
 ### How to rebuild / what to change
 
-- **D1 (Must-fix)**: either (a) promote `AmbientFieldStoryChapter` to own Story 2 with its own `beatIds` array, or (b) mount `<AmbientFieldStoryProgress beatIds={storyTwoBeatIds} />` directly inside Story 2 `<section>`. Verify both instances update independently.
+- **D1 (Must-fix)**: either (a) promote `FieldStoryChapter` to own Story 2 with its own `beatIds` array, or (b) mount `<FieldStoryProgress beatIds={storyTwoBeatIds} />` directly inside Story 2 `<section>`. Verify both instances update independently.
 - **D2 (Must-fix)**: rename writes to `--progress-${index + 1}`, target the root container ref, batch-write all N variables to that single node each tick. Measure `.js-progress-bar` (or SoleMD equivalent) once per resize and publish `--bar-width` on root. Class names are sanctioned-divergent; **CSS custom property names are the programmatic contract and must match Maze**.
 - **D3**: route through `gsap.to(root, { "--progress-1": v1, "--progress-2": v2, ..., duration: 0.1, ease: "sine" })`. Mirrors Maze exactly. Remove `fieldLoopClock` subscription when GSAP becomes the smoothing layer (D8).
 - **D5**: port Maze's algorithm verbatim — 50% pivot, `header.offsetHeight` subtraction, section-height normalization. Use SoleMD shell chrome ref for header (likely tied to `APP_CHROME_PX.panelTop`).
@@ -445,7 +461,7 @@ Pilot-audited in Phase 0 and re-verified in Phase 3 (`b10-scroll-driver-reverify
 | Maze `xy` entry | Maze class | Homepage-active | SoleMD counterpart | Disposition |
 |---|---|---|---|---|
 | `Header` | `Cg` | yes | `ChromeBar` + `BrandWordmarkButton` + `Wordmark` + `ModeToggleBar` + `ThemeToggle` + `TimelineBar` | **sanctioned product divergence** — graph-UI toolbar, not marketing nav; no underline port |
-| `Progress` | `gg` | yes (×2) | `AmbientFieldStoryProgress.tsx` | **~1:1 port** (see B12 § 9) |
+| `Progress` | `gg` | yes (×2) | `FieldStoryProgress.tsx` | **~1:1 port** (see B12 § 9) |
 | `SwiperSlider` | `wg` | yes | *none* | **sanctioned omission** — no marketing carousel on SoleMD homepage |
 | `FormsPagination` | `fg` | no | *none* | sanctioned omission — no multi-step forms |
 | `ArticleNav` | `pg` | no | *none* | sanctioned omission — no article routes |
@@ -483,7 +499,7 @@ Pilot-audited in Phase 0 and re-verified in Phase 3 (`b10-scroll-driver-reverify
 
 Merged into section 7 per the catalog's Phase 3 fan-out. SplitText (`lo`) is vendored (`B1`); consumption sites live inside `B8` scroll adapters.
 
-**Primary SoleMD counterpart**: `apps/web/features/animations/_smoke/text-reveal/TextReveal.tsx`. **Recommendation**: promote out of `_smoke` to `features/animations/text-reveal/`, parameterize (`text`, `grain: "chars" | "words"`, `stagger`, `ease`, `as`, `trigger`). Wire into `AmbientFieldHeroSection` and `AmbientFieldCtaSection` via the new chapter-adapter hook (B8 D12). Reduced-motion path renders as a single static element.
+**Primary SoleMD counterpart**: `apps/web/features/animations/_smoke/text-reveal/TextReveal.tsx`. **Recommendation**: promote out of `_smoke` to `features/animations/text-reveal/`, parameterize (`text`, `grain: "chars" | "words"`, `stagger`, `ease`, `as`, `trigger`). Wire into `FieldHeroSection` and `FieldCtaSection` via the new chapter-adapter hook (B8 D12). Reduced-motion path renders as a single static element.
 
 Rejected candidates: `features/wiki/module-runtime/primitives/RevealCard.tsx` (not a text-split primitive; reveals a whole content block on tap), `features/wiki/module-runtime/motion.ts` (paragraph-grain variants, useful above the TextReveal primitive but not as the split counterpart).
 
@@ -498,7 +514,7 @@ Deduplicated across all 12 audits. Each entry cites the audit that first named i
 1. **Next.js App Router replaces Maze's `Fs` AJAX page-swap**. `<Link>` + RSC streaming + `router.push`/`replace`/`back` is a superset. Full Maze-step → Next.js-step lifecycle table in `b02-app-shell.md § "Sanctioned deviations" item 1`.
 2. **No `yy` page-class registry** (Next.js file-based routing replaces `[data-page]` scan). `b02-app-shell.md`.
 3. **No `ih.bind` component wiring** (React component tree replaces runtime scan). `b02-app-shell.md`, `b13-components-chrome.md`.
-4. **Framer Motion is the primary motion substrate; GSAP scoped to ambient-field scroll-driver + chapter adapters**. `b02-app-shell.md`, `b08-scroll-adapters.md`.
+4. **Framer Motion is the primary motion substrate; GSAP scoped to field scroll-driver + chapter adapters**. `b02-app-shell.md`, `b08-scroll-adapters.md`.
 5. **`useShellVariant` replaces `Qo = A1()` / `yi = _y()`** (matchMedia pointer/hover + width ≤960 px). `b02-app-shell.md`.
 6. **`Ll` event emitter replaced by React composition**. `b06-controllers.md`.
 7. **`Ei` + `yr` merged into `FieldController`** (two-layer tree vs. Maze's three-layer). `b06-controllers.md`, `maze-particle-runtime-architecture.md § "Controller Hierarchy And R3F Boundary"`.
@@ -541,19 +557,23 @@ Deduplicated across all 12 audits. Each entry cites the audit that first named i
 44. **DPR ceiling 1.75** (stricter than Maze's 2); aligned with `frontend-performance.md § "DPR capped at 2"`. `b11-stage-runtime.md`.
 45. **B9 stream rebuild sanctioned divergences**: authored `id` attributes on `<path>` elements; refs + `data-*` instead of `.js-*` selectors; sibling React nodes for `data-gfx` vs. `data-scroll`; `afsp-`-prefixed tokens instead of Maze class names; SoleMD-authored copy instead of vulnerability-requirement strings. `b09-stream-popups.md § "Proposed sanctioned deviations"`.
 46. **Points stay visible through the detail story**. Blob `depthOut=1.0` / `amplitudeOut=0.8`, `updateVisibility()` remains a documented no-op, and `alphaDiagramFloor` / `selectionHotspotFloor` stay in force. User-locked on **2026-04-19**. Undo path: `references/object-formation-surface.md § "Undoing deviation #1"`.
-47. **No end-state object-formation surface yet**. Stream remains a hybrid conveyor chapter, pcb stays a flat closing plane, and non-homepage convergence controllers remain omitted until a product surface needs them. User-locked on **2026-04-19**. Build path: `references/object-formation-surface.md`.
+47. **Landing keeps the bookend blob ending; authored shape formation is
+reserved for future module pages.** Stream remains a conveyor overlap chapter,
+pcb remains available as a non-landing convergence family, and future
+module-specific silhouettes still route through
+`references/object-formation-surface.md`.
 
 **47 consolidated sanctioned deviations across 14 buckets.** When in doubt whether a change fits an existing deviation, read the originating audit before deciding.
 
 ## 13. Known gaps + rebuild backlog (prioritized)
 
-### Closed in the 2026-04-19 landing pass
+### Status after the 2026-04-19 landing pass
 
-- **B9 stream DOM motion-path + popups** landed as `StreamChapterShell` + `landing-stream-chapter-points.ts`.
+- **B9 stream DOM motion-path + popups** remain deferred to a future user-authored DOM/SVG shell pass; the shared stream stage controller and graph chapter are in place, but the popup rail is intentionally not shipped in this pass.
 - **B12 Story-2 progress + CSS custom-property contract** landed on the root-driven `--progress-N` model.
 - **B2 preload promise gate** landed through the `FixedStageManager` seam.
 - **B6 HiDPI projection drift** is fixed in both `FieldController.toScreenPosition()` and `BlobController.projectBlobHotspotCandidate()`.
-- **B8 chapter adapter registry + production TextReveal promotion** are live; homepage adapters now cover `welcome`, `moveNew`, `clients`, `graphRibbon`, `events`, `cta`, plus the stream hybrid chapter.
+- **B8 chapter adapter registry + production TextReveal promotion** are live; homepage adapters now cover `welcome`, `moveNew`, `clients`, `graphRibbon`, `events`, and `cta`.
 - **B3 scene-param drift** is closed for blob `uSize`, stream `uSize`, and pcb `scrollRotation`; the two remaining blob/pcb out-value differences are preserved as the user-locked deviations in § 12.
 - **B4 shader-contract doc regression** is corrected in `maze-shader-material-contract.md`.
 
@@ -579,7 +599,7 @@ Deduplicated across all 12 audits. Each entry cites the audit that first named i
 
 ## 14. Cross-reference map (specialist references)
 
-Each existing `maze-*.md` reference under `.claude/skills/ambient-field-modules/references/` paired with which build-spec section links to it. **Each specialist reference should gain a back-link to the build-spec bucket it supports** as a follow-up pass (not done in this round — the build-spec just points into them).
+Each existing `maze-*.md` reference under `.claude/skills/module/references/` paired with which build-spec section links to it. **Each specialist reference should gain a back-link to the build-spec bucket it supports** as a follow-up pass (not done in this round — the build-spec just points into them).
 
 | Specialist reference | Used by build-spec section |
 |---|---|
@@ -602,11 +622,11 @@ Consolidated from `catalog.md § "Open questions for Phase 4 build-spec synth"` 
 
 Resolved by the 2026-04-19 landing pass and no longer truly open: Q3, Q18, Q19, Q20, Q21, Q22, and Q26-Q30. They remain listed inline below for provenance.
 
-1. **Shell-state utility mount location** — `bindShellStateClasses` inside `providers.tsx` alongside `DarkClassSync`, as a new `"use client"` component imported by `layout.tsx`, or only inside the ambient-field surface adapter? Recommendation: (b) so every route gets the vocabulary. `b02-app-shell.md § "Open questions" Q1`.
+1. **Shell-state utility mount location** — `bindShellStateClasses` inside `providers.tsx` alongside `DarkClassSync`, as a new `"use client"` component imported by `layout.tsx`, or only inside the field surface adapter? Recommendation: (b) so every route gets the vocabulary. `b02-app-shell.md § "Open questions" Q1`.
 2. **Next.js `experimental.scrollRestoration` vs. landing-local `scrollToCached`-equivalent** — per-pathname scroll cache. Recommendation: flag until product needs back-button scroll restoration. `b02-app-shell.md § Q2`.
 3. **`FixedStageManager` seam introduction** — **resolved 2026-04-19** in favor of the shared stage-manager seam. `b02-app-shell.md § Q3`.
 4. **Page animate-in formalization** — View Transitions API (Next.js 16 native), Framer `AnimatePresence`, or shell-layer event? `b02-app-shell.md § Q4`.
-5. **Shell-ready primitive** — should landing preload promise (D1) feed into a single "shell ready" signal that `AmbientFieldGraphWarmupAction` also reads? `b02-app-shell.md § Q5`.
+5. **Shell-ready primitive** — should landing preload promise (D1) feed into a single "shell ready" signal that `FieldGraphWarmupAction` also reads? `b02-app-shell.md § Q5`.
 6. **Scene params `uSize` canonical source for blob** — 10 (stream value) is a copy-paste from stream tuning or product-chosen punch? `b03-scene-params.md § Q1`.
 7. **`*Out` uniform semantics** (D2/D3/D5/D6) — raw uniforms or scalar multipliers? Requires B4 + B6 cross-check. `b03-scene-params.md § Q2`.
 8. **`sizeMobile` architectural decision** — per-uniform mobile override alongside `scaleFactorMobile`, or always through scale factor? `b03-scene-params.md § Q4`.

@@ -7,7 +7,7 @@ import sys
 import textwrap
 
 from app.config import Settings
-from app.telemetry.bootstrap import prepare_worker_metrics_environment
+from app.telemetry.bootstrap import _clear_directory, prepare_worker_metrics_environment
 from app.telemetry.dramatiq_prometheus import ScopedPrometheus
 
 
@@ -121,3 +121,19 @@ def test_prepare_worker_metrics_environment_restores_runtime_env(tmp_path: Path)
     env = os.environ.copy()
     env["TEST_METRICS_ROOT"] = str(tmp_path)
     subprocess.run([sys.executable, "-c", script], check=True, env=env)
+
+
+def test_clear_directory_ignores_missing_file_races(tmp_path: Path, monkeypatch) -> None:
+    file_path = tmp_path / "counter.db"
+    file_path.write_text("metric shard")
+
+    original_unlink = Path.unlink
+
+    def fake_unlink(self: Path, missing_ok: bool = False) -> None:
+        raise FileNotFoundError(self)
+
+    monkeypatch.setattr(Path, "unlink", fake_unlink)
+    try:
+        _clear_directory(tmp_path)
+    finally:
+        monkeypatch.setattr(Path, "unlink", original_unlink)

@@ -91,11 +91,11 @@ CREATE INDEX IF NOT EXISTS idx_corpus_wave_members_pending
 CREATE INDEX IF NOT EXISTS idx_s2_papers_raw_release_corpus
     ON solemd.s2_papers_raw (source_release_id, corpus_id)
     WHERE corpus_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_s2_paper_references_raw_release_citing
-    ON solemd.s2_paper_references_raw (
+CREATE INDEX IF NOT EXISTS idx_s2_paper_reference_metrics_raw_release_counts
+    ON solemd.s2_paper_reference_metrics_raw (
         source_release_id,
         citing_paper_id,
-        is_influential
+        influential_reference_count
     );
 CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_release_corpus
     ON pubtator.entity_annotations (source_release_id, corpus_id);

@@ -15,11 +15,11 @@ consumes the registry at `scripts.pretty.js:49546–49559` by running
 `document.querySelectorAll('[data-gfx]')` and instantiating
 `jx[n] || jx.default` per matched node.
 
-SoleMD has no such registry. `apps/web/features/ambient-field/renderer/FieldScene.tsx:133`
+SoleMD has no such registry. `apps/web/features/field/renderer/FieldScene.tsx:133`
 directly instantiates `new BlobController({ id: "blob", preset: visualPresets.blob })`
 inside a `useMemo` — one controller, one surface, one explicit React call.
 `StreamController` and `PcbController` exist as classes under
-`apps/web/features/ambient-field/controller/` but are not imported anywhere
+`apps/web/features/field/controller/` but are not imported anywhere
 in production paths; the landing surface is deliberately blob-only per the
 comment at `FieldScene.tsx:108–113`.
 
@@ -68,7 +68,7 @@ rather than erroring.
 
 Direct React-tree instantiation, no registry, no DOM scan:
 
-- `apps/web/features/ambient-field/renderer/FieldScene.tsx:133–136`:
+- `apps/web/features/field/renderer/FieldScene.tsx:133–136`:
   ```tsx
   const blobController = useMemo(
     () => new BlobController({ id: "blob", preset: visualPresets.blob }),
@@ -77,9 +77,9 @@ Direct React-tree instantiation, no registry, no DOM scan:
   ```
 - `FieldScene.tsx:29` imports `BlobController` directly.
 - The component is mounted by the landing surface at
-  `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx:36`.
+  `apps/web/features/field/surfaces/FieldLandingPage/FieldLandingPage.tsx:36`.
 - `StreamController` and `PcbController` source files exist in
-  `apps/web/features/ambient-field/controller/` but are not imported by
+  `apps/web/features/field/controller/` but are not imported by
   any production code. Grep confirms only test files and `FieldScene.tsx`
   reference `BlobController`; `Stream`/`Pcb` have zero production
   instantiation sites (landing is blob-only per `FieldScene.tsx:108–113`).
@@ -155,7 +155,7 @@ controller factory under `"shield"`, the shared stage picks it up"*.
 Shape:
 
 ```ts
-// apps/web/features/ambient-field/controller/controller-registry.ts
+// apps/web/features/field/controller/controller-registry.ts
 type ControllerFactory = (init: FieldControllerInit) => FieldController;
 
 const REGISTRY = new Map<string, ControllerFactory>();
@@ -171,7 +171,7 @@ Consumer side — either:
   `document.querySelectorAll('[data-ambient-scene]')` in a layout effect,
   resolves each slug, instantiates, attaches. This most closely mirrors
   Maze.
-- **Declarative mode**: surfaces render `<AmbientFieldScene slug="shield" />`,
+- **Declarative mode**: surfaces render `<FieldScene slug="shield" />`,
   which internally looks up the factory and instantiates — still React,
   but the controller class is registered rather than imported.
 
@@ -238,7 +238,7 @@ None in the strict sense. One doc-only observation:
 - **Maze reference**: `jx` keys (`blob`, `stream`, `pcb`, ...) are
   `data-gfx` slug strings. Same strings are keys into `cs` (scene
   params) and `ku` (asset registry).
-- **SoleMD location**: `AmbientFieldStageItemId` type in
+- **SoleMD location**: `FieldStageItemId` type in
   `scene/visual-presets.ts` + `FieldControllerInit.id` field consumed by
   `FieldController` base (`controller/FieldController.ts:137–155`) +
   `getTimeFactor(id, motionEnabled)` at `FieldController.ts:123–135`.
@@ -255,7 +255,7 @@ None in the strict sense. One doc-only observation:
 ## Open questions
 
 1. **Wiki-module-scoped controllers**. Does the plan's dependency matrix
-   actually require wiki modules to mount their own ambient-field
+   actually require wiki modules to mount their own field
    controllers? If yes, Option A still holds — each wiki module can
    compose its own scene component. If the requirement is specifically
    *"wiki modules register controllers against DOM anchors they don't

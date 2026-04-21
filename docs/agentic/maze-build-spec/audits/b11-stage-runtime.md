@@ -4,11 +4,11 @@
 **Bucket**: B11 — Stage runtime + optional starfield
 **Maze lines audited**: [49359, 49588] (starfield `hg` [49359, 49425]; stage `Os`/`xi` [49427, 49588])
 **SoleMD files audited**:
-- `apps/web/features/ambient-field/renderer/FieldScene.tsx`
-- `apps/web/features/ambient-field/renderer/FieldCanvas.tsx`
-- `apps/web/features/ambient-field/renderer/field-loop-clock.ts`
-- `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx` (adjacent resize/preload glue)
-- `apps/web/features/ambient-field/asset/point-source-registry.ts` (preload / prewarm API)
+- `apps/web/features/field/renderer/FieldScene.tsx`
+- `apps/web/features/field/renderer/FieldCanvas.tsx`
+- `apps/web/features/field/renderer/field-loop-clock.ts`
+- `apps/web/features/field/surfaces/FieldLandingPage/FieldLandingPage.tsx` (adjacent resize/preload glue)
+- `apps/web/features/field/asset/point-source-registry.ts` (preload / prewarm API)
 **Date**: 2026-04-19
 
 ## Summary
@@ -31,7 +31,7 @@ The most consequential divergence for first-paint is the **missing preload promi
 | Tone mapping                                | not set (three defaults) | not set (R3F defaults)                                                     | R3F-owned          | parity              |
 | Resize handler (`offsetWidth` / `offsetHeight`) | 49434–49446       | R3F `Canvas` internal `ResizeObserver` on the host `<div>`                    | R3F-owned          | parity (delegated)  |
 | `updateItems()` on resize (position/scale/material) | 49445, 49561–49568 | `useFrame` writes position/scale/material every frame; no separate resize-only path | stage-local   | drift (D2, benign)  |
-| Preload via `Promise.all([ku.loadAll()])`   | 49472                | `prewarmAmbientFieldPointSources({ ids:['blob'] })` is synchronous; `getFieldPointTexture()` is lazy; no `Promise.all` | stage-local | **drift (D3, must-fix before adding async sources)** |
+| Preload via `Promise.all([ku.loadAll()])`   | 49472                | `prewarmFieldPointSources({ ids:['blob'] })` is synchronous; `getFieldPointTexture()` is lazy; no `Promise.all` | stage-local | **drift (D3, must-fix before adding async sources)** |
 | First frame gated on preload                | 49472–49474 (`this.resize(), this.loop(), this.bind()` only after promise resolves) | no gate; `useFrame` ticks from mount | stage-local | drift (D3)          |
 | DOM scan `[data-gfx]` → controller map      | 49547–49557          | no DOM scan; `FieldScene` instantiates `BlobController` via `useMemo` (single slug) | stage-local | sanctioned (see B7 audit) |
 | Controller per-frame update order           | 49578–49583 (`loop() → updatePosition → updateVisibility`, then `renderer.render`) | `FieldScene.tsx:199–221` (`blobController.tick(...) → projectHotspots → fieldLoopClock.tick(dt)`; R3F autorender after) | stage-local | drift (D4, structural rename) |
@@ -78,13 +78,13 @@ The most consequential divergence for first-paint is the **missing preload promi
   ```
   The RAF loop (`this.loop()`), first `resize()`, and `bind()` (mousemove) all wait on `ku.loadAll()`, which is the asset registry promise fanout over all `[data-gfx]` slugs that appear in DOM (loads bitmaps via `md`, FBX via `md.load`, procedural via `jo.generate`).
 - **SoleMD location**:
-  - `AmbientFieldLandingPage.tsx:118–124` calls `prewarmAmbientFieldPointSources({ ids:['blob'] })` inside a client `useEffect` (fire-and-forget; the function is currently synchronous — procedural points are generated in-thread).
-  - `FieldScene.tsx:121–129` calls `resolveAmbientFieldPointSources({ ids:['blob'] })` inside `useMemo` — also synchronous.
+  - `FieldLandingPage.tsx:118–124` calls `prewarmFieldPointSources({ ids:['blob'] })` inside a client `useEffect` (fire-and-forget; the function is currently synchronous — procedural points are generated in-thread).
+  - `FieldScene.tsx:121–129` calls `resolveFieldPointSources({ ids:['blob'] })` inside `useMemo` — also synchronous.
   - `useFrame` starts ticking the moment R3F mounts the canvas, independent of any point-source promise.
   - `getFieldPointTexture()` is a lazy module-scope memo; not promise-based.
-- **Drift**: For the current homepage (procedural blob only, no `logo`/`pcb`/`stars`/FBX), the behaviors converge because every asset is CPU-sync or already on the network critical path owned by Next.js. But the Maze contract is **"no frame renders until every referenced asset resolves"**, and SoleMD cannot honor that once an `ids` entry becomes async (see `image-point-source.ts` — already returns a `Promise<AmbientFieldPointSource>` for image/bitmap sources; the registry has both sync and async codepaths). `FieldScene.tsx` consumes only the synchronous path.
+- **Drift**: For the current homepage (procedural blob only, no `logo`/`pcb`/`stars`/FBX), the behaviors converge because every asset is CPU-sync or already on the network critical path owned by Next.js. But the Maze contract is **"no frame renders until every referenced asset resolves"**, and SoleMD cannot honor that once an `ids` entry becomes async (see `image-point-source.ts` — already returns a `Promise<FieldPointSource>` for image/bitmap sources; the registry has both sync and async codepaths). `FieldScene.tsx` consumes only the synchronous path.
 - **Severity**: **Should-fix before stream/pcb land on-screen**. Sanctioned by `frontend-performance.md` only for the continuous `uTime` contract, not for first-paint correctness.
-- **Proposed fix**: When multi-source preload is wired (Phase `image-particle-conformation.md` rollout), add a `Promise.all([pointSource.ready, texture.ready, …])` gate inside `FieldScene` that defers rendering the `<AmbientFieldStageLayer>` until the promise resolves. Keep `useFrame` running (R3F needs the mount) but short-circuit the controller `tick` while the gate is pending. Alternatively, gate at the `<Canvas>` level via a Suspense boundary — this is the React-native way and matches how R3F users already wire `<useGLTF>`-driven scenes.
+- **Proposed fix**: When multi-source preload is wired (Phase `image-particle-conformation.md` rollout), add a `Promise.all([pointSource.ready, texture.ready, …])` gate inside `FieldScene` that defers rendering the `<FieldStageLayer>` until the promise resolves. Keep `useFrame` running (R3F needs the mount) but short-circuit the controller `tick` while the gate is pending. Alternatively, gate at the `<Canvas>` level via a Suspense boundary — this is the React-native way and matches how R3F users already wire `<useGLTF>`-driven scenes.
 - **Verification**: Add a slow-loading mock point source, confirm the blob does not flash in partially-initialized state; Lighthouse LCP unchanged for the current procedural-only path.
 
 ### D4. Per-frame update order: `tick` collapses Maze's `loop → updatePosition → updateVisibility`
@@ -128,7 +128,7 @@ The most consequential divergence for first-paint is the **missing preload promi
 ### D6. DOM scan for `[data-gfx]` vs. React component tree
 
 - **Maze reference**: `scripts.pretty.js:49547–49557` — the stage does `document.querySelectorAll("[data-gfx]")`, looks up assets via `ku.get(n)`, picks a controller class from `jx[n] || jx.default`, constructs it, calls `getObject()`, and adds the result to the scene.
-- **SoleMD location**: `FieldScene.tsx:114–136` — no DOM scan. `BlobController` is instantiated once via `useMemo`; the `<AmbientFieldStageLayer>` declares the `<group>` tree declaratively; refs fire `tryAttachController()` which calls `blobController.attach(...)`.
+- **SoleMD location**: `FieldScene.tsx:114–136` — no DOM scan. `BlobController` is instantiated once via `useMemo`; the `<FieldStageLayer>` declares the `<group>` tree declaratively; refs fire `tryAttachController()` which calls `blobController.attach(...)`.
 - **Drift**: Architectural. SoleMD is React-native; the `data-gfx` registry is not the idiomatic mount point.
 - **Severity**: **Sanctioned deviation** — covered by the `B7` audit (controller registry). No change needed in `B11`.
 - **Proposed fix**: None; see `b07-controller-registry.md`.
@@ -142,11 +142,11 @@ The most consequential divergence for first-paint is the **missing preload promi
 
 3. **Resize owned by R3F's internal `ResizeObserver`** — Maze hand-rolls a `resize` arrow function bound to window events (49434). R3F's `<Canvas>` attaches a `ResizeObserver` on the host element by default and calls `renderer.setSize` + `camera.updateProjectionMatrix` identically. Sanctioned: same rationale as #2.
 
-4. **DPR via `dpr={[1, 1.75]}` + `<AdaptiveDpr/>`** — Maze does `setPixelRatio(us)` where `us = Math.min(devicePixelRatio, 2)`. SoleMD clamps lower (1.75 ceiling) and adapts down under load via `<PerformanceMonitor>`. The `frontend-performance.md` § "Ambient Field Runtime" contract explicitly caps DPR at 2 — SoleMD's 1.75 ceiling is stricter and aligned. Sanctioned: `frontend-performance.md` § "DPR capped at 2".
+4. **DPR via `dpr={[1, 1.75]}` + `<AdaptiveDpr/>`** — Maze does `setPixelRatio(us)` where `us = Math.min(devicePixelRatio, 2)`. SoleMD clamps lower (1.75 ceiling) and adapts down under load via `<PerformanceMonitor>`. The `frontend-performance.md` § "Field Runtime" contract explicitly caps DPR at 2 — SoleMD's 1.75 ceiling is stricter and aligned. Sanctioned: `frontend-performance.md` § "DPR capped at 2".
 
 5. **`setClearColor(BG_COLOR, 0)` omitted** — Maze sets clear color `16717597` (decimal form of `0xff1e1d`, a warm red-orange) with alpha `0` so the canvas is transparent and the CSS bg shows through. SoleMD relies on R3F's default transparent clear when `alpha: true`. The clear color value doesn't render visibly because alpha is 0 in both paths. Sanctioned: canvas is transparent in both runtimes; the actual visible background is the `<div>` bg painted by the surrounding DOM.
 
-6. **Page-global `Os.static` fields not mirrored** — Maze stores `Os.scene`, `Os.camera`, `Os.width`, `Os.height`, `Os.widthHalf`, `Os.heightHalf`, `Os.sceneUnits` as static class fields for cross-module lookup (the `Gs` debug registry consumes them). SoleMD has no debug registry and reads these through R3F's `state` in `useFrame` or through controller constructor injection. Sanctioned: page-global mutable statics are a SoleMD anti-pattern and explicitly discouraged by the SKILL's "No per-frame React updates from ambient-field" rule and by `frontend-performance.md` § "Centralize performance-sensitive contracts".
+6. **Page-global `Os.static` fields not mirrored** — Maze stores `Os.scene`, `Os.camera`, `Os.width`, `Os.height`, `Os.widthHalf`, `Os.heightHalf`, `Os.sceneUnits` as static class fields for cross-module lookup (the `Gs` debug registry consumes them). SoleMD has no debug registry and reads these through R3F's `state` in `useFrame` or through controller constructor injection. Sanctioned: page-global mutable statics are a SoleMD anti-pattern and explicitly discouraged by the SKILL's "No per-frame React updates from field" rule and by `frontend-performance.md` § "Centralize performance-sensitive contracts".
 
 ## Preload chain parity
 
@@ -155,7 +155,7 @@ The most consequential divergence for first-paint is the **missing preload promi
 | Maze step                             | Line       | SoleMD equivalent                                                                | Parity |
 | ------------------------------------- | ---------- | -------------------------------------------------------------------------------- | ------ |
 | `this.setup()` (renderer + camera)     | 49471      | R3F `<Canvas>` mount                                                              | yes    |
-| `Promise.all([ku.loadAll()])`         | 49472      | synchronous `prewarmAmbientFieldPointSources(...)` + lazy `getFieldPointTexture()` | **no** |
+| `Promise.all([ku.loadAll()])`         | 49472      | synchronous `prewarmFieldPointSources(...)` + lazy `getFieldPointTexture()` | **no** |
 | `.then(() => this.resize())`          | 49473      | R3F `ResizeObserver` runs on mount (unconditional, not awaited)                   | delegated |
 | `.then(() => this.loop())`            | 49473      | R3F `useFrame` starts ticking on mount (unconditional, not awaited)               | **no** |
 | `.then(() => this.bind())`            | 49473      | mousemove parallax opted into per-module, not stage-bound                         | sanctioned |
@@ -190,7 +190,7 @@ fieldLoopClock.tick(delta)
 [R3F autorenders scene through its camera]
 ```
 
-The outer order (`loop → updatePosition → updateVisibility → render`) is preserved inside `BlobController.tick`. The render step is delegated to R3F and runs once per `useFrame` pass after all callbacks resolve. `projectHotspots` is an explicit extra step — Maze projects hotspots inside the blob controller's `loop`; SoleMD hoists it one level so the shared `fieldLoopClock` fan-out can consume the projected frames (see `AmbientFieldLandingPage.tsx:168–196`). This is architectural, not drift: the fan-out is why hotspot DOM / connection overlay / progress / warmup / cue can all advance in the same tick without spinning multiple RAFs. Sanctioned by `frontend-performance.md` § "No per-frame React updates from ambient-field".
+The outer order (`loop → updatePosition → updateVisibility → render`) is preserved inside `BlobController.tick`. The render step is delegated to R3F and runs once per `useFrame` pass after all callbacks resolve. `projectHotspots` is an explicit extra step — Maze projects hotspots inside the blob controller's `loop`; SoleMD hoists it one level so the shared `fieldLoopClock` fan-out can consume the projected frames (see `FieldLandingPage.tsx:168–196`). This is architectural, not drift: the fan-out is why hotspot DOM / connection overlay / progress / warmup / cue can all advance in the same tick without spinning multiple RAFs. Sanctioned by `frontend-performance.md` § "No per-frame React updates from field".
 
 ## Open questions for build-spec synthesis
 
@@ -198,7 +198,7 @@ The outer order (`loop → updatePosition → updateVisibility → render`) is p
 
 2. **Is `Os.sceneUnits` worth mirroring proactively (D1)?** Recommendation: defer until `StreamController.updateScale` is exercised on the homepage. The math is cheap; the abstraction risk is higher than the compute win.
 
-3. **Should the `B11` audit mandate a stage-level `animateIn`/`animateOut` for graph-entry handoff?** Recommendation: no — the graph entry is owned by `AmbientFieldGraphWarmupAction` + `router.push('/graph')` and a page-level `framer-motion` transition. The stage does not need a per-view fade at the `Os`-level.
+3. **Should the `B11` audit mandate a stage-level `animateIn`/`animateOut` for graph-entry handoff?** Recommendation: no — the graph entry is owned by `FieldGraphWarmupAction` + `router.push('/graph')` and a page-level `framer-motion` transition. The stage does not need a per-view fade at the `Os`-level.
 
 4. **Starfield rehabilitation strategy.** If a future surface wants the starfield effect, the build spec should either (a) route it through `createModelPointGeometry`-equivalent machinery (procedural `stars` geometry is already supportable via `FieldGeometry` + `bakeFieldAttributes`), or (b) add a sibling `StarfieldController` subclass of `FieldController`. Recommendation: (a), with scroll-driven z translation ported to a new chapter event type in `createFieldChapterTimeline`.
 

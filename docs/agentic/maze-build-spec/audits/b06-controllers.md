@@ -5,10 +5,10 @@
 **Date**: 2026-04-19
 **Maze lines audited**: [35565, 35617] (`Ll` + `Ei`); [43013, 43256] (`yr`); [43257, 43526] (`mm`); [43527, 43528] (`gm`); [43529, 43580] (`xm`); [43581, 43614] (`ym`); [43615, 43632] (`_m`); [43633, 43654] (`bm`); [43655, 43703] (`Sm`); [49326, 49346] (`ug`)
 **SoleMD files audited**:
-- `apps/web/features/ambient-field/controller/FieldController.ts` (base)
-- `apps/web/features/ambient-field/controller/BlobController.ts`
-- `apps/web/features/ambient-field/controller/StreamController.ts`
-- `apps/web/features/ambient-field/controller/PcbController.ts`
+- `apps/web/features/field/controller/FieldController.ts` (base)
+- `apps/web/features/field/controller/BlobController.ts`
+- `apps/web/features/field/controller/StreamController.ts`
+- `apps/web/features/field/controller/PcbController.ts`
 
 ## Summary
 

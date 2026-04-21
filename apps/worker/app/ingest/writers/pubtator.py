@@ -10,7 +10,7 @@ import asyncpg
 from app.config import Settings
 from app.ingest.models import CopyStats, FilePlan, IngestPlan, StartReleaseRequest
 from app.ingest.sources import pubtator
-from app.ingest.writers.base import copy_files_concurrently, copy_records, iter_file_batches
+from app.ingest.writers.base import copy_records, iter_file_batches
 
 
 _ENTITY_COLUMNS: tuple[str, ...] = (
@@ -43,6 +43,8 @@ _BIOCXML_RESOURCE_CODE = 1
 _BIOCONCEPTS_RESOURCE_CODE = 2
 _BIOCXML_RELATION_SOURCE_CODE = 1
 _RELATION_TSV_SOURCE_CODE = 2
+_ENTITY_STAGE_BUFFER_TABLE = "pt3_entity_annotations_stage_buffer"
+_RELATION_STAGE_BUFFER_TABLE = "pt3_relations_stage_buffer"
 
 
 async def load_family(
@@ -112,23 +114,9 @@ async def _load_biocxml_family(
         source_release_id=source_release_id,
         resource=_BIOCXML_RESOURCE_CODE,
     )
-    await _reset_release_resource(
-        pool,
-        table="entity_annotations",
-        schema="pubtator",
-        source_release_id=source_release_id,
-        resource=_BIOCXML_RESOURCE_CODE,
-    )
     await _reset_release_relation_source(
         pool,
         table="relations_stage",
-        schema="pubtator",
-        source_release_id=source_release_id,
-        relation_source=_BIOCXML_RELATION_SOURCE_CODE,
-    )
-    await _reset_release_relation_source(
-        pool,
-        table="relations",
         schema="pubtator",
         source_release_id=source_release_id,
         relation_source=_BIOCXML_RELATION_SOURCE_CODE,
@@ -138,6 +126,7 @@ async def _load_biocxml_family(
 
     async def worker(file_path: Path) -> int:
         async with semaphore, pool.acquire() as connection:
+            await _ensure_stage_merge_buffers(connection)
             written = 0
             async for row_batch in iter_file_batches(
                 file_path,
@@ -182,23 +171,14 @@ async def _load_biocxml_family(
                 ]
                 async with connection.transaction():
                     if entity_batch:
-                        batch_written = await copy_records(
-                            connection,
-                            table_name="entity_annotations_stage",
-                            schema_name="pubtator",
-                            columns=_ENTITY_COLUMNS,
-                            records=entity_batch,
-                        )
+                        batch_written = await _merge_entity_stage_batch(connection, entity_batch)
                         written += batch_written
                         if on_rows_written is not None and batch_written:
                             on_rows_written(file_path, batch_written)
                     if relation_batch:
-                        batch_written = await copy_records(
+                        batch_written = await _merge_relation_stage_batch(
                             connection,
-                            table_name="relations_stage",
-                            schema_name="pubtator",
-                            columns=_RELATION_COLUMNS,
-                            records=relation_batch,
+                            relation_batch,
                         )
                         written += batch_written
                         if on_rows_written is not None and batch_written:
@@ -238,13 +218,6 @@ async def _load_entity_family(
         source_release_id=source_release_id,
         resource=resource,
     )
-    await _reset_release_resource(
-        pool,
-        table="entity_annotations",
-        schema="pubtator",
-        source_release_id=source_release_id,
-        resource=resource,
-    )
 
     def row_to_tuple(row: dict) -> tuple:
         return (
@@ -267,18 +240,16 @@ async def _load_entity_family(
             max_records_per_file=request.max_records_per_file,
         )
 
-    row_count = await copy_files_concurrently(
+    row_count = await _copy_stage_files_concurrently(
         pool,
         [file_plan.path for file_plan in files],
         row_iterator=row_iterator,
         row_to_tuple=row_to_tuple,
         on_file_completed=on_file_completed,
         on_rows_written=on_rows_written,
-        table_name="entity_annotations_stage",
-        schema_name="pubtator",
-        columns=_ENTITY_COLUMNS,
         batch_size=settings.ingest_copy_batch_rows,
         concurrency=settings.ingest_max_concurrent_files,
+        merge_batch=_merge_entity_stage_batch,
     )
     return CopyStats(family=family_name, row_count=row_count, file_count=len(files))
 
@@ -297,13 +268,6 @@ async def _load_relations_family(
     await _reset_release_relation_source(
         pool,
         table="relations_stage",
-        schema="pubtator",
-        source_release_id=source_release_id,
-        relation_source=_RELATION_TSV_SOURCE_CODE,
-    )
-    await _reset_release_relation_source(
-        pool,
-        table="relations",
         schema="pubtator",
         source_release_id=source_release_id,
         relation_source=_RELATION_TSV_SOURCE_CODE,
@@ -330,20 +294,228 @@ async def _load_relations_family(
             max_records_per_file=request.max_records_per_file,
         )
 
-    row_count = await copy_files_concurrently(
+    row_count = await _copy_stage_files_concurrently(
         pool,
         [file_plan.path for file_plan in files],
         row_iterator=row_iterator,
         row_to_tuple=row_to_tuple,
         on_file_completed=on_file_completed,
         on_rows_written=on_rows_written,
-        table_name="relations_stage",
-        schema_name="pubtator",
-        columns=_RELATION_COLUMNS,
         batch_size=settings.ingest_copy_batch_rows,
         concurrency=settings.ingest_max_concurrent_files,
+        merge_batch=_merge_relation_stage_batch,
     )
     return CopyStats(family="relations", row_count=row_count, file_count=len(files))
+
+
+async def _copy_stage_files_concurrently(
+    pool: asyncpg.Pool,
+    file_paths: list[Path],
+    *,
+    row_iterator: Callable[[Path], object],
+    row_to_tuple: Callable[[dict], tuple],
+    on_file_completed: Callable[[Path, int], None] | None,
+    on_rows_written: Callable[[Path, int], None] | None,
+    batch_size: int,
+    concurrency: int,
+    merge_batch: Callable[[asyncpg.Connection, list[tuple]], asyncio.Future | object],
+) -> int:
+    if not file_paths:
+        return 0
+
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+
+    async def worker(file_path: Path) -> int:
+        async with semaphore, pool.acquire() as connection:
+            await _ensure_stage_merge_buffers(connection)
+            written = 0
+            async for row_batch in iter_file_batches(
+                file_path,
+                row_iterator=row_iterator,
+                batch_size=batch_size,
+            ):
+                batch = [row_to_tuple(row) for row in row_batch]
+                async with connection.transaction():
+                    batch_written = await merge_batch(connection, batch)
+                written += batch_written
+                if on_rows_written is not None and batch_written:
+                    on_rows_written(file_path, batch_written)
+            if on_file_completed is not None:
+                on_file_completed(file_path, written)
+            return written
+
+    async with asyncio.TaskGroup() as group:
+        tasks = [group.create_task(worker(file_path)) for file_path in file_paths]
+    return sum(task.result() for task in tasks)
+
+
+async def _ensure_stage_merge_buffers(connection: asyncpg.Connection) -> None:
+    await connection.execute(
+        f"""
+        CREATE TEMP TABLE IF NOT EXISTS {_ENTITY_STAGE_BUFFER_TABLE}
+        (LIKE pubtator.entity_annotations_stage)
+        ON COMMIT DELETE ROWS
+        """
+    )
+    await connection.execute(
+        f"""
+        CREATE TEMP TABLE IF NOT EXISTS {_RELATION_STAGE_BUFFER_TABLE}
+        (LIKE pubtator.relations_stage)
+        ON COMMIT DELETE ROWS
+        """
+    )
+
+
+async def _merge_entity_stage_batch(
+    connection: asyncpg.Connection,
+    records: list[tuple],
+) -> int:
+    if not records:
+        return 0
+    await copy_records(
+        connection,
+        table_name=_ENTITY_STAGE_BUFFER_TABLE,
+        schema_name="pg_temp",
+        columns=_ENTITY_COLUMNS,
+        records=records,
+    )
+    await connection.execute(
+        f"""
+        INSERT INTO pubtator.entity_annotations_stage (
+            source_release_id,
+            pmid,
+            start_offset,
+            end_offset,
+            entity_type,
+            mention_text,
+            concept_id_raw,
+            resource,
+            corpus_id,
+            last_seen_run_id
+        )
+        SELECT DISTINCT ON (
+            source_release_id,
+            pmid,
+            start_offset,
+            end_offset,
+            concept_id_raw,
+            resource
+        )
+            source_release_id,
+            pmid,
+            start_offset,
+            end_offset,
+            entity_type,
+            mention_text,
+            concept_id_raw,
+            resource,
+            corpus_id,
+            last_seen_run_id
+        FROM pg_temp.{_ENTITY_STAGE_BUFFER_TABLE}
+        ORDER BY
+            source_release_id,
+            pmid,
+            start_offset,
+            end_offset,
+            concept_id_raw,
+            resource,
+            entity_type,
+            mention_text
+        ON CONFLICT (
+            source_release_id,
+            pmid,
+            start_offset,
+            end_offset,
+            concept_id_raw,
+            resource
+        )
+        DO UPDATE SET
+            entity_type = EXCLUDED.entity_type,
+            mention_text = EXCLUDED.mention_text,
+            corpus_id = COALESCE(
+                pubtator.entity_annotations_stage.corpus_id,
+                EXCLUDED.corpus_id
+            ),
+            last_seen_run_id = EXCLUDED.last_seen_run_id
+        """
+    )
+    return len(records)
+
+
+async def _merge_relation_stage_batch(
+    connection: asyncpg.Connection,
+    records: list[tuple],
+) -> int:
+    if not records:
+        return 0
+    await copy_records(
+        connection,
+        table_name=_RELATION_STAGE_BUFFER_TABLE,
+        schema_name="pg_temp",
+        columns=_RELATION_COLUMNS,
+        records=records,
+    )
+    await connection.execute(
+        f"""
+        INSERT INTO pubtator.relations_stage (
+            source_release_id,
+            pmid,
+            relation_type,
+            subject_entity_id,
+            object_entity_id,
+            subject_type,
+            object_type,
+            relation_source,
+            corpus_id,
+            last_seen_run_id
+        )
+        SELECT DISTINCT ON (
+            source_release_id,
+            pmid,
+            subject_entity_id,
+            relation_type,
+            object_entity_id,
+            relation_source
+        )
+            source_release_id,
+            pmid,
+            relation_type,
+            subject_entity_id,
+            object_entity_id,
+            subject_type,
+            object_type,
+            relation_source,
+            corpus_id,
+            last_seen_run_id
+        FROM pg_temp.{_RELATION_STAGE_BUFFER_TABLE}
+        ORDER BY
+            source_release_id,
+            pmid,
+            subject_entity_id,
+            relation_type,
+            object_entity_id,
+            relation_source,
+            subject_type,
+            object_type
+        ON CONFLICT (
+            source_release_id,
+            pmid,
+            subject_entity_id,
+            relation_type,
+            object_entity_id,
+            relation_source
+        )
+        DO UPDATE SET
+            subject_type = EXCLUDED.subject_type,
+            object_type = EXCLUDED.object_type,
+            corpus_id = COALESCE(
+                pubtator.relations_stage.corpus_id,
+                EXCLUDED.corpus_id
+            ),
+            last_seen_run_id = EXCLUDED.last_seen_run_id
+        """
+    )
+    return len(records)
 
 
 async def _reset_release_resource(

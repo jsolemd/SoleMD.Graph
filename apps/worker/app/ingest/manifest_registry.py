@@ -18,16 +18,17 @@ class SourceFamilySpec:
     family: str
     datasets: tuple[str, ...]
     required: bool = True
+    enabled_by_default: bool = True
 
 
 S2_FAMILIES: tuple[SourceFamilySpec, ...] = (
     SourceFamilySpec("publication_venues", ("publication-venues",)),
-    SourceFamilySpec("authors", ("authors",)),
+    SourceFamilySpec("authors", ("authors",), required=False, enabled_by_default=False),
     SourceFamilySpec("papers", ("papers",)),
     SourceFamilySpec("abstracts", ("abstracts",)),
-    SourceFamilySpec("tldrs", ("tldrs",), required=False),
+    SourceFamilySpec("tldrs", ("tldrs",), required=False, enabled_by_default=False),
     SourceFamilySpec("citations", ("citations",)),
-    SourceFamilySpec("s2orc_v2", ("s2orc_v2",), required=False),
+    SourceFamilySpec("s2orc_v2", ("s2orc_v2",), required=False, enabled_by_default=False),
 )
 
 PT3_FAMILIES: tuple[SourceFamilySpec, ...] = (

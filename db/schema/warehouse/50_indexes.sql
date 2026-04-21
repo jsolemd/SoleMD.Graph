@@ -97,8 +97,12 @@ CREATE INDEX IF NOT EXISTS idx_s2_papers_raw_source_venue_id
 CREATE INDEX IF NOT EXISTS idx_s2_paper_authors_raw_source_author
     ON solemd.s2_paper_authors_raw (source_author_id)
     WHERE source_author_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_s2_authors_raw_source_author
+    ON solemd.s2_authors_raw (source_author_id);
 CREATE INDEX IF NOT EXISTS idx_s2orc_documents_raw_release
     ON solemd.s2orc_documents_raw (source_release_id, paper_id);
+CREATE INDEX IF NOT EXISTS idx_s2_paper_reference_metrics_raw_release_citing
+    ON solemd.s2_paper_reference_metrics_raw (source_release_id, citing_paper_id);
 
 CREATE INDEX IF NOT EXISTS idx_s2_paper_references_raw_linkage
     ON solemd.s2_paper_references_raw (source_release_id, linkage_status, citing_paper_id);

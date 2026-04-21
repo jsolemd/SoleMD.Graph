@@ -33,8 +33,12 @@ COMMENT ON TABLE solemd.s2_papers_raw IS
     'Typed Semantic Scholar paper metadata staging table keyed by source paper id.';
 COMMENT ON TABLE solemd.s2_paper_authors_raw IS
     'Typed Semantic Scholar author-order staging rows keyed by source paper id.';
+COMMENT ON TABLE solemd.s2_authors_raw IS
+    'Release-scoped Semantic Scholar author registry rows retained on the raw side of the corpus boundary.';
+COMMENT ON TABLE solemd.s2_paper_reference_metrics_raw IS
+    'Release-scoped aggregate citation metrics used for corpus and mapped gates without materializing full reference edges.';
 COMMENT ON TABLE solemd.s2_paper_references_raw IS
-    'Typed Semantic Scholar citation-edge staging rows prior to canonical promotion.';
+    'Optional Semantic Scholar citation-edge staging rows retained outside the default corpus gate contract.';
 COMMENT ON TABLE solemd.s2_paper_assets_raw IS
     'Typed Semantic Scholar asset metadata staging rows keyed by source paper id.';
 COMMENT ON TABLE solemd.s2orc_documents_raw IS
@@ -66,6 +70,10 @@ COMMENT ON COLUMN solemd.venues.source_venue_id IS
     'Stable upstream Semantic Scholar publication-venue identifier when present.';
 COMMENT ON COLUMN solemd.authors.source_author_id IS
     'Stable upstream Semantic Scholar author identifier when present.';
+COMMENT ON COLUMN solemd.s2_authors_raw.source_author_id IS
+    'Stable upstream Semantic Scholar author identifier captured on the raw side before any canonical author promotion.';
+COMMENT ON COLUMN solemd.s2_paper_reference_metrics_raw.source_release_id IS
+    'Release whose aggregate citation metrics produced this per-paper row.';
 COMMENT ON COLUMN solemd.s2_paper_references_raw.source_release_id IS
     'Release whose raw citation snapshot produced this edge row; one row per edge per source release.';
 COMMENT ON COLUMN solemd.s2_paper_references_raw.reference_checksum IS

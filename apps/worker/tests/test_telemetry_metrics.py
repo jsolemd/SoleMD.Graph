@@ -4,7 +4,10 @@ import asyncio
 
 import pytest
 
-from app.telemetry.metrics import track_active_worker_run
+from app.telemetry.metrics import (
+    record_corpus_selection_materialized_rows,
+    track_active_worker_run,
+)
 from telemetry_test_support import metric_sample_value
 
 
@@ -92,3 +95,25 @@ async def test_active_run_tracker_replaces_previous_phase_state() -> None:
         tracker.set_state(phase="indexing")
         assert metric_sample_value("worker_active_run_info", loading_labels) == 0
         assert metric_sample_value("worker_active_run_info", indexing_labels) == 1
+
+
+def test_corpus_selection_materialized_rows_counter_tracks_surface_labels() -> None:
+    before_value = metric_sample_value(
+        "corpus_selection_materialized_rows_total",
+        {
+            "selector_version": "selector-v1",
+            "surface": "entity_annotations",
+        },
+    )
+    record_corpus_selection_materialized_rows(
+        selector_version="selector-v1",
+        surface="entity_annotations",
+        row_count=5,
+    )
+    assert metric_sample_value(
+        "corpus_selection_materialized_rows_total",
+        {
+            "selector_version": "selector-v1",
+            "surface": "entity_annotations",
+        },
+    ) == before_value + 5

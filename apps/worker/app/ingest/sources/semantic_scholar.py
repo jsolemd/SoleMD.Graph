@@ -51,6 +51,9 @@ def build_plan(settings: Settings, request: StartReleaseRequest) -> IngestPlan:
     for spec in family_specs_for_source("s2"):
         if allowlist and spec.family not in allowlist:
             continue
+        if not allowlist and not spec.enabled_by_default:
+            deferred.append(spec.family)
+            continue
         try:
             files = read_manifest_file_plans(
                 release_dir=release_dir,
@@ -131,15 +134,12 @@ async def promote_family(
     if family_name == "papers":
         await _backfill_selected_corpus_ids(connection, source_release_id)
         return
-    if family_name == "citations":
-        await _promote_citations(connection, source_release_id)
-        return
 
 
 def _target_tables_for_family(family_name: str) -> tuple[str, ...]:
     mapping = {
         "publication_venues": ("solemd.venues",),
-        "authors": ("solemd.authors",),
+        "authors": ("solemd.s2_authors_raw",),
         "papers": (
             "solemd.s2_papers_raw",
             "solemd.s2_paper_authors_raw",
@@ -147,7 +147,7 @@ def _target_tables_for_family(family_name: str) -> tuple[str, ...]:
         ),
         "abstracts": ("solemd.s2_papers_raw",),
         "tldrs": ("solemd.s2_papers_raw",),
-        "citations": ("solemd.s2_paper_references_raw",),
+        "citations": ("solemd.s2_paper_reference_metrics_raw",),
         "s2orc_v2": ("solemd.s2orc_documents_raw",),
     }
     return mapping[family_name]
@@ -440,25 +440,6 @@ async def _backfill_selected_corpus_ids(
         WHERE raw.source_release_id = $1
           AND raw.paper_id = papers.s2_paper_id
           AND raw.corpus_id IS DISTINCT FROM papers.corpus_id
-        """,
-        source_release_id,
-    )
-
-
-async def _promote_citations(connection: asyncpg.Connection, source_release_id: int) -> None:
-    await connection.execute(
-        """
-        UPDATE solemd.s2_paper_references_raw raw
-        SET linkage_status = CASE
-                WHEN raw.cited_paper_id IS NULL THEN 3
-                WHEN EXISTS (
-                    SELECT 1
-                    FROM solemd.s2_papers_raw cited
-                    WHERE cited.paper_id = raw.cited_paper_id
-                ) THEN 2
-                ELSE 3
-            END
-        WHERE raw.source_release_id = $1
         """,
         source_release_id,
     )

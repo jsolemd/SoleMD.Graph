@@ -8,16 +8,22 @@ from app.corpus.models import CorpusPlan
 from app.document_schema import TEXT_AVAILABILITY_ABSTRACT, TEXT_AVAILABILITY_NONE
 
 
-PHASE_NAME = "canonical_materialization"
+CORPUS_BASELINE_PHASE_NAME = "corpus_baseline_materialization"
+MAPPED_SURFACES_PHASE_NAME = "mapped_surface_materialization"
 
 
-async def materialize_selected_corpus(
+async def materialize_corpus_baseline(
     connection: asyncpg.Connection,
     *,
     corpus_selection_run_id: UUID,
     plan: CorpusPlan,
 ) -> None:
     del corpus_selection_run_id
+    await _clear_release_materialized_surfaces(
+        connection,
+        s2_source_release_id=plan.s2_source_release_id,
+        pt3_source_release_id=plan.pt3_source_release_id,
+    )
     await _sync_pubtator_stage_corpus_ids(
         connection,
         s2_source_release_id=plan.s2_source_release_id,
@@ -25,8 +31,16 @@ async def materialize_selected_corpus(
     )
     await _upsert_papers(connection, s2_source_release_id=plan.s2_source_release_id)
     await _upsert_paper_text(connection, s2_source_release_id=plan.s2_source_release_id)
+
+
+async def materialize_mapped_surfaces(
+    connection: asyncpg.Connection,
+    *,
+    corpus_selection_run_id: UUID,
+    plan: CorpusPlan,
+) -> None:
+    del corpus_selection_run_id
     await _upsert_paper_authors(connection, s2_source_release_id=plan.s2_source_release_id)
-    await _replace_paper_citations(connection, s2_source_release_id=plan.s2_source_release_id)
     await _replace_entity_annotations(
         connection,
         s2_source_release_id=plan.s2_source_release_id,
@@ -36,6 +50,94 @@ async def materialize_selected_corpus(
         connection,
         s2_source_release_id=plan.s2_source_release_id,
         pt3_source_release_id=plan.pt3_source_release_id,
+    )
+
+
+async def _clear_release_materialized_surfaces(
+    connection: asyncpg.Connection,
+    *,
+    s2_source_release_id: int,
+    pt3_source_release_id: int,
+) -> None:
+    await connection.execute(
+        """
+        DELETE FROM solemd.paper_citations
+        WHERE corpus_id IN (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+        )
+        """,
+        s2_source_release_id,
+    )
+    await connection.execute(
+        """
+        DELETE FROM solemd.paper_authors
+        WHERE corpus_id IN (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+        )
+        """,
+        s2_source_release_id,
+    )
+    await connection.execute(
+        """
+        WITH release_scope AS (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+        )
+        DELETE FROM pubtator.entity_annotations annotations
+        USING release_scope
+        WHERE annotations.source_release_id = $2
+          AND annotations.corpus_id = release_scope.corpus_id
+        """,
+        s2_source_release_id,
+        pt3_source_release_id,
+    )
+    await connection.execute(
+        """
+        WITH release_scope AS (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+        )
+        DELETE FROM pubtator.relations relations
+        USING release_scope
+        WHERE relations.source_release_id = $2
+          AND relations.corpus_id = release_scope.corpus_id
+        """,
+        s2_source_release_id,
+        pt3_source_release_id,
+    )
+    await connection.execute(
+        """
+        DELETE FROM solemd.paper_text
+        WHERE corpus_id IN (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+        )
+        """,
+        s2_source_release_id,
+    )
+    await connection.execute(
+        """
+        DELETE FROM solemd.papers
+        WHERE corpus_id IN (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+        )
+        """,
+        s2_source_release_id,
     )
 
 
@@ -103,24 +205,50 @@ async def _upsert_papers(
             pmc_id,
             s2_paper_id
         )
+        WITH admitted_scope AS (
+            SELECT raw.*
+            FROM solemd.s2_papers_raw raw
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = raw.corpus_id
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+              AND corpus.domain_status IN ('corpus', 'mapped')
+        )
         SELECT
-            raw.corpus_id,
-            venues.venue_id,
-            raw.publication_date,
+            admitted_scope.corpus_id,
+            venue_match.venue_id,
+            admitted_scope.publication_date,
             CASE
-                WHEN raw.year IS NULL THEN NULL
-                ELSE raw.year::SMALLINT
+                WHEN admitted_scope.year IS NULL THEN NULL
+                ELSE admitted_scope.year::SMALLINT
             END,
-            raw.is_open_access,
-            raw.pmid,
-            raw.doi_norm,
-            raw.pmc_id,
-            raw.paper_id
-        FROM solemd.s2_papers_raw raw
-        LEFT JOIN solemd.venues venues
-          ON venues.source_venue_id = raw.source_venue_id
-        WHERE raw.source_release_id = $1
-          AND raw.corpus_id IS NOT NULL
+            admitted_scope.is_open_access,
+            admitted_scope.pmid,
+            admitted_scope.doi_norm,
+            admitted_scope.pmc_id,
+            admitted_scope.paper_id
+        FROM admitted_scope
+        LEFT JOIN LATERAL (
+            SELECT venues.venue_id
+            FROM solemd.venues venues
+            WHERE (
+                    admitted_scope.source_venue_id IS NOT NULL
+                    AND venues.source_venue_id = admitted_scope.source_venue_id
+                  )
+               OR (
+                    admitted_scope.venue_raw IS NOT NULL
+                    AND venues.normalized_name = solemd.normalize_lookup_key(admitted_scope.venue_raw)
+                  )
+            ORDER BY
+                CASE
+                    WHEN admitted_scope.source_venue_id IS NOT NULL
+                     AND venues.source_venue_id = admitted_scope.source_venue_id
+                    THEN 0
+                    ELSE 1
+                END,
+                venues.venue_id
+            LIMIT 1
+        ) AS venue_match ON TRUE
         ON CONFLICT (corpus_id)
         DO UPDATE SET
             venue_id = EXCLUDED.venue_id,
@@ -153,23 +281,30 @@ async def _upsert_paper_text(
             abstract,
             tldr
         )
+        WITH admitted_scope AS (
+            SELECT raw.*
+            FROM solemd.s2_papers_raw raw
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = raw.corpus_id
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+              AND corpus.domain_status IN ('corpus', 'mapped')
+        )
         SELECT
-            raw.corpus_id,
-            substring(digest(coalesce(raw.title, ''), 'sha1') for 16),
+            admitted_scope.corpus_id,
+            substring(digest(coalesce(admitted_scope.title, ''), 'sha1') for 16),
             CASE
-                WHEN raw.abstract IS NULL THEN NULL
-                ELSE substring(digest(raw.abstract, 'sha1') for 16)
+                WHEN admitted_scope.abstract IS NULL THEN NULL
+                ELSE substring(digest(admitted_scope.abstract, 'sha1') for 16)
             END,
             CASE
-                WHEN raw.abstract IS NOT NULL THEN $2::SMALLINT
+                WHEN admitted_scope.abstract IS NOT NULL THEN $2::SMALLINT
                 ELSE $3::SMALLINT
             END,
-            coalesce(raw.title, ''),
-            raw.abstract,
-            raw.tldr
-        FROM solemd.s2_papers_raw raw
-        WHERE raw.source_release_id = $1
-          AND raw.corpus_id IS NOT NULL
+            coalesce(admitted_scope.title, ''),
+            admitted_scope.abstract,
+            admitted_scope.tldr
+        FROM admitted_scope
         ON CONFLICT (corpus_id)
         DO UPDATE SET
             title_hash = EXCLUDED.title_hash,
@@ -197,60 +332,14 @@ async def _upsert_paper_authors(
         FROM solemd.s2_paper_authors_raw raw_authors
         JOIN solemd.s2_papers_raw raw
           ON raw.paper_id = raw_authors.paper_id
+        JOIN solemd.corpus corpus
+          ON corpus.corpus_id = raw.corpus_id
         WHERE raw.source_release_id = $1
           AND raw.corpus_id IS NOT NULL
+          AND corpus.domain_status = 'mapped'
           AND raw_authors.source_author_id IS NOT NULL
         ON CONFLICT (source_author_id)
         DO UPDATE SET display_name = EXCLUDED.display_name
-        """,
-        s2_source_release_id,
-    )
-
-
-async def _replace_paper_citations(
-    connection: asyncpg.Connection,
-    *,
-    s2_source_release_id: int,
-) -> None:
-    await connection.execute(
-        """
-        DELETE FROM solemd.paper_citations
-        WHERE corpus_id IN (
-            SELECT raw.corpus_id
-            FROM solemd.s2_papers_raw raw
-            WHERE raw.source_release_id = $1
-              AND raw.corpus_id IS NOT NULL
-        )
-        """,
-        s2_source_release_id,
-    )
-    await connection.execute(
-        """
-        INSERT INTO solemd.paper_citations (
-            corpus_id,
-            reference_checksum,
-            cited_corpus_id,
-            cited_s2_paper_id,
-            linkage_status,
-            is_influential,
-            intent_raw
-        )
-        SELECT
-            citing_raw.corpus_id,
-            refs.reference_checksum,
-            cited_papers.corpus_id,
-            refs.cited_paper_id,
-            refs.linkage_status,
-            refs.is_influential,
-            refs.intent_raw
-        FROM solemd.s2_paper_references_raw refs
-        JOIN solemd.s2_papers_raw citing_raw
-          ON citing_raw.source_release_id = $1
-         AND citing_raw.paper_id = refs.citing_paper_id
-         AND citing_raw.corpus_id IS NOT NULL
-        LEFT JOIN solemd.papers cited_papers
-          ON cited_papers.s2_paper_id = refs.cited_paper_id
-        WHERE refs.source_release_id = $1
         """,
         s2_source_release_id,
     )
@@ -261,8 +350,11 @@ async def _replace_paper_citations(
             FROM solemd.s2_paper_authors_raw raw_authors
             JOIN solemd.s2_papers_raw raw
               ON raw.paper_id = raw_authors.paper_id
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = raw.corpus_id
             WHERE raw.source_release_id = $1
               AND raw.corpus_id IS NOT NULL
+              AND corpus.domain_status = 'mapped'
               AND raw_authors.source_author_id IS NULL
               AND NOT EXISTS (
                     SELECT 1
@@ -304,6 +396,8 @@ async def _replace_paper_citations(
         FROM solemd.s2_paper_authors_raw raw_authors
         JOIN solemd.s2_papers_raw raw
           ON raw.paper_id = raw_authors.paper_id
+        JOIN solemd.corpus corpus
+          ON corpus.corpus_id = raw.corpus_id
         JOIN solemd.authors authors
           ON (
                 raw_authors.source_author_id IS NOT NULL
@@ -315,6 +409,7 @@ async def _replace_paper_citations(
              )
         WHERE raw.source_release_id = $1
           AND raw.corpus_id IS NOT NULL
+          AND corpus.domain_status = 'mapped'
         """,
         s2_source_release_id,
     )
@@ -355,6 +450,15 @@ async def _replace_entity_annotations(
             concept_id_raw,
             resource
         )
+        WITH mapped_scope AS (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = raw.corpus_id
+            WHERE raw.source_release_id = $2
+              AND raw.corpus_id IS NOT NULL
+              AND corpus.domain_status = 'mapped'
+        )
         SELECT
             stage.corpus_id,
             stage.source_release_id,
@@ -366,8 +470,9 @@ async def _replace_entity_annotations(
             stage.concept_id_raw,
             stage.resource
         FROM pubtator.entity_annotations_stage stage
+        JOIN mapped_scope
+          ON mapped_scope.corpus_id = stage.corpus_id
         WHERE stage.source_release_id = $1
-          AND stage.corpus_id IS NOT NULL
         ON CONFLICT (corpus_id, start_offset, end_offset, concept_id_raw)
         DO UPDATE SET
             source_release_id = EXCLUDED.source_release_id,
@@ -377,6 +482,7 @@ async def _replace_entity_annotations(
             resource = EXCLUDED.resource
         """,
         pt3_source_release_id,
+        s2_source_release_id,
     )
 
 
@@ -415,6 +521,15 @@ async def _replace_relations(
             object_type,
             relation_source
         )
+        WITH mapped_scope AS (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = raw.corpus_id
+            WHERE raw.source_release_id = $2
+              AND raw.corpus_id IS NOT NULL
+              AND corpus.domain_status = 'mapped'
+        )
         SELECT
             stage.corpus_id,
             stage.source_release_id,
@@ -426,9 +541,10 @@ async def _replace_relations(
             stage.object_type,
             stage.relation_source
         FROM pubtator.relations_stage stage
+        JOIN mapped_scope
+          ON mapped_scope.corpus_id = stage.corpus_id
         WHERE stage.source_release_id = $1
           AND stage.relation_source = 1
-          AND stage.corpus_id IS NOT NULL
         ON CONFLICT (corpus_id, subject_entity_id, relation_type, object_entity_id)
         DO UPDATE SET
             source_release_id = EXCLUDED.source_release_id,
@@ -438,6 +554,7 @@ async def _replace_relations(
             relation_source = EXCLUDED.relation_source
         """,
         pt3_source_release_id,
+        s2_source_release_id,
     )
     await connection.execute(
         """
@@ -452,6 +569,15 @@ async def _replace_relations(
             object_type,
             relation_source
         )
+        WITH mapped_scope AS (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = raw.corpus_id
+            WHERE raw.source_release_id = $2
+              AND raw.corpus_id IS NOT NULL
+              AND corpus.domain_status = 'mapped'
+        )
         SELECT
             stage.corpus_id,
             stage.source_release_id,
@@ -463,9 +589,10 @@ async def _replace_relations(
             stage.object_type,
             stage.relation_source
         FROM pubtator.relations_stage stage
+        JOIN mapped_scope
+          ON mapped_scope.corpus_id = stage.corpus_id
         WHERE stage.source_release_id = $1
           AND stage.relation_source = 2
-          AND stage.corpus_id IS NOT NULL
         ON CONFLICT (corpus_id, subject_entity_id, relation_type, object_entity_id)
         DO UPDATE SET
             source_release_id = EXCLUDED.source_release_id,
@@ -476,4 +603,5 @@ async def _replace_relations(
         WHERE pubtator.relations.relation_source <> 1
         """,
         pt3_source_release_id,
+        s2_source_release_id,
     )

@@ -27,6 +27,10 @@ export const mantineNeutralColorsTuple: MantineColorsTuple = [
 //   entityTypeCssColorByType         — runtime hex per entity type
 ```
 
+`mantineNeutralColorsTuple` is a Mantine compatibility gray ramp. It is not the
+shell surface contract. Page, panel, and landing backgrounds still come from
+`app/styles/tokens.css`.
+
 ### Current theme settings (actual code)
 
 ```typescript
@@ -240,7 +244,7 @@ function MyComponent() {
 ```tsx
 // BAD — causes hydration mismatches, doesn't work with SSR
 const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-return <div style={{ background: isDark ? '#1c1c1f' : '#fafafa' }} />;
+return <div style={{ background: isDark ? '#1c1c1f' : '#faf9f7' }} />;
 
 // GOOD — CSS vars auto-swap
 return <div className="bg-[var(--background)]" />;

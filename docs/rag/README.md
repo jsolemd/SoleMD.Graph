@@ -137,16 +137,29 @@ states otherwise:
 
 ## Selected-corpus contract
 
-The current hierarchy is:
+The locked stage hierarchy is:
 
-- `full upstream raw` = `s2_*_raw`, `pubtator.*_stage`
-- `selected canonical corpus` = `solemd.corpus` membership plus the canonical
-  paper/fact tables: `papers`, `paper_text`, `paper_authors`,
-  `paper_citations`, `pubtator.entity_annotations`, `pubtator.relations`
-- `mapped` = the stricter paper-level active universe inside that canonical
-  corpus
-- `evidence` = the smaller full-text / chunking / grounding subset inside
-  mapped
+- `full upstream raw`
+  - `s2_*_raw`
+  - `s2_authors_raw`
+  - `s2_paper_authors_raw`
+  - broad paper-level citation aggregates
+  - `pubtator.*_stage`
+- `corpus`
+  - `solemd.corpus` membership plus the baseline canonical paper surfaces
+    `papers` and `paper_text`
+  - selection audit/provenance surfaces:
+    `corpus_selection_runs`, `corpus_selection_signals`,
+    `paper_selection_summary`
+- `mapped`
+  - the stricter paper-level active universe inside corpus
+  - mapped-owned heavy surfaces such as `paper_authors`,
+    canonical `pubtator.entity_annotations`, canonical `pubtator.relations`,
+    and any citation-edge enrichment actually required downstream
+- `evidence`
+  - the smaller full-text / chunking / grounding subset inside mapped
+  - owns evidence-wave membership, canonical document acquisition, and
+    document-spine child work
 
 Two scope predicates matter:
 
@@ -161,11 +174,17 @@ Evidence replaces the older business "hot" label. The current first-wave
 runtime now uses `evidence` as the worker/queue/actor name for
 evidence-acquisition dispatch.
 
-The corpus contract therefore has two distinct jobs:
+The worker runtime now enforces the split directly with separate
+`corpus_baseline_materialization` and `mapped_surface_materialization`
+phases without changing the public ladder above.
+
+The corpus contract therefore has three distinct jobs:
 
 1. decide what enters the selected canonical corpus from raw upstream data;
-2. ensure the canonical paper / fact tables reflect that selected corpus
-   rather than the entire raw release breadth.
+2. decide which admitted papers are promoted into the mapped paper-level active
+   universe;
+3. materialize only the baseline corpus surfaces at corpus scope and reserve
+   heavier fanout / full-document surfaces for mapped and evidence child waves.
 
 Selection is not just labeling rows. It is also the boundary that determines
 what gets promoted into the durable canonical paper layer.

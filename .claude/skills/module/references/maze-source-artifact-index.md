@@ -6,7 +6,7 @@ instead of the distilled architectural references.
 ## Canonical Cross-References
 
 - **Round 12 ledger**:
-  `docs/map/ambient-field-maze-baseline-ledger-round-12.md` —
+  `docs/map/field-maze-baseline-ledger-round-12.md` —
   authoritative phase log + Source Ground Truth distillation. Read it
   before opening the raw archive; most line-level questions are already
   answered there.

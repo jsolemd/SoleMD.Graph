@@ -4,12 +4,12 @@
 **Priority**: P1
 **Date**: 2026-04-19
 **Maze lines audited**: scripts.pretty.js [42399, 42544]
-**SoleMD file audited**: `apps/web/features/ambient-field/scene/visual-presets.ts`
+**SoleMD file audited**: `apps/web/features/field/scene/visual-presets.ts`
 **References consulted**:
-- `.claude/skills/ambient-field-modules/references/maze-asset-pipeline.md`
-- `.claude/skills/ambient-field-modules/references/maze-particle-runtime-architecture.md`
-- `.claude/skills/ambient-field-modules/references/maze-rebuild-checklist.md`
-- `.claude/skills/ambient-field-modules/references/round-12-module-authoring.md`
+- `.claude/skills/module/references/maze-asset-pipeline.md`
+- `.claude/skills/module/references/maze-particle-runtime-architecture.md`
+- `.claude/skills/module/references/maze-rebuild-checklist.md`
+- `.claude/skills/module/references/round-12-module-authoring.md`
 
 ## Summary
 
@@ -314,7 +314,7 @@ None. SoleMD defines exactly three presets and all three map to Maze scenes.
   architectural decision in SoleMD).
 - **Severity**: Should-fix (doc).
 - **Proposed fix**: Document the `sizeMobile` architectural choice in the
-  `AmbientFieldShaderPreset` type docstring (SoleMD uses per-uniform mobile
+  `FieldShaderPreset` type docstring (SoleMD uses per-uniform mobile
   override in addition to `scaleFactorMobile`). Audit BlobController/
   StreamController/PcbController to confirm `sizeMobile` actually replaces
   `size` on mobile paths.
@@ -355,7 +355,7 @@ None. SoleMD defines exactly three presets and all three map to Maze scenes.
 - **Severity**: Delegated.
 - **Proposed fix**: None for B3. If future homepage scenes need mouse
   parallax, surface a `mousemove: boolean` flag on
-  `AmbientFieldVisualPresetConfig` and wire it to the parallax wrapper.
+  `FieldVisualPresetConfig` and wire it to the parallax wrapper.
 - **Verification**: No action for B3.
 
 ### D11. Missing `positionMobile` across all presets
@@ -371,7 +371,7 @@ None. SoleMD defines exactly three presets and all three map to Maze scenes.
 - **Ownership**: data + architecture.
 - **Severity**: Nice-to-have.
 - **Proposed fix**: Add optional `sceneOffsetMobile?: Vec3` to
-  `AmbientFieldVisualPresetConfig`. Populate only when an override is
+  `FieldVisualPresetConfig`. Populate only when an override is
   needed (do not require it for existing presets; defaults to
   `sceneOffset`).
 - **Verification**: Type-only change. Confirm existing presets are
@@ -386,7 +386,7 @@ None. SoleMD defines exactly three presets and all three map to Maze scenes.
    factors them out into per-call options on
    `FieldGeometry.fromTexture(imageLike, options)` and `fromVertices(…)`.
    **Canonical reference**:
-   `.claude/skills/ambient-field-modules/references/maze-asset-pipeline.md`
+   `.claude/skills/module/references/maze-asset-pipeline.md`
    § "Maze defaults" (lines ~108–122) and
    `round-12-module-authoring.md` § "PCB and other bitmap configs"
    (lines ~325–330). **Rationale**: asset generation is a per-surface
@@ -409,7 +409,7 @@ None. SoleMD defines exactly three presets and all three map to Maze scenes.
    the cyan/magenta color pair at 42564–42569. SoleMD promotes both to
    `visual-presets.ts` so one file tunes both scalar uniforms and stream
    geometry. **Canonical reference**:
-   `.claude/skills/ambient-field-modules/references/maze-shader-material-contract.md`.
+   `.claude/skills/module/references/maze-shader-material-contract.md`.
    **Rationale**: centralizing all per-scene tuning inside a single preset
    registry eliminates a factory-vs-data split that Maze only did for
    historical reasons.
@@ -454,7 +454,7 @@ None. SoleMD defines exactly three presets and all three map to Maze scenes.
 4. **`sizeMobile` architectural decision**: D8 — SoleMD introduces a
    per-uniform mobile override alongside `scaleFactorMobile`. Is this the
    intended contract, or should mobile particle size always flow through
-   the scale factor? The `AmbientFieldShaderPreset` type should document
+   the scale factor? The `FieldShaderPreset` type should document
    the decision.
 
 5. **Maze `mousemove` scenes**: D10 — even though homepage scenes don't
@@ -467,7 +467,7 @@ None. SoleMD defines exactly three presets and all three map to Maze scenes.
    flattened the defaults into each preset. Phase 4 build spec should
    record that: (a) Maze's prototype-merge pattern at `yr` constructor
    (43041) does **not** port to SoleMD, and (b) the canonical per-scene
-   shape is the explicit `AmbientFieldVisualPresetConfig` type. This
+   shape is the explicit `FieldVisualPresetConfig` type. This
    prevents a future contributor from "adding back" a `default` entry.
 
 7. **Naming rename**: Maze uses `u*` uniform prefixes

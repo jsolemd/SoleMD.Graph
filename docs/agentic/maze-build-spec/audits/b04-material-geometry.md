@@ -4,15 +4,15 @@
 **Subsystem**: Bucket B4 — Material + geometry shader pipeline (catalog § B4, slice-06 §§ 5, 6, 7)
 **Maze lines audited**: [42545, 42632] (`gd`), [42633, 42633] (`Fl = gd`), [42666, 42940] (`jo`), plus inline shaders at `index.html:2119-2393`
 **SoleMD files audited**:
-- `apps/web/features/ambient-field/renderer/field-shaders.ts`
-- `apps/web/features/ambient-field/renderer/FieldScene.tsx` (material instantiation seam)
-- `apps/web/features/ambient-field/controller/FieldController.ts` (`createLayerUniforms`)
-- `apps/web/features/ambient-field/scene/visual-presets.ts` (stream/pcb defaults)
-- `apps/web/features/ambient-field/asset/field-geometry.ts` (`sphere`, `stream`, `fromTexture`, `fromVertices`)
-- `apps/web/features/ambient-field/asset/field-attribute-baker.ts` (`bakeFieldAttributes`)
-- `apps/web/features/ambient-field/asset/point-source-registry.ts` (`createBlobSource`, `createStreamSource`, `createPcbSource`, `deriveColorBuffer`)
-- `apps/web/features/ambient-field/asset/image-point-source.ts`
-- `apps/web/features/ambient-field/asset/model-point-source.ts`
+- `apps/web/features/field/renderer/field-shaders.ts`
+- `apps/web/features/field/renderer/FieldScene.tsx` (material instantiation seam)
+- `apps/web/features/field/controller/FieldController.ts` (`createLayerUniforms`)
+- `apps/web/features/field/scene/visual-presets.ts` (stream/pcb defaults)
+- `apps/web/features/field/asset/field-geometry.ts` (`sphere`, `stream`, `fromTexture`, `fromVertices`)
+- `apps/web/features/field/asset/field-attribute-baker.ts` (`bakeFieldAttributes`)
+- `apps/web/features/field/asset/point-source-registry.ts` (`createBlobSource`, `createStreamSource`, `createPcbSource`, `deriveColorBuffer`)
+- `apps/web/features/field/asset/image-point-source.ts`
+- `apps/web/features/field/asset/model-point-source.ts`
 **Date**: 2026-04-19
 
 ## Summary
@@ -46,7 +46,7 @@ SoleMD's shader parity is high on the vertex transform pipeline and close-to-ver
 | Uniform | Maze (`gd.getMaterial("Shader")`) | SoleMD (`createLayerUniforms` + shader) | State |
 | --- | --- | --- | --- |
 | `uPixelRatio` | float, `us` (devicePixelRatio clamp) | float, `min(getPixelRatio, 2)` per frame | parity (SoleMD clamp in FieldScene) |
-| `uIsMobile` | bool, `!yi.desktop` | bool, from `AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT` (< 1024 px) | parity |
+| `uIsMobile` | bool, `!yi.desktop` | bool, from `FIELD_NON_DESKTOP_BREAKPOINT` (< 1024 px) | parity |
 | `uScreen` | float, `innerHeight / (1512 * us)` | not emitted | sanctioned (contract: "provisioned but unused") |
 | `uAlpha` | float, initial 0 | float, from preset (blob 0 until animateIn) | parity |
 | `uTime` | float, initial 0 | float, driven by `field-loop-clock` singleton | parity |
@@ -220,7 +220,7 @@ SoleMD's shader parity is high on the vertex transform pipeline and close-to-ver
 
 ### D-DOC1. `maze-shader-material-contract.md` documents a retired color/burst pipeline
 
-- **Reference**: `.claude/skills/ambient-field-modules/references/maze-shader-material-contract.md` § "Uniform Family" and § "SoleMD burst overlay uniforms".
+- **Reference**: `.claude/skills/module/references/maze-shader-material-contract.md` § "Uniform Family" and § "SoleMD burst overlay uniforms".
 - **Current doc claim**: SoleMD replaces the six scalar color uniforms with `uBaseColor: vec3` + `uBucketAccents: vec3[4]` indexed by `aBucket`, and adds five burst-overlay uniforms (`uBurstType`, `uBurstStrength`, `uBurstColor`, `uBurstRegionScale`, `uBurstSoftness`) that modulate a bucket-gated noise field.
 - **Actual shipped state**: `field-shaders.ts` declares `uniform vec3 uColorBase` and `uniform vec3 uColorNoise` (single Maze-shape pair collapsed to vec3). No bucket-accent array. No burst-overlay uniforms. No `aBucket` read in the shader (it's still baked on the geometry but only consumed by `deriveColorBuffer` CPU-side). The blob's rainbow cycle comes from `BlobController` tweening `uColorNoise` through `LANDING_RAINBOW_RGB`, per the comment at `field-shaders.ts:1-11`.
 - **Severity**: Doc-only — this is a documentation regression, not a code regression. The shipped shader is *closer* to Maze than the SKILL doc describes.
@@ -268,7 +268,7 @@ One cross-bucket edge worth flagging for synthesis: the stream funnel uniform se
 
 **Recommendations for Phase 4**:
 
-1. **Sanction-doc synchronization gate**: Before Phase 4 writes the build spec, run a pass that diffs every "sanctioned" claim in the SKILL reference docs against the shipped code. D-DOC1 in this audit would have been caught earlier. Recommend a `.claude/skills/ambient-field-modules/references/CONTRACT-LINT.md` checklist agents run after any material/shader edit.
+1. **Sanction-doc synchronization gate**: Before Phase 4 writes the build spec, run a pass that diffs every "sanctioned" claim in the SKILL reference docs against the shipped code. D-DOC1 in this audit would have been caught earlier. Recommend a `.claude/skills/module/references/CONTRACT-LINT.md` checklist agents run after any material/shader edit.
 
 2. **Shader-file one-liner provenance**: The comment at `field-shaders.ts:1-11` cites Maze lines. Every such provenance block should also cite the SKILL doc section that sanctions the deviation. Currently there's a one-way pointer (code → Maze) and the reverse (SKILL doc → code file) is implicit.
 

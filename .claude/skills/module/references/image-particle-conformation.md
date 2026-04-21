@@ -11,7 +11,7 @@ image-driven particle layer; do not roll a new subsystem.
 
 ## What it is
 
-An ambient-field point layer whose per-particle XYZ buffer is sampled
+An field point layer whose per-particle XYZ buffer is sampled
 from a source asset — a PNG, an internal bitmap, or a mesh surface — so
 the particle cloud reads as *that asset's silhouette*. Every dark pixel
 or surface vertex becomes a particle position; the shader then animates
@@ -26,8 +26,8 @@ different ways across `scripts.pretty.js`:
 
 ## SoleMD primitives
 
-All three live in `apps/web/features/ambient-field/asset/` and are
-re-exported from `@/features/ambient-field`:
+All three live in `apps/web/features/field/asset/` and are
+re-exported from `@/features/field`:
 
 1. **`createImagePointGeometry(input, opts)`** — `asset/image-point-source.ts`.
    Samples an image's luminance / alpha at a grid, emitting one particle
@@ -63,15 +63,15 @@ re-exported from `@/features/ambient-field`:
      `createModelPointGeometry`.
 
 2. **Register the point source** in
-   `apps/web/features/ambient-field/asset/point-source-registry.ts`:
+   `apps/web/features/field/asset/point-source-registry.ts`:
    - Add a `create<Id>Source(random)` factory that calls the right
      primitive, bakes attributes via `bakeGeometryAttributes`, and
-     returns an `AmbientFieldPointSource`.
+     returns an `FieldPointSource`.
    - Wire it into the `buildSource(id, ...)` dispatcher so
      `resolve({ ids: ["<id>"] })` returns it.
 
 3. **Add a preset** in
-   `apps/web/features/ambient-field/scene/visual-presets.ts`:
+   `apps/web/features/field/scene/visual-presets.ts`:
    - New entry in `visualPresets` with the scalar uniforms you need
      (`amplitude`, `frequency`, `size`, funnel fields if it's a stream,
      `colorBase` / `colorNoise`, etc.). Match the relevant Maze `cs.<id>`
@@ -82,7 +82,7 @@ re-exported from `@/features/ambient-field`:
    blob controller; a surface that needs image-particle layers should
    create its own `FieldScene` variant (or wrap the shared one) that
    instantiates the additional controllers alongside the blob's and
-   renders matching `AmbientFieldStageLayer`s.
+   renders matching `FieldStageLayer`s.
 
 5. **Bind scroll + visibility** on the surface's landing-page analogue:
    - Call `controller.bindScroll(anchor, endAnchor)` with the section's

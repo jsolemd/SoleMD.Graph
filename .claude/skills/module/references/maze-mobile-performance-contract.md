@@ -1,7 +1,7 @@
 # Maze Mobile And Performance Contract
 
 Use this reference when a task touches preload policy, frame lifecycle, DPR,
-resize, reduced motion, breakpoints, or non-desktop ambient-field behavior.
+resize, reduced motion, breakpoints, or non-desktop field behavior.
 
 ## Bootstrap Contract
 
@@ -241,7 +241,7 @@ will keep firing into unmounted materials unless they are killed:
   destroyed when their owning stage unmounts
 - hotspot lifecycle controllers created via
   `createHotspotLifecycleController` hold no GSAP state themselves, but
-  the `AmbientFieldHotspotRing` CSS animation must be allowed to emit
+  the `FieldHotspotRing` CSS animation must be allowed to emit
   its final `animationend` or be explicitly stopped; do not force-remount
   the ring to clear a tween
 

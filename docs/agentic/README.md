@@ -67,6 +67,10 @@ evidence policy line:
 - [2026-04-19-solemd-graph-artifact-quality-audit-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-04-19-solemd-graph-artifact-quality-audit-ledger.md)
   Active audit pass for Postgres artifact quality across corpus, mapped,
   evidence readiness, and document-structure health.
+- [2026-04-20-solemd-graph-stage-contract-implementation-plan-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-04-20-solemd-graph-stage-contract-implementation-plan-ledger.md)
+  Implementation pass for the staged persistence split: raw substrate,
+  corpus baseline, mapped-heavy surfaces, evidence-owned document work, and
+  the first live ingest follow-up under that contract.
 
 ## When To Open A New Ledger
 
@@ -108,3 +112,16 @@ disjoint question set, such as:
 This directory can also hold non-Graph audit ledgers when the user asks for
 them. Keep the filename explicit enough that Graph policy work is still easy to
 find by scanning the list.
+
+- [2026-04-20-solemd-graph-field-landing-runtime-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-04-20-solemd-graph-field-landing-runtime-ledger.md)
+  Ambient-field landing runtime pass: shared stage scroll state, controller
+  readiness gate, blob-through-landing contract, CTA blob bookend, and module
+  authoring reference updates.
+- [2026-04-20-solemd-graph-module-skill-discovery-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-04-20-solemd-graph-module-skill-discovery-ledger.md)
+  Module-skill authoring pass: discovery-first behavior for vague briefs,
+  minimum clarification questions, and a checked-in module-contract intake
+  snapshot.
+- [2026-04-20-solemd-graph-cross-skill-landing-contract-alignment-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-04-20-solemd-graph-cross-skill-landing-contract-alignment-ledger.md)
+  Cross-skill alignment pass for `module`, `aesthetic`, and
+  `animation-authoring` so future agents reconstruct the landing/runtime
+  architecture from the current canonical surface instead of stale references.

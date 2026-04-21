@@ -43,7 +43,7 @@ uv run --project apps/worker python -m app.main enqueue-evidence-wave 2026-03-10
 uv run --project apps/worker python -m app.main run-evidence-wave-now 2026-03-10 2026-03-21 v1 --max-papers 100
 uv run --project apps/worker python -m app.main enqueue-evidence-text 123456 --requested-by operator
 uv run --project apps/worker python -m app.main run-evidence-text-now 123456 --force-refresh
-uv run --project apps/worker dramatiq app.ingest_worker --processes 1 --threads 1 --queues ingest
+uv run --project apps/worker dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest
 uv run --project apps/worker dramatiq app.corpus_worker --processes 1 --threads 1 --queues corpus
 uv run --project apps/worker dramatiq app.evidence_worker --processes 1 --threads 1 --queues evidence
 ```

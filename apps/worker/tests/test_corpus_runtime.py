@@ -26,6 +26,7 @@ from corpus_release_support import (
     write_sample_pt3_release as _write_sample_pt3_release,
     write_sample_s2_release as _write_sample_s2_release,
 )
+from helpers import write_jsonl_gz, write_manifest
 from telemetry_test_support import metric_sample_value
 
 
@@ -77,7 +78,8 @@ async def test_corpus_selection_runtime_resumes_failed_run_deterministically(
             "assets",
             "corpus_admission",
             "mapped_promotion",
-            "canonical_materialization",
+            "corpus_baseline_materialization",
+            "mapped_surface_materialization",
         ]
         assert await _summary_count(warehouse_dsns["admin"], failed_run_id) == 0
 
@@ -99,7 +101,8 @@ async def test_corpus_selection_runtime_resumes_failed_run_deterministically(
         "assets",
         "corpus_admission",
         "mapped_promotion",
-        "canonical_materialization",
+        "corpus_baseline_materialization",
+        "mapped_surface_materialization",
         "selection_summary",
     ]
 
@@ -116,11 +119,76 @@ async def test_corpus_selection_runtime_resumes_failed_run_deterministically(
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
     try:
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.papers") == 7
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_text") == 7
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_authors") == 7
-        assert await admin_connection.fetchval("SELECT count(*) FROM pubtator.entity_annotations") == 5
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.papers") == 6
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_text") == 6
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_authors") == 5
+        assert await admin_connection.fetchval("SELECT count(*) FROM pubtator.entity_annotations") == 4
         assert await admin_connection.fetchval("SELECT count(*) FROM pubtator.relations") == 1
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_citations") == 0
+        assert [
+            row["s2_paper_id"]
+            for row in await admin_connection.fetch(
+                """
+                SELECT papers.s2_paper_id
+                FROM solemd.papers papers
+                ORDER BY papers.s2_paper_id
+                """
+            )
+        ] == [
+            "S2-101",
+            "S2-102",
+            "S2-103",
+            "S2-105",
+            "S2-106",
+            "S2-107",
+        ]
+        assert [
+            row["s2_paper_id"]
+            for row in await admin_connection.fetch(
+                """
+                SELECT papers.s2_paper_id
+                FROM solemd.paper_authors paper_authors
+                JOIN solemd.papers papers
+                  ON papers.corpus_id = paper_authors.corpus_id
+                ORDER BY papers.s2_paper_id
+                """
+            )
+        ] == [
+            "S2-101",
+            "S2-102",
+            "S2-105",
+            "S2-106",
+            "S2-107",
+        ]
+        assert [
+            row["s2_paper_id"]
+            for row in await admin_connection.fetch(
+                """
+                SELECT papers.s2_paper_id
+                FROM pubtator.entity_annotations annotations
+                JOIN solemd.papers papers
+                  ON papers.corpus_id = annotations.corpus_id
+                ORDER BY papers.s2_paper_id
+                """
+            )
+        ] == [
+            "S2-101",
+            "S2-105",
+            "S2-106",
+            "S2-107",
+        ]
+        assert [
+            row["s2_paper_id"]
+            for row in await admin_connection.fetch(
+                """
+                SELECT papers.s2_paper_id
+                FROM pubtator.relations relations
+                JOIN solemd.papers papers
+                  ON papers.corpus_id = relations.corpus_id
+                ORDER BY papers.s2_paper_id
+                """
+            )
+        ] == ["S2-106"]
     finally:
         await admin_connection.close()
 
@@ -258,7 +326,7 @@ async def test_end_to_end_ingest_selection_and_dispatch(
                 source_code="s2",
                 release_tag=s2_release_tag,
                 requested_by="tester",
-                family_allowlist=("publication_venues", "authors", "papers", "abstracts", "citations"),
+                family_allowlist=("publication_venues", "papers", "abstracts", "citations"),
             ),
             ingest_pool=pools.get("ingest_write"),
             runtime_settings=runtime_settings,
@@ -427,7 +495,184 @@ async def test_end_to_end_ingest_selection_and_dispatch(
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
     try:
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_citations") == 1
+        summary_metrics = await admin_connection.fetchrow(
+            """
+            SELECT summary.reference_out_count, summary.influential_reference_count
+            FROM solemd.paper_selection_summary summary
+            JOIN solemd.papers papers
+              ON papers.corpus_id = summary.corpus_id
+            WHERE summary.corpus_selection_run_id = $1
+              AND papers.s2_paper_id = '101'
+            """,
+            selection_run_id,
+        )
+        assert summary_metrics is not None
+        assert summary_metrics["reference_out_count"] == 1
+        assert summary_metrics["influential_reference_count"] == 1
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_corpus_materialization_resolves_venue_by_normalized_name_fallback(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    s2_release_tag = "2026-05-02"
+    pt3_release_tag = "2026-05-02"
+    s2_root = tmp_path / "semantic-scholar"
+    pt_root = tmp_path / "pubtator"
+    release_dir = s2_root / "releases" / s2_release_tag
+
+    publication_venues_dir = release_dir / "publication-venues"
+    authors_dir = release_dir / "authors"
+    papers_dir = release_dir / "papers"
+    abstracts_dir = release_dir / "abstracts"
+    citations_dir = release_dir / "citations"
+
+    venues_path = publication_venues_dir / "publication-venues-0000.jsonl.gz"
+    authors_path = authors_dir / "authors-0000.jsonl.gz"
+    papers_path = papers_dir / "papers-0000.jsonl.gz"
+    abstracts_path = abstracts_dir / "abstracts-0000.jsonl.gz"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        venues_path,
+        [
+            {"id": "venue-1", "issn": None, "name": "Journal of Affective Disorders"},
+            {"id": "venue-2", "issn": None, "name": "Journal of Affective Disorders"},
+        ],
+    )
+    write_jsonl_gz(
+        authors_path,
+        [
+            {
+                "authorid": "author-1",
+                "name": "Ada Ingest",
+                "externalids": {"ORCID": "0000-0000-0000-0001"},
+            }
+        ],
+    )
+    write_jsonl_gz(
+        papers_path,
+        [
+            {
+                "corpusid": 101,
+                "title": "Amyloid beta in depression",
+                "venue": "Journal of Affective Disorders",
+                "year": 2026,
+                "publicationdate": "2026-05-02",
+                "isopenaccess": True,
+                "publicationvenueid": "venue-2",
+                "externalids": {"PubMed": "60101", "DOI": "10.1000/p101"},
+                "authors": [{"authorId": "author-1", "name": "Ada Ingest"}],
+            }
+        ],
+    )
+    write_jsonl_gz(
+        abstracts_path,
+        [{"corpusid": 101, "abstract": "Amyloid beta abstract."}],
+    )
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": True,
+                "intents": ["background"],
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "publication-venues.manifest.json",
+        dataset="publication-venues",
+        release_tag=s2_release_tag,
+        output_dir=publication_venues_dir,
+        file_names=[venues_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "authors.manifest.json",
+        dataset="authors",
+        release_tag=s2_release_tag,
+        output_dir=authors_dir,
+        file_names=[authors_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "papers.manifest.json",
+        dataset="papers",
+        release_tag=s2_release_tag,
+        output_dir=papers_dir,
+        file_names=[papers_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "abstracts.manifest.json",
+        dataset="abstracts",
+        release_tag=s2_release_tag,
+        output_dir=abstracts_dir,
+        file_names=[abstracts_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=s2_release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+    await _write_sample_pt3_release(pt_root, release_tag=pt3_release_tag)
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        pubtator_dir=pt_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        await run_release_ingest(
+            StartReleaseRequest(
+                source_code="s2",
+                release_tag=s2_release_tag,
+                requested_by="tester",
+                family_allowlist=("publication_venues", "authors", "papers", "abstracts", "citations"),
+            ),
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+        await run_release_ingest(
+            StartReleaseRequest(
+                source_code="pt3",
+                release_tag=pt3_release_tag,
+                requested_by="tester",
+                family_allowlist=("bioconcepts",),
+            ),
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+        await run_corpus_selection(
+            StartCorpusSelectionRequest(
+                s2_release_tag=s2_release_tag,
+                pt3_release_tag=pt3_release_tag,
+                selector_version="selector-v1-normalized-venue",
+                requested_by="tester",
+            ),
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert await admin_connection.fetchval(
+            """
+            SELECT papers.venue_id
+            FROM solemd.papers papers
+            WHERE papers.s2_paper_id = '101'
+            """
+        ) is not None
     finally:
         await admin_connection.close()
 

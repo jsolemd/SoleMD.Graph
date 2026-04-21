@@ -437,18 +437,21 @@ async def fetch_selection_summary_rows(
     try:
         rows = await connection.fetch(
             """
-            SELECT papers.s2_paper_id, summary.current_status, summary.primary_admission_reason
+            SELECT raw.paper_id, summary.current_status, summary.primary_admission_reason
             FROM solemd.paper_selection_summary summary
-            JOIN solemd.papers papers
-              ON papers.corpus_id = summary.corpus_id
+            JOIN solemd.corpus_selection_runs runs
+              ON runs.corpus_selection_run_id = summary.corpus_selection_run_id
+            JOIN solemd.s2_papers_raw raw
+              ON raw.corpus_id = summary.corpus_id
+             AND raw.source_release_id = runs.s2_source_release_id
             WHERE summary.corpus_selection_run_id = $1
-            ORDER BY papers.s2_paper_id
+            ORDER BY raw.paper_id
             """,
             run_id,
         )
         return [
             (
-                str(row["s2_paper_id"]),
+                str(row["paper_id"]),
                 str(row["current_status"]),
                 str(row["primary_admission_reason"]),
             )

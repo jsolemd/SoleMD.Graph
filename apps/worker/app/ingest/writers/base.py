@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Sequence
+from concurrent.futures import CancelledError as FutureCancelledError
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -142,15 +143,18 @@ async def iter_file_batches(
     stop_event = threading.Event()
 
     def push(item: object) -> bool:
+        future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
         while True:
             if stop_event.is_set():
+                future.cancel()
                 return False
-            future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
             try:
                 future.result(timeout=0.1)
                 return True
             except FutureTimeoutError:
-                future.cancel()
+                continue
+            except FutureCancelledError:
+                return False
             except RuntimeError:
                 future.cancel()
                 return False

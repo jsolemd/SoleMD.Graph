@@ -18,7 +18,7 @@
  * and drift continues without a visible snap.
  *
  * Rendering: `<points>` + stock `<pointsMaterial>` with a 64×64
- * CanvasTexture soft disk as `map`, so the ambient field stays a bit
+ * CanvasTexture soft disk as `map`, so the field stays a bit
  * defocused behind the interactive foreground constellations without
  * paying for a fullscreen CSS blur. The backdrop is the wrapper
  * div's `var(--graph-bg)`, so the connectome tracks light/dark
@@ -101,7 +101,7 @@ function readCssColor(name: string, fallback: string): string {
 let circleTextureCache: CanvasTexture | null = null;
 
 // 64×64 soft disk on transparent background. Used as the `map` on
-// pointsMaterial so the ambient field reads slightly blurred and pushed
+// pointsMaterial so the field reads slightly blurred and pushed
 // back behind the foreground semantic layer.
 function getCircleTexture(): CanvasTexture {
   if (circleTextureCache) return circleTextureCache;

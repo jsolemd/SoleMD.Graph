@@ -140,7 +140,7 @@ async def refresh_selection_summary(
             SELECT
                 annotations.corpus_id,
                 count(*)::INTEGER AS entity_annotation_count
-            FROM pubtator.entity_annotations annotations
+            FROM pubtator.entity_annotations_stage annotations
             WHERE annotations.source_release_id = $3
             GROUP BY annotations.corpus_id
         ),
@@ -148,16 +148,17 @@ async def refresh_selection_summary(
             SELECT
                 relations.corpus_id,
                 count(*)::INTEGER AS relation_count
-            FROM pubtator.relations relations
+            FROM pubtator.relations_stage relations
             WHERE relations.source_release_id = $3
             GROUP BY relations.corpus_id
         ),
         reference_counts AS (
             SELECT
                 citing_raw.corpus_id,
-                count(*)::INTEGER AS reference_out_count,
-                count(*) FILTER (WHERE refs.is_influential)::INTEGER AS influential_reference_count
-            FROM solemd.s2_paper_references_raw refs
+                coalesce(sum(refs.reference_out_count), 0)::INTEGER AS reference_out_count,
+                coalesce(sum(refs.influential_reference_count), 0)::INTEGER
+                    AS influential_reference_count
+            FROM solemd.s2_paper_reference_metrics_raw refs
             JOIN solemd.s2_papers_raw citing_raw
               ON citing_raw.source_release_id = $2
              AND citing_raw.paper_id = refs.citing_paper_id

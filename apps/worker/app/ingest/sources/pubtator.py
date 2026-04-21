@@ -191,6 +191,7 @@ def _stream_biocxml(path: Path, max_records: int | None) -> Iterator[dict[str, A
                             continue
                         pmid = int(pmid_text)
                         annotation_index: dict[str, tuple[str, int]] = {}
+                        seen_entities: set[tuple[int, int, str, int]] = set()
                         for passage in document.findall("passage"):
                             for annotation in passage.findall("annotation"):
                                 infons = _extract_infons(annotation)
@@ -213,6 +214,15 @@ def _stream_biocxml(path: Path, max_records: int | None) -> Iterator[dict[str, A
                                         skipped["annotation_bad_offset"] += 1
                                         continue
                                     start_offset, end_offset = span
+                                    entity_key = (
+                                        start_offset,
+                                        end_offset,
+                                        concept_id,
+                                        ENTITY_RESOURCE_BIOCXML,
+                                    )
+                                    if entity_key in seen_entities:
+                                        continue
+                                    seen_entities.add(entity_key)
                                     yield {
                                         "row_kind": "entity",
                                         "pmid": pmid,

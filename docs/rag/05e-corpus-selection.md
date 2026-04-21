@@ -5,9 +5,12 @@
 > including the locked ladder `raw -> corpus -> mapped -> evidence`, curated
 > vocab materialization into `solemd.vocab_terms` /
 > `solemd.vocab_term_aliases`, release-pair run tracking, durable signal
-> provenance, canonical-corpus materialization into `papers` / `paper_text` /
-> `paper_authors` / `paper_citations` / `pubtator.entity_annotations` /
-> `pubtator.relations`, and per-paper selection summary refresh. `mapped`
+> provenance, explicit `corpus_baseline_materialization` and
+> `mapped_surface_materialization` phases, and per-paper selection summary
+> refresh. The landed split keeps baseline corpus materialization at
+> (`papers`, `paper_text`) and mapped-surface
+> materialization (`paper_authors`, canonical PT3, and any citation-edge
+> enrichment that downstream mapped waves truly require). `mapped`
 > promotion now uses journal, venue-pattern, entity-rule, and relation-rule
 > families with second-gate logic for noisy entity families. Evidence-wave
 > dispatch now runs under `corpus.dispatch_evidence_wave` with wave key
@@ -69,14 +72,22 @@ Working ladder for the warehouse contract:
 
 - **full upstream raw**
   - `s2_*_raw`
+  - `s2_authors_raw`
+  - `s2_paper_authors_raw`
+  - broad paper-level citation aggregates
   - `pubtator.*_stage`
-- **selected canonical corpus**
+- **corpus**
   - broad corpus membership is
     `solemd.corpus.domain_status IN ('corpus', 'mapped')`
-  - canonical paper/fact tables: `papers`, `paper_text`, `paper_authors`,
-    `paper_citations`, `pubtator.entity_annotations`, `pubtator.relations`
+  - baseline canonical paper surfaces: `papers`, `paper_text`
+  - audit/provenance surfaces:
+    `corpus_selection_runs`, `corpus_selection_signals`,
+    `paper_selection_summary`
 - **mapped**
-  - stricter paper-level active universe inside the canonical corpus
+  - stricter paper-level active universe inside corpus
+  - owns heavier canonical fanout such as `paper_authors`,
+    canonical `pubtator.entity_annotations`, canonical `pubtator.relations`,
+    and any citation-edge enrichment that downstream mapped waves actually need
   - owns paper-level rollout behaviors such as graph/SPECTER2/UMAP and
     paper-grounded retrieval/indexing
 - **evidence**
@@ -86,6 +97,13 @@ Working ladder for the warehouse contract:
 
 Mapped now absorbs what earlier drafts called "warm." The first-wave runtime
 now uses `evidence` naming for the evidence-acquisition lane.
+
+Current code now enforces the split directly:
+
+- corpus baseline rebuilds admitted `papers` / `paper_text`
+- mapped materialization rebuilds mapped-only authorship and canonical PT3
+- legacy `paper_citations` rows are cleared during rematerialization unless a
+  later mapped/graph wave explicitly republishes them
 
 ## Locked Stage Criteria
 
@@ -211,10 +229,9 @@ This preserves the intended hierarchy:
    PubTator loads can be broad and rebuildable. The selected canonical corpus is
    the smaller intentional paper universe that downstream lanes consume.
 2. **Corpus work has two distinct jobs.** It decides `raw -> corpus -> mapped`
-   membership in `solemd.corpus`, and it ensures the canonical paper/fact
-   tables (`papers`, `paper_text`, `paper_authors`, `paper_citations`,
-   `pubtator.entity_annotations`, `pubtator.relations`) actually reflect the
-   selected canonical corpus rather than the entire raw release breadth.
+   membership in `solemd.corpus`, and it materializes the correct surfaces at
+   the correct stage boundary. Baseline canonical paper rows belong to
+   `corpus`; heavier fanout and mapped-rollout surfaces belong to `mapped`.
    Selection is not just labeling rows.
 3. **Selection is reproducible and warehouse-local.** It must be reconstructable
    from published raw releases plus curated editorial assets and versioned rule
@@ -225,14 +242,15 @@ This preserves the intended hierarchy:
 5. **Mapping is stricter than corpus admission, and canonical backfill follows
    corpus admission.** Corpus admission is deliberately high-recall.
    `mapped` promotion is the higher-precision decision that defines the active
-   paper-level universe inside the canonical corpus. Canonical paper/fact
-   promotion/backfill must be idempotent for the full selected corpus, and
-   mapped-specific rollout must stay downstream of that broader boundary.
+   paper-level universe inside corpus. Baseline canonical paper materialization
+   must be idempotent for the full selected corpus, while mapped-specific
+   fanout must stay downstream of that broader boundary.
 6. **Broad selected-corpus surfaces stop at paper/fact baseline.** The broad
-   selected-corpus surfaces are paper metadata/text baseline,
-   references/citations, and canonical PubTator entity/relation coverage for
-   selected papers. Full-text document spine, chunking, evidence units, and
-   OpenSearch evidence indexes are downstream child waves.
+   selected-corpus surfaces are paper metadata/text baseline plus the signal
+   ledger that explains admission and promotion. Canonical PT3, author fanout,
+   citation-edge enrichment, full-text document spine, chunking, evidence
+   units, and OpenSearch evidence indexes are downstream mapped/evidence child
+   waves.
 7. **Mapped rollout and evidence are child waves, not alternate corpus
    definitions.** Mapped owns the paper-level active universe. Paper-grounded
    retrieval/indexing/embedding is modeled as mapped rollout behavior, not a
@@ -491,7 +509,8 @@ Implemented phases:
 - `assets`
 - `corpus_admission`
 - `mapped_promotion`
-- `canonical_materialization`
+- `corpus_baseline_materialization`
+- `mapped_surface_materialization`
 - `selection_summary`
 
 Recommended run-identity key:
@@ -722,12 +741,15 @@ warehouse.
 - `solemd.corpus`
 - `solemd.papers`
 - `solemd.paper_text`
-- `solemd.paper_authors`
-- `solemd.paper_citations`
-- `pubtator.entity_annotations`
-- `pubtator.relations`
 - `solemd.vocab_terms`
 - `solemd.vocab_term_aliases`
+
+Mapped-owned surfaces behind the separate mapped-materialization phase:
+
+- `solemd.paper_authors`
+- `solemd.paper_citations` only if a mapped/graph wave truly needs edge rows
+- `pubtator.entity_annotations`
+- `pubtator.relations`
 
 ### New durable surfaces this slice should introduce in the implementation batch
 

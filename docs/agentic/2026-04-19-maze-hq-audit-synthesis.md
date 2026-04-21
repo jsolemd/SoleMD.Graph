@@ -48,7 +48,7 @@
 
 | # | Flagged drift | Source audit | Verification |
 |---|---------------|--------------|--------------|
-| F1 | "CRITICAL: `FieldController.animateIn()` kills `uAlpha` tweens without restarting them, so `uAlpha` keeps the previous (likely 0) value" — gsap-infra key finding #1 | gsap-infra | Team-lead verified against `apps/web/features/ambient-field/controller/FieldController.ts:247–268`. `animateIn` **does** tween `uAlpha` to `this.params.shader.alpha` via `gsap.to` immediately after the `killTweensOf` calls (line ~253). Auditor stopped reading too early. **Not a must-fix. Do not implement.** |
+| F1 | "CRITICAL: `FieldController.animateIn()` kills `uAlpha` tweens without restarting them, so `uAlpha` keeps the previous (likely 0) value" — gsap-infra key finding #1 | gsap-infra | Team-lead verified against `apps/web/features/field/controller/FieldController.ts:247–268`. `animateIn` **does** tween `uAlpha` to `this.params.shader.alpha` via `gsap.to` immediately after the `killTweensOf` calls (line ~253). Auditor stopped reading too early. **Not a must-fix. Do not implement.** |
 
 ---
 
@@ -98,7 +98,7 @@ These are sanctioned deviations from Maze. Any future audit or refactor must tre
 8. **Per-layer `uTime` scaling (blob 0.25 / pcb 0.6 / stream 0.12 desktop, 0.1 / 0.2 / 0.04 reduced)** — `FieldController.getTimeFactor()` (123–135). Driven by the module-clock architecture; without it, ratios drift from Maze's GSAP-playhead-derived rhythm.
 9. **Scroll-timeline-owned animation for the blob (not frame-polled `updateVisibility`)** — `BlobController` scroll timeline at ≈448+, `scrub: 1`. Intentional architecture shift from Maze's per-frame visibility gate. `updateVisibility` / `animateIn` / `animateOut` remain the source of truth for stream/pcb only.
 10. **Reduced-motion guards in all three controllers** — not in Maze; SoleMD-only accessibility hardening. Keep.
-11. **Synchronous `ScrollTrigger.refresh()` in the scroll-driver** — `ambient-field-scroll-driver.ts:97–106`. Differs from Maze's `setTimeout(1)` deferral; deliberate because multiple `fromTo` tweens on the same uniform require the timeline reverted to progress 0 before the next tween's `from` is captured.
+11. **Synchronous `ScrollTrigger.refresh()` in the scroll-driver** — `field-scroll-driver.ts:97–106`. Differs from Maze's `setTimeout(1)` deferral; deliberate because multiple `fromTo` tweens on the same uniform require the timeline reverted to progress 0 before the next tween's `from` is captured.
 12. **`pointTexture` module-scope singleton** — `field-point-texture.ts`. Maze reloads per material build; SoleMD caches once. Keep (but add the disposal exit hatch in S3).
 
 ---
@@ -108,10 +108,10 @@ These are sanctioned deviations from Maze. Any future audit or refactor must tre
 These patterns recur across two or more audits. They are not must-fixes; they are worth a dedicated follow-up pass rather than being folded into the Must-fix commits.
 
 1. **Unified animation-ownership doc / contract** *(motion + gsap-blob + gsap-infra)*
-   The blob's alpha / depth / amplitude live on a scroll-scrubbed timeline; stream / pcb still use frame-polled `updateVisibility`. This split is intentional but undocumented, and already caused audit confusion (e.g., the false-positive F1 above and the cross-system "intro race" flag S1). **Suggested follow-up**: a short `ambient-field-animation-ownership.md` in `docs/map/` that names each uniform and who (timeline vs frame loop) owns it per controller.
+   The blob's alpha / depth / amplitude live on a scroll-scrubbed timeline; stream / pcb still use frame-polled `updateVisibility`. This split is intentional but undocumented, and already caused audit confusion (e.g., the false-positive F1 above and the cross-system "intro race" flag S1). **Suggested follow-up**: a short `field-animation-ownership.md` in `docs/map/` that names each uniform and who (timeline vs frame loop) owns it per controller.
 
 2. **Shared ScrollTrigger + reduced-motion bootstrap** *(gsap-infra + gsap-stream-pcb + gsap-blob)*
-   `ensureGsapScrollTriggerRegistered` plus per-controller `prefers-reduced-motion` branches appear in all three controllers. Ripe for a tiny `ambient-field-scroll-init.ts` util that registers the plugin idempotently and returns a normalized `{ reducedMotion, pluginReady }` snapshot.
+   `ensureGsapScrollTriggerRegistered` plus per-controller `prefers-reduced-motion` branches appear in all three controllers. Ripe for a tiny `field-scroll-init.ts` util that registers the plugin idempotently and returns a normalized `{ reducedMotion, pluginReady }` snapshot.
 
 3. **`scrollDisposer` functional-teardown contract** *(gsap-blob + gsap-stream-pcb)*
    All three controllers use a functional disposer that kills both the trigger and the timeline. M3 shows the blob's `destroy()` does not call it. A shared `bindScrollTimeline(...) → disposer` helper with a typed contract would make the "parent class calls disposer in `destroy`" invariant enforceable (or at least lintable) across controllers.

@@ -19,7 +19,7 @@
     "features/animations/_smoke/rotating-cube/RotatingCube.tsx": "442df5ebe955652dc6e9c7bced8c9bc06cb24c4338eb56ff8b7033a096eeb2d3",
     "features/animations/_smoke/scroll-fade/ScrollFade.tsx": "265da3ca484e9df148efd5c19a9b447c356c0e4b81ec3d9598a56cb08205a488",
     "features/animations/_smoke/scroll-mechanism/ScrollMechanism.tsx": "a8d803da8742654b5ec74ee9f3958799d7e4842c5cbd0abca35d86098dc13b10",
-    "features/animations/_smoke/text-reveal/TextReveal.tsx": "c5b3e441eb281c664fdfa04190de0295d92b48ed5fd7f25db31421e0a41b2b8c",
+    "features/animations/text-reveal/TextReveal.tsx": "1c5cf81b92246c69265fcac2c115c57e590ff2b6c3f83026b5e98fea13a67412",
     "features/animations/_templates/animated-beam.tsx": "673d9fe783f63ad133afc07c12fccad6e3e864e13b1138ca24f5bbf54dd8d789",
     "features/animations/_templates/biology-mechanism.tsx": "b696bae311e12efd08622b6025d0e06040aa6f95a49798f631bc1962173263fc",
     "features/animations/_templates/canvas-hook.ts": "5a545943774e31e67a2cac656c79d9b3af08e013dd8cf8d5e1a3ad99af74adaf",

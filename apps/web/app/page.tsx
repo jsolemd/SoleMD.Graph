@@ -1,10 +1,10 @@
 import { connection } from "next/server";
-import { AmbientFieldLandingRoute } from "@/features/ambient-field/routes/AmbientFieldLandingRoute";
+import { FieldLandingRoute } from "@/features/field/routes/FieldLandingRoute";
 import { fetchActiveGraphBundle } from "@/features/graph/lib/fetch";
 
 export default async function HomePage() {
   await connection();
   const bundle = await fetchActiveGraphBundle().catch(() => null);
 
-  return <AmbientFieldLandingRoute bundle={bundle} />;
+  return <FieldLandingRoute bundle={bundle} />;
 }

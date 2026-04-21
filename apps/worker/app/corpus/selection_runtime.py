@@ -19,7 +19,10 @@ from app.corpus.errors import (
     UpstreamReleaseMissing,
     UpstreamReleaseNotPublished,
 )
-from app.corpus.materialize import materialize_selected_corpus
+from app.corpus.materialize import (
+    materialize_corpus_baseline,
+    materialize_mapped_surfaces,
+)
 from app.corpus.models import (
     CORPUS_SELECTION_PHASES,
     CorpusPlan,
@@ -46,6 +49,7 @@ from app.telemetry.metrics import (
     track_active_worker_run,
     record_corpus_selection_failure,
     record_corpus_selection_materialized_papers,
+    record_corpus_selection_materialized_rows,
     record_corpus_pipeline_stage_count,
     record_corpus_selection_run,
     record_corpus_selection_signals,
@@ -180,9 +184,9 @@ async def run_corpus_selection(
                                 corpus_selection_run_id=run_id,
                                 mapped_signal_count=mapped_signal_count,
                             )
-                        elif phase_name == "canonical_materialization":
+                        elif phase_name == "corpus_baseline_materialization":
                             async with connection.transaction():
-                                await materialize_selected_corpus(
+                                await materialize_corpus_baseline(
                                     connection,
                                     corpus_selection_run_id=run_id,
                                     plan=plan,
@@ -196,9 +200,32 @@ async def run_corpus_selection(
                                 paper_count=materialized_corpus_count,
                             )
                             emit_event(
-                                "corpus.selection.materialization.completed",
+                                "corpus.selection.corpus_baseline_materialization.completed",
                                 corpus_selection_run_id=run_id,
                                 materialized_corpus_count=materialized_corpus_count,
+                            )
+                        elif phase_name == "mapped_surface_materialization":
+                            async with connection.transaction():
+                                await materialize_mapped_surfaces(
+                                    connection,
+                                    corpus_selection_run_id=run_id,
+                                    plan=plan,
+                                )
+                            mapped_surface_counts = await _load_mapped_surface_counts(
+                                connection,
+                                s2_source_release_id=plan.s2_source_release_id,
+                                pt3_source_release_id=plan.pt3_source_release_id,
+                            )
+                            for surface_name, row_count in mapped_surface_counts.items():
+                                record_corpus_selection_materialized_rows(
+                                    selector_version=request.selector_version,
+                                    surface=surface_name,
+                                    row_count=row_count,
+                                )
+                            emit_event(
+                                "corpus.selection.mapped_surface_materialization.completed",
+                                corpus_selection_run_id=run_id,
+                                mapped_surface_counts=mapped_surface_counts,
                             )
                         else:
                             async with connection.transaction():
@@ -491,7 +518,8 @@ async def _set_selection_phase(
         "assets": CORPUS_SELECTION_STATUS_ASSETS,
         "corpus_admission": CORPUS_SELECTION_STATUS_CORPUS_ADMISSION,
         "mapped_promotion": CORPUS_SELECTION_STATUS_MAPPED_PROMOTION,
-        "canonical_materialization": CORPUS_SELECTION_STATUS_CANONICAL_MATERIALIZATION,
+        "corpus_baseline_materialization": CORPUS_SELECTION_STATUS_CANONICAL_MATERIALIZATION,
+        "mapped_surface_materialization": CORPUS_SELECTION_STATUS_CANONICAL_MATERIALIZATION,
         "selection_summary": CORPUS_SELECTION_STATUS_SELECTION_SUMMARY,
     }[phase_name]
     await connection.execute(
@@ -605,14 +633,67 @@ async def _count_materialized_papers(
         """
         SELECT count(*)
         FROM solemd.s2_papers_raw raw
+        JOIN solemd.corpus corpus
+          ON corpus.corpus_id = raw.corpus_id
         JOIN solemd.papers papers
           ON papers.corpus_id = raw.corpus_id
         WHERE raw.source_release_id = $1
           AND raw.corpus_id IS NOT NULL
+          AND corpus.domain_status IN ('corpus', 'mapped')
         """,
         s2_source_release_id,
     )
     return int(count)
+
+
+async def _load_mapped_surface_counts(
+    connection: asyncpg.Connection,
+    *,
+    s2_source_release_id: int,
+    pt3_source_release_id: int,
+) -> dict[str, int]:
+    row = await connection.fetchrow(
+        """
+        WITH mapped_scope AS (
+            SELECT raw.corpus_id
+            FROM solemd.s2_papers_raw raw
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = raw.corpus_id
+            WHERE raw.source_release_id = $1
+              AND raw.corpus_id IS NOT NULL
+              AND corpus.domain_status = 'mapped'
+        )
+        SELECT
+            (
+                SELECT count(*)::INTEGER
+                FROM solemd.paper_authors paper_authors
+                JOIN mapped_scope
+                  ON mapped_scope.corpus_id = paper_authors.corpus_id
+            ) AS paper_authors_count,
+            (
+                SELECT count(*)::INTEGER
+                FROM pubtator.entity_annotations annotations
+                JOIN mapped_scope
+                  ON mapped_scope.corpus_id = annotations.corpus_id
+                WHERE annotations.source_release_id = $2
+            ) AS entity_annotations_count,
+            (
+                SELECT count(*)::INTEGER
+                FROM pubtator.relations relations
+                JOIN mapped_scope
+                  ON mapped_scope.corpus_id = relations.corpus_id
+                WHERE relations.source_release_id = $2
+            ) AS relations_count
+        """,
+        s2_source_release_id,
+        pt3_source_release_id,
+    )
+    assert row is not None
+    return {
+        "paper_authors": int(row["paper_authors_count"] or 0),
+        "entity_annotations": int(row["entity_annotations_count"] or 0),
+        "relations": int(row["relations_count"] or 0),
+    }
 
 
 async def _load_pipeline_stage_counts(

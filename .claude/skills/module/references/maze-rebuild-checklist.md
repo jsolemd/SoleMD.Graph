@@ -1,7 +1,7 @@
 # Maze Rebuild Checklist
 
 Use this checklist before approving a landing page or module that claims
-Maze-grade parity. Round 12 (`docs/map/ambient-field-maze-baseline-ledger-round-12.md`)
+Maze-grade parity. Round 12 (`docs/map/field-maze-baseline-ledger-round-12.md`)
 landed the foundation primitives this list points at — items annotated
 **DONE** are satisfied by the primitive named in the same bullet. Items
 marked **OPEN** still need the call site or coverage described.
@@ -53,7 +53,7 @@ marked **OPEN** still need the call site or coverage described.
   attach refs into `FieldController` subclasses rather than spinning up
   per-section canvases.
 - DONE — Scene ownership is controller-per-anchor. `FieldController`
-  (base) + `BlobController` / `StreamController` / `PcbController` each
+  (base) + `BlobController` / `StreamController` / `ObjectFormationController` each
   bind to one `[data-gfx]` anchor and own that layer's wrapper /
   mouseWrapper / model / material attachment.
 - DONE — Carry windows + overlap supported. `FieldController.updateVisibility(...)`
@@ -69,13 +69,13 @@ marked **OPEN** still need the call site or coverage described.
 ## Overlays
 
 - DONE — Readable popups, labels, and progress UI live in the DOM, not
-  the canvas. `AmbientFieldHotspotRing` is a React component
-  (`overlay/AmbientFieldHotspotRing.tsx`); progress + chapter copy use
+  the canvas. `FieldHotspotRing` is a React component
+  (`overlay/FieldHotspotRing.tsx`); progress + chapter copy use
   Mantine/Tailwind primitives at the page level.
 - DONE — Overlay projection is centralized via
   `FieldController.toScreenPosition(target, camera, vw, vh)`; consumers
   feed the resulting `{ x, y, z }` straight into
-  `AmbientFieldHotspotRing.projection`.
+  `FieldHotspotRing.projection`.
 - OPEN (per-module) — Stream chapter still needs a per-module DOM/SVG
   marker system when a non-landing surface adopts `StreamController`;
   the primitive layer is ready (controller + overlay), the marker DOM
@@ -88,8 +88,8 @@ marked **OPEN** still need the call site or coverage described.
 ## Mobile And Performance
 
 - DONE — Mobile is breakpoint-driven, not assumed.
-  `AmbientFieldVisualPresetConfig.sceneScaleMobile` /
-  `AmbientFieldShaderPreset.sizeMobile` / `alphaMobile` capture the
+  `FieldVisualPresetConfig.sceneScaleMobile` /
+  `FieldShaderPreset.sizeMobile` / `alphaMobile` capture the
   mobile-specific values; `FieldController.updateScale(..., isMobile)`
   routes the right value.
 - OPEN — Phone-only overlay tweaks vs. broader non-desktop particle
@@ -104,13 +104,13 @@ marked **OPEN** still need the call site or coverage described.
   explicit debounce at the surface level — the primitives stay
   unaware.
 - DONE — One RAF owner. The shared singleton clock
-  (`renderer/field-loop-clock.ts`) drives `getAmbientFieldElapsedSeconds()`;
+  (`renderer/field-loop-clock.ts`) drives `getFieldElapsedSeconds()`;
   R3F's `useFrame` is the single rAF loop the scene rides on.
 - DONE — Visibility/suspension policy. `FieldController.updateVisibility`
   toggles `animateIn`/`animateOut`; off-screen layers idle out
   uniforms. R3F unmount disposes via `controller.destroy()`.
 - DONE — Unused scene assets are deferred. `point-source-registry`
-  resolves on demand; `prewarmAmbientFieldPointSources(...)` is opt-in,
+  resolves on demand; `prewarmFieldPointSources(...)` is opt-in,
   not eagerly called.
 - DONE — Geometry / materials / renderer disposed on teardown.
   `FieldController.destroy()` kills GSAP tweens on the material
@@ -119,20 +119,20 @@ marked **OPEN** still need the call site or coverage described.
 ## SoleMD Product Fit
 
 - DONE — Surface keeps SoleMD shell aesthetics (no Maze chrome copied).
-  Verified by reading `surfaces/AmbientFieldLandingPage` — Mantine 8 +
+  Verified by reading `surfaces/FieldLandingPage` — Mantine 8 +
   Tailwind 4 + brand tokens, not Maze HTML.
 - DONE — Modules extend the shared runtime. Round 12 expressly forbids
   a homepage-only fork: every primitive lives under
-  `apps/web/features/ambient-field/` and re-exports through
+  `apps/web/features/field/` and re-exports through
   `index.ts`.
 - DONE — Authoring goes through semantic manifests. Chapters are
   declarative `ChapterEvent[]` arrays (`scroll/chapters/*.ts`); buckets
   are `FieldSemanticBucket[]` records; presets are
-  `AmbientFieldVisualPresetConfig` records.
+  `FieldVisualPresetConfig` records.
 - OPEN (per-module) — Graph bridge behavior. When a module wires into
   Cosmograph or DuckDB-WASM, document the bridge inside the module's
   README and route through `packages/graph` rather than re-implementing
-  inside `ambient-field`.
+  inside `field`.
 
 ## Red Flags
 
@@ -156,7 +156,7 @@ Reject or rework the change if it:
   runtime (e.g. forking `FieldScene` instead of authoring a
   `FieldController` subclass + chapter file).
 - Re-implements the frame loop. Use `FieldController.loop(dtSec)` plus
-  `getAmbientFieldElapsedSeconds()`. Resetting `uTime` per remount is
+  `getFieldElapsedSeconds()`. Resetting `uTime` per remount is
   the canonical regression — the singleton clock exists to prevent it.
 - Scrubs scroll uniforms without going through `UniformScrubber`. Snap
   transitions are the visible failure mode.

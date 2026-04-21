@@ -112,6 +112,11 @@ CORPUS_SELECTION_MATERIALIZED_PAPERS_TOTAL = Counter(
     "Canonical papers materialized during corpus selection.",
     ["selector_version"],
 )
+CORPUS_SELECTION_MATERIALIZED_ROWS_TOTAL = Counter(
+    "corpus_selection_materialized_rows_total",
+    "Canonical mapped-surface rows materialized during corpus selection.",
+    ["selector_version", "surface"],
+)
 CORPUS_SELECTION_SUMMARY_ROWS_TOTAL = Counter(
     "corpus_selection_summary_rows_total",
     "Selection summary rows refreshed during corpus selection.",
@@ -345,6 +350,15 @@ def record_corpus_selection_materialized_papers(
     paper_count: int,
 ) -> None:
     CORPUS_SELECTION_MATERIALIZED_PAPERS_TOTAL.labels(selector_version).inc(paper_count)
+
+
+def record_corpus_selection_materialized_rows(
+    *,
+    selector_version: str,
+    surface: str,
+    row_count: int,
+) -> None:
+    CORPUS_SELECTION_MATERIALIZED_ROWS_TOTAL.labels(selector_version, surface).inc(row_count)
 
 
 def record_corpus_selection_summary_rows(

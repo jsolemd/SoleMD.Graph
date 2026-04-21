@@ -16,9 +16,8 @@ app/
 
 lib/
 ├── mantine-theme.ts             ← createTheme() bridge
-├── theme/
-│   └── pastel-tokens.ts         ← CSS var ↔ Mantine tuple bridge, entity maps
-└── graph/
+├── pastel-tokens.ts             ← CSS var ↔ Mantine tuple bridge, entity maps
+└── features/graph/lib/
     ├── modes.ts                 ← Ask/Explore/Learn/Write mode registry
     └── brand-colors.ts          ← WebGL hex constants (mirror of tokens.css)
 ```
@@ -40,15 +39,16 @@ Defines `--color-*` and `--font-*` that Tailwind v4 reads at build time. These b
 
 Everything downstream uses these. Grouped into families:
 
-- **Foundations** — `--background`, `--foreground`, `--surface`, `--surface-alt`, `--text-primary/secondary/tertiary`, `--border-default/subtle`, `--shadow-sm/md/lg`, `--brand-accent`, `--brand-accent-alt`, `--interactive-hover`, `--interactive-active`
+- **Foundations** — `--background`, `--surface`, `--surface-alt`, `--surface-raised`, `--text-primary/secondary/tertiary`, `--border-default/subtle`, `--shadow-sm/md/lg`, `--brand-accent`, `--brand-accent-alt`, `--interactive-hover`, `--interactive-active`
+- **Tone helpers** — `--tint-accent-bg`, `--tint-accent-border`, `--tint-accent-pill`, `--tint-accent-strong`, `--rim-light`, `--on-accent`
 - **Graph canvas + panels** — `--graph-canvas-filter`, `--graph-bg`, `--graph-panel-bg`, `--graph-panel-border`, `--graph-panel-text`, `--graph-panel-text-muted`, `--graph-panel-text-dim`, `--graph-panel-input-bg`, `--graph-panel-hover`, `--graph-panel-shadow`, `--graph-panel-scale`, `--graph-panel-reading-scale`
 - **Wiki graph** — `--wiki-graph-node-{diso,chem,gene,anat,phys,proc,section,paper,default,module}`, `--wiki-graph-link`, `--wiki-graph-label`
 - **Entity accent** — `--entity-accent`, `--entity-highlight-radius` (rewired by `[data-entity-type]` selectors)
 - **Graph overlays (chrome)** — `--graph-prompt-*`, `--graph-label-*`, `--graph-greyout-opacity`, `--graph-overlay-scrim`, `--graph-overlay-scrim-strong`
 - **Filter/timeline** — `--filter-bar-base`, `--filter-bar-active`, `--filter-bar-marker`
-- **Mode accent spectrum** — `--mode-accent`, `--mode-accent-subtle`, `--mode-accent-hover`, `--mode-accent-border`, `--module-accent-default` (set by `ModeColorSync`, derived via `color-mix()`)
+- **Mode accent spectrum** — `--mode-accent`, `--mode-accent-subtle`, `--mode-accent-hover`, `--module-accent-default` (set by `ModeColorSync`, derived via `color-mix()`)
 - **Icon sizing** — `--icon-size`, `--icon-stroke-width`, `--panel-icon-size`, `--panel-icon-stroke-width`
-- **Graph control (matte shell)** — `--graph-icon-color`, `--graph-control-idle-bg`, `--graph-control-hover-bg`, `--graph-control-pressed-bg`, `--graph-control-active-bg`
+- **Graph control (matte shell)** — `--graph-icon-color`, `--graph-control-idle-bg`
 - **Feedback states** — `--feedback-warning-{accent,bg,border,text}`, `--feedback-danger-{accent,bg,border,text}`
 - **Density** — `--app-density: 0.8` (global scale multiplier)
 
@@ -144,6 +144,21 @@ export const DEFAULT_POINT_COLOR = "#a8c5e9";
 ```
 
 Both `tokens.css` and `brand-colors.ts` carry breadcrumb comments referencing each other.
+
+## Surface-Lab Verification
+
+The canonical verification surface for this styling system is `/surface-lab`.
+Use it to check:
+
+- accent options
+- shell variant
+- panel tone
+- prompt tone
+- density and panel scale
+- real panel-family previews
+
+Do not treat `/surface-lab` as a motion contract; it is the shell/tokens
+authority.
 
 ## Import Order
 

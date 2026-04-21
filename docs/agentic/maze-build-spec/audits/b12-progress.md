@@ -1,14 +1,14 @@
-# B12 audit — Progress controller (`gg`) vs. `AmbientFieldStoryProgress.tsx`
+# B12 audit — Progress controller (`gg`) vs. `FieldStoryProgress.tsx`
 
 **Auditor**: agent-10
 **Subsystem**: B12 — Progress controller (catalog § B12, Phase 3 Agent 10)
 **Priority**: P1
 **Maze lines audited**: scripts.pretty.js [50178, 50255] (78 lines)
 **Maze DOM anchors**: index.html line 323 (story-1) + line 718 (story-2) — 2 `data-component="Progress"` instances
-**SoleMD file audited**: `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldStoryProgress.tsx` (102 lines)
+**SoleMD file audited**: `apps/web/features/field/surfaces/FieldLandingPage/FieldStoryProgress.tsx` (102 lines)
 **SoleMD related**:
-- `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldStoryChapter.tsx` (mounts Progress)
-- `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx` (chapter mount count)
+- `apps/web/features/field/surfaces/FieldLandingPage/FieldStoryChapter.tsx` (mounts Progress)
+- `apps/web/features/field/surfaces/FieldLandingPage/FieldLandingPage.tsx` (chapter mount count)
 - `apps/web/features/wiki/components/ViewportTocRail.tsx` (unrelated rail pattern — cross-ref only)
 - `apps/web/features/wiki/components/use-section-toc-state.ts` (unrelated rail pattern — cross-ref only)
 **Date**: 2026-04-19
@@ -17,16 +17,16 @@
 
 Maze's `gg` progress controller is an `Ei`-derived DOM component registered through `data-component="Progress"` with **two live instances** (story-1 tracks `#info-1/2/3`, story-2 tracks `#info-4/5/6`). Each instance writes `--progress-N` CSS custom properties (one per segment, 1-indexed) on the `.js-progress` root, GSAP-smooths every scroll tick with `gsap.to(..., { duration: 0.1, ease: "sine" })`, publishes the integer active section via `dataset.currentVisible`, toggles `is-active` on the root when any-but-not-all sections are in range, measures the progress-bar pixel width into `--bar-width`, and desktop-gates the entire scroll handler behind `yi.desktop`. Segment→section binding is resolved at construction by reading each `.js-progress-segment`'s `data-id` and `document.querySelector('#' + data-id)`.
 
-SoleMD's `AmbientFieldStoryProgress` covers the **semantic shape** of the controller: it iterates beat IDs, measures each section, writes a progress value per segment, and publishes `data-current-visible`. But it diverges on almost every parity-critical detail. CSS custom property **names do not match** (`--ambient-story-progress` per segment vs. Maze's `--progress-N` on the root). The controller is **not multi-instance** — only Story 1 mounts it; Story 2 is a bare `<section>` with no progress at all. The smoothing path is **not GSAP** (relies on `fieldLoopClock` throttling + a CSS transform on a non-transitioned node, i.e. no real smoothing per frame). The **activation algorithm** is different (focus-line at 35% viewport with 24%/46% window bounds vs. Maze's `innerHeight/2` pivot and bottom-clearing-header threshold). `is-active` root toggle, `--bar-width` CSS var, and header-offset math are **all missing**.
+SoleMD's `FieldStoryProgress` covers the **semantic shape** of the controller: it iterates beat IDs, measures each section, writes a progress value per segment, and publishes `data-current-visible`. But it diverges on almost every parity-critical detail. CSS custom property **names do not match** (`--ambient-story-progress` per segment vs. Maze's `--progress-N` on the root). The controller is **not multi-instance** — only Story 1 mounts it; Story 2 is a bare `<section>` with no progress at all. The smoothing path is **not GSAP** (relies on `fieldLoopClock` throttling + a CSS transform on a non-transitioned node, i.e. no real smoothing per frame). The **activation algorithm** is different (focus-line at 35% viewport with 24%/46% window bounds vs. Maze's `innerHeight/2` pivot and bottom-clearing-header threshold). `is-active` root toggle, `--bar-width` CSS var, and header-offset math are **all missing**.
 
-The drift is substantive and is not a sanctioned architectural divergence. The `ambient-field-modules` SKILL.md lists `.s-progress` under the DOM-and-component equivalence map ("runtime-owned sticky progress component") and explicitly names "smooth scrubbed progression instead of section-burst swaps" under the SoleMD-aesthetic-Maze-motion rule. Neither the SKILL.md nor any reference file sanctions a single-instance, per-segment-variable, non-GSAP progress controller. The story-2 instance is **unconditionally parity-critical** per the plan hard rule.
+The drift is substantive and is not a sanctioned architectural divergence. The `module` SKILL.md lists `.s-progress` under the DOM-and-component equivalence map ("runtime-owned sticky progress component") and explicitly names "smooth scrubbed progression instead of section-burst swaps" under the SoleMD-aesthetic-Maze-motion rule. Neither the SKILL.md nor any reference file sanctions a single-instance, per-segment-variable, non-GSAP progress controller. The story-2 instance is **unconditionally parity-critical** per the plan hard rule.
 
 ## Parity overview
 
 | Behavior                                         | Maze line(s)              | SoleMD location                                            | Ownership    | State   |
 | ------------------------------------------------ | ------------------------- | ---------------------------------------------------------- | ------------ | ------- |
 | Class from base `Ei` (component-registry wired)  | 50178, 50180              | function component (no base class, no registry)            | surface      | drift   |
-| Component-registry activation (`data-component`) | index.html:323, 718       | explicit React mount in `AmbientFieldStoryChapter`         | surface      | drift   |
+| Component-registry activation (`data-component`) | index.html:323, 718       | explicit React mount in `FieldStoryChapter`         | surface      | drift   |
 | Multi-instance (story-1 + story-2, 2 roots)      | index.html:323, 718       | 1 instance (story-1 only)                                  | surface      | **missing (P0 within B12)** |
 | Desktop-only gate (`yi.desktop`)                 | 50187                     | none (runs on all widths)                                  | runtime      | drift   |
 | `.js-progress-bar` width read → `--bar-width`    | 50211, 50233–50239        | not read, not published                                    | surface      | missing |
@@ -49,16 +49,16 @@ The drift is substantive and is not a sanctioned architectural divergence. The `
 ### D1. SoleMD mounts only one progress instance (story-2 unsupported)
 
 - **Maze reference**: index.html lines 323 and 718 — two independent `.js-progress` roots, each registered via `data-component="Progress"` and instantiated by the component registry `xy` (catalog § B13). Each instance tracks its own three segments (`info-1/2/3` vs. `info-4/5/6`).
-- **SoleMD location**: `AmbientFieldStoryChapter.tsx:100` mounts `<AmbientFieldStoryProgress>` once. `AmbientFieldLandingPage.tsx:351` instantiates `AmbientFieldStoryChapter` once for Story 1. Story 2 is a bare `<section>` at `AmbientFieldLandingPage.tsx:360–418` — no progress component. Confirmed by `grep AmbientFieldStoryChapter apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx` returning two hits, both `import` and a single JSX use.
-- **Drift**: Multi-instance support is parity-critical and is explicitly called out by the plan hard rule. Maze's `gg` does not know about "story 1 vs. story 2" — it is a generic DOM component that instantiates per root. SoleMD's component is prop-driven and would in principle support multiple mounts (the ref arrays are per-instance), but Story 2 never mounts it. The chapter-level asymmetry (Story 1 uses `AmbientFieldStoryChapter`; Story 2 inlines a different layout with no progress rail) means there is no parity unless Story 2 is refactored to mount a second progress instance.
+- **SoleMD location**: `FieldStoryChapter.tsx:100` mounts `<FieldStoryProgress>` once. `FieldLandingPage.tsx:351` instantiates `FieldStoryChapter` once for Story 1. Story 2 is a bare `<section>` at `FieldLandingPage.tsx:360–418` — no progress component. Confirmed by `grep FieldStoryChapter apps/web/features/field/surfaces/FieldLandingPage/FieldLandingPage.tsx` returning two hits, both `import` and a single JSX use.
+- **Drift**: Multi-instance support is parity-critical and is explicitly called out by the plan hard rule. Maze's `gg` does not know about "story 1 vs. story 2" — it is a generic DOM component that instantiates per root. SoleMD's component is prop-driven and would in principle support multiple mounts (the ref arrays are per-instance), but Story 2 never mounts it. The chapter-level asymmetry (Story 1 uses `FieldStoryChapter`; Story 2 inlines a different layout with no progress rail) means there is no parity unless Story 2 is refactored to mount a second progress instance.
 - **Severity**: **Must-fix** (plan hard rule; parity-critical)
-- **Proposed fix** (no code changes in this audit; build-spec direction): Either (a) promote `AmbientFieldStoryChapter` to own Story 2 as well, passing Story 2's beat IDs, or (b) mount `<AmbientFieldStoryProgress beatIds={storyTwoBeatIds} />` directly inside the Story 2 `<section>` with a distinct set of segment/section IDs. Verify both instances update independently with the same CSS and smoothing contract.
+- **Proposed fix** (no code changes in this audit; build-spec direction): Either (a) promote `FieldStoryChapter` to own Story 2 as well, passing Story 2's beat IDs, or (b) mount `<FieldStoryProgress beatIds={storyTwoBeatIds} />` directly inside the Story 2 `<section>` with a distinct set of segment/section IDs. Verify both instances update independently with the same CSS and smoothing contract.
 - **Verification**: Scroll past Story 2; confirm a second progress rail appears, its segments write to their own nodes, `data-current-visible` is per-instance, and both instances coexist without cross-talk.
 
 ### D2. CSS custom property name + scope diverge
 
 - **Maze reference**: scripts.pretty.js:50190–50202. Maze builds `n[`--progress-${s + 1}`] = o` (one key per segment, 1-indexed: `--progress-1`, `--progress-2`, `--progress-3`) and writes the whole batch to **the root `.js-progress` node** via `gsap.to(this.view, {...n, duration: 0.1, ease: "sine"})`. Also writes `--bar-width` on the root at construction (50239).
-- **SoleMD location**: `AmbientFieldStoryProgress.tsx:48` writes `--ambient-story-progress` on **each segment node** (one var, many nodes). No root-level variable. No `--bar-width`.
+- **SoleMD location**: `FieldStoryProgress.tsx:48` writes `--ambient-story-progress` on **each segment node** (one var, many nodes). No root-level variable. No `--bar-width`.
 - **Drift**:
   - **Property name mismatch**: `--progress-1 / -2 / -3` is not the same contract as `--ambient-story-progress`. A CSS rule targeting Maze's `var(--progress-2)` on any descendant of `.js-progress` has no SoleMD equivalent.
   - **Scope mismatch**: Maze exposes all segment progresses simultaneously on the same root; any child selector can read sibling progress (e.g., `.s-progress__segment--3 { width: calc(var(--progress-3) * 100%) }`). SoleMD scopes each variable to its own segment, preventing cross-segment CSS correlation.
@@ -71,7 +71,7 @@ The drift is substantive and is not a sanctioned architectural divergence. The `
 ### D3. GSAP `.to()` smoothing is absent
 
 - **Maze reference**: scripts.pretty.js:50199–50202. Every scroll tick runs `a1.default.to(this.view, Zl(Kn({}, n), { duration: 0.1, ease: "sine" }))` — GSAP interpolates each `--progress-N` from current to target over 100 ms with a sine ease, and overwrites in-flight tweens on the next tick.
-- **SoleMD location**: `AmbientFieldStoryProgress.tsx:48` does `segmentNode.style.setProperty("--ambient-story-progress", progress.toFixed(4))` — immediate assignment, no tween. The `bg-[var(--color-soft-blue)]` segment fill at line 94 uses `[transform:scaleX(var(--ambient-story-progress,0))]` with **no CSS transition** declared, so every scroll tick hard-snaps the transform.
+- **SoleMD location**: `FieldStoryProgress.tsx:48` does `segmentNode.style.setProperty("--ambient-story-progress", progress.toFixed(4))` — immediate assignment, no tween. The `bg-[var(--color-soft-blue)]` segment fill at line 94 uses `[transform:scaleX(var(--ambient-story-progress,0))]` with **no CSS transition** declared, so every scroll tick hard-snaps the transform.
 - **Drift**: SoleMD's `fieldLoopClock.subscribe(..., 50, ...)` throttles sync cadence to ~20 Hz, but throttling is not smoothing. The Maze smoothing path interpolates between keyframes so the visible rail moves fluidly even under coarse scroll deltas; SoleMD will step at the throttle rate. This visibly affects the feel of the rail during slow scroll / trackpad momentum.
 - **Severity**: **Should-fix**
 - **Proposed fix**: Two options, both consistent with the SKILL.md "smooth scrubbed progression instead of section-burst swaps" rule:
@@ -82,7 +82,7 @@ The drift is substantive and is not a sanctioned architectural divergence. The `
 ### D4. Desktop-only gate missing
 
 - **Maze reference**: scripts.pretty.js:50187 — `if (!yi.desktop || !this.view) return;` bails the scroll handler on non-desktop. The DOM anchor class also carries `desktop-only` at index.html:323 and 718.
-- **SoleMD location**: `AmbientFieldStoryProgress.tsx` has no viewport check. The component itself is conditionally rendered only by Tailwind responsive classes (`hidden … lg:flex` at line 81), which hides the DOM but **does not stop** the scroll handler — the `useEffect` still runs, still subscribes to `fieldLoopClock`, and still writes style properties to refs that may be detached.
+- **SoleMD location**: `FieldStoryProgress.tsx` has no viewport check. The component itself is conditionally rendered only by Tailwind responsive classes (`hidden … lg:flex` at line 81), which hides the DOM but **does not stop** the scroll handler — the `useEffect` still runs, still subscribes to `fieldLoopClock`, and still writes style properties to refs that may be detached.
 - **Drift**: The visible-behavior result is similar (rail hidden on mobile), but the runtime cost is not — SoleMD runs all measurements and property writes on mobile even though nothing is shown. Per the SKILL.md mobile rule ("lower overlay counts… calmer motion") and the catalog's Mobile-branching-parity open question (§ "Open questions for Phase 4", item 6), this is a parity gap worth closing.
 - **Severity**: **Should-fix**
 - **Proposed fix**: Add a viewport check inside the `sync` function (early-return when `window.matchMedia('(max-width: 1023px)').matches` or whatever the SoleMD shell uses for desktop branching), OR skip the effect entirely via `useShellVariant` (already imported in adjacent `ViewportTocRail.tsx`) when the variant is mobile.
@@ -96,7 +96,7 @@ The drift is substantive and is not a sanctioned architectural divergence. The `
   3. If `i.top >= innerHeight/2` → return 0 (section below the mid-viewport pivot).
   4. If `i.bottom - n <= 0` → return 1 (section fully cleared the header).
   5. Else return `clamp(abs(i.top - innerHeight/2) / i.height, 0, 1)` — distance of section top from mid-viewport, normalized by section height.
-- **SoleMD location**: `AmbientFieldStoryProgress.tsx:27–49`. SoleMD's algorithm:
+- **SoleMD location**: `FieldStoryProgress.tsx:27–49`. SoleMD's algorithm:
   1. `focusTop = scrollY + innerHeight * 0.35` (focus line at 35%, not 50%).
   2. `sectionTop = rect.top + scrollY`, `sectionHeight = offsetHeight`.
   3. `start = sectionTop - innerHeight * 0.24`.
@@ -124,7 +124,7 @@ The drift is substantive and is not a sanctioned architectural divergence. The `
 ### D7. `activeSection` computation off
 
 - **Maze reference**: scripts.pretty.js:50194–50197 — `activeSection = min(floor(Σ progresses) + 1, sections.length)`. Sum-of-progresses metric is monotonic and saturates cleanly at the last section.
-- **SoleMD location**: `AmbientFieldStoryProgress.tsx:31–46` — `currentVisible` starts at 0 and is updated in-loop to `index + 1` whenever that segment's progress exceeds 0.01. Result: the last segment with any non-zero progress wins.
+- **SoleMD location**: `FieldStoryProgress.tsx:31–46` — `currentVisible` starts at 0 and is updated in-loop to `index + 1` whenever that segment's progress exceeds 0.01. Result: the last segment with any non-zero progress wins.
 - **Drift**: Both converge on similar values mid-scroll but disagree at edges. Maze's `Σ > 0 && Σ < 1` reads as `activeSection = 1`; SoleMD's `progress > 0.01` reads as `currentVisible = 1` — these happen to agree here. But when Maze's `Σ = 2.3`, SoleMD may report a different index because SoleMD only looks at the last-nonzero rather than the integer part of the sum. More importantly, Maze uses `min(..., sections.length)` to cap at the count; SoleMD has no cap (`currentVisible` can never exceed `beatIds.length` because the loop bounds it, so this part is effectively equivalent).
 - **Severity**: **Should-fix** (visible through `data-current-visible` CSS hooks)
 - **Proposed fix**: Replace the running-update pattern with Maze's sum-and-floor: `const total = progresses.reduce((a, b) => a + b, 0); currentVisible = Math.min(Math.floor(total) + 1, beatIds.length);`. Before any scroll, this yields 1 (not 0 as SoleMD currently does). Decide whether the pre-scroll state should be 0 or 1 based on the visual contract for `data-current-visible="0"`.
@@ -133,7 +133,7 @@ The drift is substantive and is not a sanctioned architectural divergence. The `
 ### D8. Scroll-driver binding uses throttle layer rather than raw scroll
 
 - **Maze reference**: scripts.pretty.js:50230–50232 — `bind()` attaches a direct `window.addEventListener("scroll", this.onScroll)`. Relies on GSAP's internal tween scheduling for smoothness; no hand-rolled throttle.
-- **SoleMD location**: `AmbientFieldStoryProgress.tsx:57–68` — raw scroll/resize set a `pending` flag; a 20 Hz `fieldLoopClock.subscribe("story-progress", 50, …)` consumes the flag and calls `sync()`.
+- **SoleMD location**: `FieldStoryProgress.tsx:57–68` — raw scroll/resize set a `pending` flag; a 20 Hz `fieldLoopClock.subscribe("story-progress", 50, …)` consumes the flag and calls `sync()`.
 - **Drift**: Functionally defensible (batches writes), but the `fieldLoopClock` is a runtime-level shared tick that is not used by any Maze progress primitive. Combined with D3 (no GSAP smoothing) and D4 (no desktop gate), the result is a 20 Hz stepped rail rather than an interpolated one. If D3 is fixed via GSAP, the `fieldLoopClock` subscription becomes redundant and the pattern should revert to direct scroll handling.
 - **Severity**: Nice-to-have (couples with D3)
 - **Proposed fix**: Remove the `fieldLoopClock` subscription and the `pending` flag. Call `sync()` directly from the scroll listener; let GSAP (D3 fix) be the smoothing layer. This also removes a cross-module dependency from a DOM-layer progress component to the render-loop clock.
@@ -153,9 +153,9 @@ None of these sanction the Must-fix items (D1 multi-instance, D2 CSS var contrac
 
 ## Open questions for build-spec synthesis
 
-1. **Story-2 progress rail scope**: Should Story 2 use the exact same `AmbientFieldStoryProgress` component with a distinct `beatIds` array, or does Story 2 warrant a visually distinct variant (e.g., rail on the opposite side)? Recommend documenting in the build spec that "two structurally identical progress instances, one per story section" is the parity target — the visual design may diverge cosmetically but the runtime contract must be identical.
+1. **Story-2 progress rail scope**: Should Story 2 use the exact same `FieldStoryProgress` component with a distinct `beatIds` array, or does Story 2 warrant a visually distinct variant (e.g., rail on the opposite side)? Recommend documenting in the build spec that "two structurally identical progress instances, one per story section" is the parity target — the visual design may diverge cosmetically but the runtime contract must be identical.
 
-2. **CSS custom property namespace**: The current SoleMD var `--ambient-story-progress` suggests a broader ambient-field-aware naming intent. If the build spec adopts `--progress-N` (Maze contract) at the progress-root level, should segment-scoped vars also exist for CSS convenience? Recommend: write `--progress-N` at the root (parity) and optionally also scope per-segment for simpler child CSS, at the cost of a second write per tick.
+2. **CSS custom property namespace**: The current SoleMD var `--ambient-story-progress` suggests a broader field-aware naming intent. If the build spec adopts `--progress-N` (Maze contract) at the progress-root level, should segment-scoped vars also exist for CSS convenience? Recommend: write `--progress-N` at the root (parity) and optionally also scope per-segment for simpler child CSS, at the cost of a second write per tick.
 
 3. **GSAP vs. CSS-transition smoothing**: Is GSAP ownership a hard requirement for the progress controller, or is a CSS `transition` acceptable? SKILL.md § "Keep GSAP in the choreography lane" says "GSAP should own: section progress, scrubbed transitions, pinning and chapter timing" — this weighs toward GSAP. Recommend the build spec endorse GSAP for parity with Maze's `a1.default.to()` call and remove the `fieldLoopClock` throttle in favor of direct-scroll + GSAP interpolation.
 
@@ -169,7 +169,7 @@ None of these sanction the Must-fix items (D1 multi-instance, D2 CSS var contrac
 
 Bucket scope is correct. Lines 50178–50255 are a single cohesive class. No cross-slice closure is cut; `Ei` is in B6 and `gg`'s registration in `xy` is in B13 — both are already named cross-bucket edges in the catalog. The HTML anchor count (2 instances at index.html:323 and 718) matches the catalog's explicit call-out.
 
-One signal worth surfacing to the catalog: the Story-2 gap is not a B12 bug per se — it originates in B13 (component registry) + landing-page composition (`AmbientFieldLandingPage.tsx`). The fact that Maze's `Rg` scans all `[data-component]` nodes and SoleMD's React tree must explicitly mount each instance means the 2-instance contract **only surfaces when the landing-page JSX composes both stories symmetrically**. B13's audit (Agent 11) should cross-reference this finding.
+One signal worth surfacing to the catalog: the Story-2 gap is not a B12 bug per se — it originates in B13 (component registry) + landing-page composition (`FieldLandingPage.tsx`). The fact that Maze's `Rg` scans all `[data-component]` nodes and SoleMD's React tree must explicitly mount each instance means the 2-instance contract **only surfaces when the landing-page JSX composes both stories symmetrically**. B13's audit (Agent 11) should cross-reference this finding.
 
 ## Format feedback for Phase 3
 

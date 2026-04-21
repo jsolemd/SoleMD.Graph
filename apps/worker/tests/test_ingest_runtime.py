@@ -7,7 +7,7 @@ import asyncpg
 import pytest
 
 from app.db import open_pools
-from app.ingest.errors import IngestAlreadyPublished
+from app.ingest.errors import IngestAlreadyInProgress, IngestAlreadyPublished
 from app.ingest.models import StartReleaseRequest
 from app.ingest.runtime import run_release_ingest
 from app.ingest.sources import pubtator, semantic_scholar
@@ -247,14 +247,276 @@ async def test_s2_sample_ingest_writes_raw_rows_only(
         assert paper_row["corpus_id"] is None
 
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_paper_authors_raw") == 1
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_authors_raw") == 1
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2orc_documents_raw") == 1
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.papers") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_text") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_authors") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.authors") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_documents") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_sections") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_blocks") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_sentences") == 0
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_publication_venues_tolerate_duplicate_issn_rows(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-03-11"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+
+    publication_venues_dir = release_dir / "publication-venues"
+    papers_dir = release_dir / "papers"
+    abstracts_dir = release_dir / "abstracts"
+    citations_dir = release_dir / "citations"
+
+    venues_path = publication_venues_dir / "publication-venues-0000.jsonl.gz"
+    papers_path = papers_dir / "papers-0000.jsonl.gz"
+    abstracts_path = abstracts_dir / "abstracts-0000.jsonl.gz"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        venues_path,
+        [
+            {
+                "id": "venue-1",
+                "issn": "1234-5678",
+                "name": "Journal of Warehouse Tests",
+            },
+            {
+                "id": "venue-2",
+                "issn": "1234-5678",
+                "name": "Journal of Warehouse Tests Alternate",
+            },
+        ],
+    )
+    write_jsonl_gz(
+        papers_path,
+        [
+            {
+                "corpusid": 101,
+                "title": "Release-safe ingest worker lane",
+                "venue": "Journal of Warehouse Tests",
+                "year": 2026,
+                "publicationdate": "2026-03-11",
+                "isopenaccess": True,
+                "publicationvenueid": "venue-1",
+                "externalids": {"PubMed": "12345"},
+                "authors": [],
+            }
+        ],
+    )
+    write_jsonl_gz(
+        abstracts_path,
+        [{"corpusid": 101, "abstract": "This release proves the first warehouse ingest lane."}],
+    )
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            }
+        ],
+    )
+
+    write_manifest(
+        release_dir / "manifests" / "publication-venues.manifest.json",
+        dataset="publication-venues",
+        release_tag=release_tag,
+        output_dir=publication_venues_dir,
+        file_names=[venues_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "papers.manifest.json",
+        dataset="papers",
+        release_tag=release_tag,
+        output_dir=papers_dir,
+        file_names=[papers_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "abstracts.manifest.json",
+        dataset="abstracts",
+        release_tag=release_tag,
+        output_dir=abstracts_dir,
+        file_names=[abstracts_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        await run_release_ingest(
+            StartReleaseRequest(
+                source_code="s2",
+                release_tag=release_tag,
+                requested_by="tester",
+                family_allowlist=("publication_venues", "papers", "abstracts", "citations"),
+            ),
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.venues
+            WHERE issn = '1234-5678'
+            """
+        ) == 1
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_publication_venues_tolerate_duplicate_normalized_name_rows(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-03-12"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+
+    publication_venues_dir = release_dir / "publication-venues"
+    papers_dir = release_dir / "papers"
+    abstracts_dir = release_dir / "abstracts"
+    citations_dir = release_dir / "citations"
+
+    venues_path = publication_venues_dir / "publication-venues-0000.jsonl.gz"
+    papers_path = papers_dir / "papers-0000.jsonl.gz"
+    abstracts_path = abstracts_dir / "abstracts-0000.jsonl.gz"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        venues_path,
+        [
+            {
+                "id": "venue-1",
+                "issn": None,
+                "name": "Journal of Obstetrics and Gynaecology Research",
+            },
+            {
+                "id": "venue-2",
+                "issn": None,
+                "name": "Journal of Obstetrics and Gynaecology Research",
+            },
+        ],
+    )
+    write_jsonl_gz(
+        papers_path,
+        [
+            {
+                "corpusid": 101,
+                "title": "Release-safe ingest worker lane",
+                "venue": "Journal of Obstetrics and Gynaecology Research",
+                "year": 2026,
+                "publicationdate": "2026-03-12",
+                "isopenaccess": True,
+                "publicationvenueid": "venue-2",
+                "externalids": {"PubMed": "12345"},
+                "authors": [],
+            }
+        ],
+    )
+    write_jsonl_gz(
+        abstracts_path,
+        [{"corpusid": 101, "abstract": "This release proves normalized-name venue handling."}],
+    )
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            }
+        ],
+    )
+
+    write_manifest(
+        release_dir / "manifests" / "publication-venues.manifest.json",
+        dataset="publication-venues",
+        release_tag=release_tag,
+        output_dir=publication_venues_dir,
+        file_names=[venues_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "papers.manifest.json",
+        dataset="papers",
+        release_tag=release_tag,
+        output_dir=papers_dir,
+        file_names=[papers_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "abstracts.manifest.json",
+        dataset="abstracts",
+        release_tag=release_tag,
+        output_dir=abstracts_dir,
+        file_names=[abstracts_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        await run_release_ingest(
+            StartReleaseRequest(
+                source_code="s2",
+                release_tag=release_tag,
+                requested_by="tester",
+                family_allowlist=("publication_venues", "papers", "abstracts", "citations"),
+            ),
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.venues
+            WHERE normalized_name = 'journal of obstetrics and gynaecology research'
+            """
+        ) == 1
     finally:
         await admin_connection.close()
 
@@ -489,10 +751,112 @@ async def test_force_new_run_allows_published_plan_change(
             second_run_id,
         )
         assert latest_families == ["authors", "citations"]
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.authors") == 1
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_paper_references_raw") == 1
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.authors") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_authors_raw") == 1
+        citation_metrics = await admin_connection.fetchrow(
+            """
+            SELECT
+                reference_out_count,
+                influential_reference_count,
+                linked_reference_count,
+                orphan_reference_count
+            FROM solemd.s2_paper_reference_metrics_raw
+            WHERE source_release_id = $1
+              AND citing_paper_id = '101'
+            """,
+            release_row["source_release_id"],
+        )
+        assert citation_metrics is not None
+        assert citation_metrics["reference_out_count"] == 1
+        assert citation_metrics["influential_reference_count"] == 1
+        assert citation_metrics["linked_reference_count"] == 1
+        assert citation_metrics["orphan_reference_count"] == 0
     finally:
         await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_force_new_run_rejects_unfinished_run(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-01-18"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        first_run_id = await run_release_ingest(
+            StartReleaseRequest(
+                source_code="s2",
+                release_tag=release_tag,
+                requested_by="tester",
+                family_allowlist=("citations",),
+            ),
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        await admin_connection.execute(
+            """
+            UPDATE solemd.ingest_runs
+            SET status = 2,
+                completed_at = NULL
+            WHERE ingest_run_id = $1
+            """,
+            first_run_id,
+        )
+    finally:
+        await admin_connection.close()
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        with pytest.raises(IngestAlreadyInProgress):
+            await run_release_ingest(
+                StartReleaseRequest(
+                    source_code="s2",
+                    release_tag=release_tag,
+                    requested_by="tester",
+                    family_allowlist=("citations",),
+                    force_new_run=True,
+                ),
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+    finally:
+        await pools.close()
 
 
 @pytest.mark.asyncio
@@ -558,9 +922,22 @@ async def test_s2_citations_resume_is_deterministic(
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
     try:
-        assert await admin_connection.fetchval(
-            "SELECT count(*) FROM solemd.s2_paper_references_raw"
-        ) == 2
+        metric_rows = await admin_connection.fetch(
+            """
+            SELECT
+                citing_paper_id,
+                reference_out_count,
+                influential_reference_count,
+                linked_reference_count,
+                orphan_reference_count
+            FROM solemd.s2_paper_reference_metrics_raw
+            ORDER BY citing_paper_id
+            """
+        )
+        assert [tuple(row.values()) for row in metric_rows] == [
+            ("101", 1, 0, 1, 0),
+            ("303", 1, 1, 0, 1),
+        ]
         await admin_connection.execute(
             """
             UPDATE solemd.ingest_runs
@@ -587,15 +964,131 @@ async def test_s2_citations_resume_is_deterministic(
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
     try:
         assert resumed_run_id == first_run_id
-        assert await admin_connection.fetchval(
-            "SELECT count(*) FROM solemd.s2_paper_references_raw"
-        ) == 2
+        metric_rows = await admin_connection.fetch(
+            """
+            SELECT
+                citing_paper_id,
+                reference_out_count,
+                influential_reference_count,
+                linked_reference_count,
+                orphan_reference_count
+            FROM solemd.s2_paper_reference_metrics_raw
+            ORDER BY citing_paper_id
+            """
+        )
+        assert [tuple(row.values()) for row in metric_rows] == [
+            ("101", 1, 0, 1, 0),
+            ("303", 1, 1, 0, 1),
+        ]
         assert await admin_connection.fetchval(
             "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
             first_run_id,
         ) == 5
     finally:
         await admin_connection.close()
+
+
+def test_s2_default_plan_defers_opt_in_families(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-01-17"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    publication_venues_dir = release_dir / "publication-venues"
+    papers_dir = release_dir / "papers"
+    abstracts_dir = release_dir / "abstracts"
+    citations_dir = release_dir / "citations"
+
+    venues_path = publication_venues_dir / "publication-venues-0000.jsonl.gz"
+    papers_path = papers_dir / "papers-0000.jsonl.gz"
+    abstracts_path = abstracts_dir / "abstracts-0000.jsonl.gz"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        venues_path,
+        [{"id": "venue-1", "issn": "1234-5678", "name": "Journal of Warehouse Tests"}],
+    )
+    write_jsonl_gz(
+        papers_path,
+        [
+            {
+                "corpusid": 101,
+                "title": "Release-safe ingest worker lane",
+                "venue": "Journal of Warehouse Tests",
+                "year": 2026,
+                "publicationdate": "2026-01-17",
+                "isopenaccess": True,
+                "publicationvenueid": "venue-1",
+                "externalids": {"PubMed": "12345"},
+                "authors": [{"authorId": "author-1", "name": "Ada Ingest"}],
+            }
+        ],
+    )
+    write_jsonl_gz(
+        abstracts_path,
+        [{"corpusid": 101, "abstract": "This release proves the first warehouse ingest lane."}],
+    )
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            }
+        ],
+    )
+
+    write_manifest(
+        release_dir / "manifests" / "publication-venues.manifest.json",
+        dataset="publication-venues",
+        release_tag=release_tag,
+        output_dir=publication_venues_dir,
+        file_names=[venues_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "papers.manifest.json",
+        dataset="papers",
+        release_tag=release_tag,
+        output_dir=papers_dir,
+        file_names=[papers_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "abstracts.manifest.json",
+        dataset="abstracts",
+        release_tag=release_tag,
+        output_dir=abstracts_dir,
+        file_names=[abstracts_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+    plan = semantic_scholar.build_plan(
+        runtime_settings,
+        StartReleaseRequest(
+            source_code="s2",
+            release_tag=release_tag,
+            requested_by="tester",
+        ),
+    )
+
+    assert "authors" not in plan.family_names
+    assert "authors" in plan.deferred_families
+    assert "tldrs" in plan.deferred_families
+    assert "s2orc_v2" in plan.deferred_families
 
 
 @pytest.mark.asyncio
@@ -862,6 +1355,237 @@ async def test_pubtator_biocxml_relations_prefer_xml_and_resume_cleanly(
         assert await admin_connection.fetchval(
             "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
             first_run_id,
+        ) == 5
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_pubtator_biocxml_duplicate_stage_keys_merge_cleanly_across_shards(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-02-04"
+    pt_root = tmp_path / "pubtator"
+    release_dir = pt_root / "releases" / release_tag
+    biocxml_dir = release_dir / "biocxml"
+    shard_zero = biocxml_dir / "BioCXML.0.tar.gz"
+    shard_one = biocxml_dir / "BioCXML.1.tar.gz"
+
+    duplicate_document = """
+<collection>
+  <document>
+    <id>12345</id>
+    <passage>
+      <offset>0</offset>
+      <text>Aspirin relieved headache.</text>
+      <annotation id="A1">
+        <infon key="type">Chemical</infon>
+        <infon key="identifier">Chemical|MESH:D000001</infon>
+        <location offset="0" length="7" />
+        <text>Aspirin</text>
+      </annotation>
+      <annotation id="A2">
+        <infon key="type">Disease</infon>
+        <infon key="identifier">Disease|MESH:D000002</infon>
+        <location offset="17" length="8" />
+        <text>headache</text>
+      </annotation>
+      <relation id="R1">
+        <infon key="type">Association</infon>
+        <infon key="role1">Chemical|MESH:D000001</infon>
+        <infon key="role2">Disease|MESH:D000002</infon>
+      </relation>
+    </passage>
+  </document>
+</collection>
+""".strip()
+
+    write_tar_gz(shard_zero, members={"duplicate-0.BioC.XML": duplicate_document})
+    write_tar_gz(shard_one, members={"duplicate-1.BioC.XML": duplicate_document})
+    write_manifest(
+        release_dir / "manifests" / "biocxml.manifest.json",
+        dataset="biocxml",
+        release_tag=release_tag,
+        output_dir=biocxml_dir,
+        file_names=[shard_zero.name, shard_one.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        pubtator_dir=pt_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+    request = StartReleaseRequest(
+        source_code="pt3",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("biocxml",),
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        ingest_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM pubtator.entity_annotations_stage"
+        ) == 2
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM pubtator.relations_stage"
+        ) == 1
+        assert await admin_connection.fetchval(
+            "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
+            ingest_run_id,
+        ) == 5
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_pubtator_biocxml_duplicate_annotations_within_document_are_deduped(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-02-05"
+    pt_root = tmp_path / "pubtator"
+    release_dir = pt_root / "releases" / release_tag
+    biocxml_dir = release_dir / "biocxml"
+    biocxml_path = biocxml_dir / "BioCXML.0.tar.gz"
+
+    write_tar_gz(
+        biocxml_path,
+        members={
+            "duplicate.BioC.XML": """
+<collection>
+  <document>
+    <id>12345</id>
+    <passage>
+      <offset>0</offset>
+      <text>Aspirin aspirin.</text>
+      <annotation id="A1">
+        <infon key="type">Chemical</infon>
+        <infon key="identifier">Chemical|MESH:D000001</infon>
+        <location offset="0" length="7" />
+        <text>Aspirin</text>
+      </annotation>
+      <annotation id="A1-duplicate">
+        <infon key="type">Chemical</infon>
+        <infon key="identifier">Chemical|MESH:D000001</infon>
+        <location offset="0" length="7" />
+        <text>Aspirin</text>
+      </annotation>
+    </passage>
+  </document>
+</collection>
+""".strip()
+        },
+    )
+    write_manifest(
+        release_dir / "manifests" / "biocxml.manifest.json",
+        dataset="biocxml",
+        release_tag=release_tag,
+        output_dir=biocxml_dir,
+        file_names=[biocxml_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        pubtator_dir=pt_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+    request = StartReleaseRequest(
+        source_code="pt3",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("biocxml",),
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        ingest_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM pubtator.entity_annotations_stage"
+        ) == 1
+        assert await admin_connection.fetchval(
+            "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
+            ingest_run_id,
+        ) == 5
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_pubtator_relations_duplicate_rows_merge_cleanly(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-02-07"
+    pt_root = tmp_path / "pubtator"
+    release_dir = pt_root / "releases" / release_tag
+    relations_path = release_dir / "relation2pubtator3.gz"
+
+    write_tsv_gz(
+        relations_path,
+        [
+            "12345\tassociate\tChemical|MESH:D000001\tDisease|MESH:D000002",
+            "12345\tassociate\tChemical|MESH:D000001\tDisease|MESH:D000002",
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "relation2pubtator3.gz.manifest.json",
+        dataset="relation2pubtator3.gz",
+        release_tag=release_tag,
+        output_dir=release_dir,
+        file_names=[relations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        pubtator_dir=pt_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+    request = StartReleaseRequest(
+        source_code="pt3",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("relations",),
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        ingest_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM pubtator.relations_stage"
+        ) == 1
+        assert await admin_connection.fetchval(
+            "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
+            ingest_run_id,
         ) == 5
     finally:
         await admin_connection.close()

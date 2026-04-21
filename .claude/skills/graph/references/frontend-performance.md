@@ -106,7 +106,7 @@ Canonical refs:
 
 - `docs/map/ambient-field-maze-baseline-ledger-round-12.md` — Source Ground
   Truth + Foundation Primitives + Phase Log.
-- `.claude/skills/ambient-field-modules/SKILL.md` — authoring contract for
+- `.claude/skills/module/SKILL.md` — authoring contract for
   any module that uses the shared stage.
 
 ## References

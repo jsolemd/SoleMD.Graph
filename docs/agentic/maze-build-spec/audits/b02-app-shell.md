@@ -21,10 +21,10 @@ SoleMD has **no equivalent centralized bootstrap**. The responsibilities are
 distributed across six loosely-coupled layers: (1) Next.js App Router (layout
 + RSC page) owns navigation, title, scroll restoration, and the initial HTML
 shell; (2) `MantineProvider` + `DarkClassSync` (`app/providers.tsx`) owns
-color-scheme; (3) the route dynamically imports `AmbientFieldLandingPage`
+color-scheme; (3) the route dynamically imports `FieldLandingPage`
 which is the actual "page class" for `/`; (4) inside the landing page,
 `useShellVariant` + `ShellVariantProvider` own viewport/pointer detection;
-(5) `useGraphWarmup` + `useGraphBundle` own preload; (6) `bindAmbientFieldControllers`
+(5) `useGraphWarmup` + `useGraphBundle` own preload; (6) `bindFieldControllers`
 (scroll-driver) owns the blob scroll timeline. No single object orchestrates
 these; they are composed via React effects that run when their dependencies
 mount.
@@ -40,15 +40,15 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
 
 | Behavior | Maze line | SoleMD location | Ownership | State |
 |---|---|---|---|---|
-| Top-level bootstrap entry (`window.load` → `new by().init()`) | 55954–55955 | `app/page.tsx` → `AmbientFieldLandingRoute` → `dynamic(AmbientFieldLandingPage, { ssr: false })` | page-global → route-local | sanctioned (superset) |
+| Top-level bootstrap entry (`window.load` → `new by().init()`) | 55954–55955 | `app/page.tsx` → `FieldLandingRoute` → `dynamic(FieldLandingPage, { ssr: false })` | page-global → route-local | sanctioned (superset) |
 | AJAX navigation / `Fs` / `Dn.load()` (fetch + partial render) | 49983–50060, 50091 | Next.js App Router (`next/link`, `router.push`, RSC streaming) | router | sanctioned (superset) |
 | `history.pushState` + `data-history="back\|replace"` overrides | 50063–50086 | Next.js router (`router.push`, `router.replace`, `router.back`) | router | sanctioned (superset) |
 | Scroll restoration (`history.scrollRestoration = "manual"` + `scrollToCached`) | 49938–49942, 55845 | Next.js App Router default + `window.scrollTo` in landing page | router + surface-local | sanctioned (partial) — no cache |
-| Page-class registry (`yy[n]`) + `[data-page]` scan | 55925–55951 | React component tree (`HomePage` RSC → `AmbientFieldLandingPage`); no DOM-scan registry | router-per-route | sanctioned (architectural) |
+| Page-class registry (`yy[n]`) + `[data-page]` scan | 55925–55951 | React component tree (`HomePage` RSC → `FieldLandingPage`); no DOM-scan registry | router-per-route | sanctioned (architectural) |
 | Component registry wiring (`ih.bind` → `Fs.bind + Rg.bind + th.bind + Lg.init + dg.bind + Gs + zc.bind + Fg.bind`) | 55773–55784, 55945 | React component tree; chrome components imported directly (`GraphLoadingChrome`, `ViewportTocRail`, etc.) | surface-local | sanctioned (architectural) |
-| Scroll controller mount (`this.scroll = new Jr()`; `Jr.start()`) | 55892, 55847 | `bindAmbientFieldControllers(...)` in `AmbientFieldLandingPage` useEffect (lines 126–146) | surface-local | sanctioned (pilot-audited, B10) |
-| Stage mount (`this.gfx = new xi(.js-gfx)`; `gfx.init()`) | 55896–55897 | `<FieldCanvas>` rendered inside `AmbientFieldLandingShell` (line 253) | surface-local | drift (see D4) |
-| Preload gate (`Promise.all([setCurrentPage(), gfx.preload]).then(onPageLoaded)`) | 55900–55907 | `useGraphWarmup` + `useGraphBundle` + `prewarmAmbientFieldPointSources`; independent effects | surface-local | drift (see D1) |
+| Scroll controller mount (`this.scroll = new Jr()`; `Jr.start()`) | 55892, 55847 | `bindFieldControllers(...)` in `FieldLandingPage` useEffect (lines 126–146) | surface-local | sanctioned (pilot-audited, B10) |
+| Stage mount (`this.gfx = new xi(.js-gfx)`; `gfx.init()`) | 55896–55897 | `<FieldCanvas>` rendered inside `FieldLandingShell` (line 253) | surface-local | drift (see D4) |
+| Preload gate (`Promise.all([setCurrentPage(), gfx.preload]).then(onPageLoaded)`) | 55900–55907 | `useGraphWarmup` + `useGraphBundle` + `prewarmFieldPointSources`; independent effects | surface-local | drift (see D1) |
 | Render-loop start gated on preload | via `onPageLoaded` → `gfx.animateIn` | `FieldCanvas` starts R3F loop on mount; BlobController attaches independently of bundle preload | surface-local | drift (see D1) |
 | `af()` — `--app-height` viewport-height CSS var | 9238–9243; called 55807, 55808, 55888 | not implemented | — | drift (see D2) |
 | Resize handler + debounce + `is-resizing` body class | 55800–55811, 55913–55918 | `useViewportSize` (Mantine hooks); no `is-resizing` body class | surface-local | drift (see D3) |
@@ -84,11 +84,11 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
   `scroll.load()` / `Jr.start()`. Net effect: **the render loop and scroll
   bindings only begin once all preload work has resolved.**
 - **SoleMD location**:
-  - `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx:118–124` —
-    `prewarmAmbientFieldPointSources({ ids: ["blob"] })` runs in an effect but
+  - `apps/web/features/field/surfaces/FieldLandingPage/FieldLandingPage.tsx:118–124` —
+    `prewarmFieldPointSources({ ids: ["blob"] })` runs in an effect but
     does not gate anything downstream.
-  - `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx:126–146` —
-    `bindAmbientFieldControllers` runs as soon as `blobControllerReady` flips
+  - `apps/web/features/field/surfaces/FieldLandingPage/FieldLandingPage.tsx:126–146` —
+    `bindFieldControllers` runs as soon as `blobControllerReady` flips
     true (on controller attach inside `FieldScene`), **independent of asset
     prewarm promise state**.
   - `FieldCanvas` starts the R3F renderer on mount; there is no explicit
@@ -97,24 +97,24 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
     landing renderer).
 - **Drift**: SoleMD does not have an explicit preload-gate. The blob controller
   may attach and start rendering frames before its point-source geometry is
-  fully baked. In practice this works because `prewarmAmbientFieldPointSources`
+  fully baked. In practice this works because `prewarmFieldPointSources`
   is synchronous-enough (procedural sphere, no network) — but future surfaces
   that add bitmap (`pcb`) or model-backed point sources (`World`, `Shield`,
   `Users`) will hit the regression: stage mounts, loop starts, then the
   geometry swaps in mid-frame.
 - **Severity**: Must-fix (forward-looking blocker once pcb / model point
   sources land on additional surfaces)
-- **Proposed fix**: Add an explicit preload promise at the ambient-field
-  surface-adapter layer. Shape: `await prewarmAmbientFieldPointSources({ ids })`
+- **Proposed fix**: Add an explicit preload promise at the field
+  surface-adapter layer. Shape: `await prewarmFieldPointSources({ ids })`
   and `await controller.whenReady()` must both resolve before
-  `bindAmbientFieldControllers` binds scroll and before the controller is
+  `bindFieldControllers` binds scroll and before the controller is
   given permission to drive the render loop. Expose a `scene animate-in`
   gate so the first frame written to the screen is the intended hero frame,
   not a half-baked geometry state. This belongs inside the
-  `FixedStageManager` seam described in the ambient-field SKILL §"Default
+  `FixedStageManager` seam described in the field SKILL §"Default
   Architectural Shape" — do not inline it in a route component.
 - **Verification**: Instrument `FieldCanvas` to log first-frame timestamp and
-  `prewarmAmbientFieldPointSources` resolution timestamp; confirm the first
+  `prewarmFieldPointSources` resolution timestamp; confirm the first
   frame is always ≥ prewarm resolution. Add a Jest test that simulates a slow
   bitmap point source and asserts the controller's `bindScroll` is not invoked
   until the prewarm promise resolves.
@@ -129,11 +129,11 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
   expands, and is used by fixed stage CSS to size the full-viewport canvas
   without triggering the `100vh` iOS bug.
 - **SoleMD location**: not implemented. Grep for `--app-height` in
-  `apps/web/features/ambient-field/` and `apps/web/app/globals.css` returns
-  no matches. The ambient-field stage uses `fixed inset-0` (tailwind → `top:0;
+  `apps/web/features/field/` and `apps/web/app/globals.css` returns
+  no matches. The field stage uses `fixed inset-0` (tailwind → `top:0;
   bottom:0; left:0; right:0`) which sidesteps `100vh` on the root stage but
   the landing sections themselves use `min-h-[128svh]` and `py-[12vh]` /
-  `py-[14vh]` (`AmbientFieldLandingPage.tsx:366`) — `svh` solves the URL-bar
+  `py-[14vh]` (`FieldLandingPage.tsx:366`) — `svh` solves the URL-bar
   collapse case for section heights, so this drift is partially sanctioned.
 - **Drift**: SoleMD uses `svh` (small viewport height) units instead of
   re-exporting `--app-height`. `svh` is the modern equivalent and is already
@@ -143,7 +143,7 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
   CSS fallback.
 - **Severity**: Should-fix (documentation drift; not a functional regression
   today, but a future footgun)
-- **Proposed fix**: Either (a) document in the ambient-field SKILL that
+- **Proposed fix**: Either (a) document in the field SKILL that
   `svh`/`dvh`/`lvh` replace `--app-height` and explicitly forbid the Maze
   idiom going forward, or (b) add a shell-level `bindAppHeightVar()` utility
   that mirrors Maze's `af()` and export `--app-height` from the root layout
@@ -163,7 +163,7 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
   pilot audit D2) adds `is-scrolled`, `is-scrolling-down`, `is-scrolled-vh`,
   etc.
 - **SoleMD location**: not implemented. `apps/web/features/graph/components/shell/*`
-  and `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/*` do
+  and `apps/web/features/field/surfaces/FieldLandingPage/*` do
   not toggle any body classes on lifecycle events. `useViewportSize` fires
   resize callbacks but does not debounce-write to `document.body.classList`.
 - **Drift**: No CSS rule in SoleMD can target `body.is-loaded`, `body.is-resizing`,
@@ -198,11 +198,11 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
   which controllers to instantiate — the `.js-gfx` node is the canonical
   stage-root anchor, and the DOM scan is the bootstrap-side contract that
   wires controllers to anchors.
-- **SoleMD location**: `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx:253`
+- **SoleMD location**: `apps/web/features/field/surfaces/FieldLandingPage/FieldLandingPage.tsx:253`
   (`<FieldCanvas className="fixed inset-0" .../>`). There is no class or
   id named `.js-gfx` anywhere in the tree; `FieldCanvas` is the stage-root
   but it is not discoverable via DOM query. The controller-per-anchor
-  wiring happens in-JS via `bindAmbientFieldControllers` (line 137) which
+  wiring happens in-JS via `bindFieldControllers` (line 137) which
   receives `anchors` by `root.querySelector("#section-story-1")` /
   `"#section-story-2"` — in other words, the controller-to-anchor binding
   is by section ID, not by a registry scan.
@@ -217,15 +217,15 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
   build spec records the join)
 - **Proposed fix**: Do **not** port Maze's literal DOM-scan pattern. Instead,
   per B7's recommended React component tree: introduce a
-  `FieldSectionManifest[]` authored in `ambient-field-landing-content.ts`
+  `FieldSectionManifest[]` authored in `field-landing-content.ts`
   that enumerates `{ anchorId, controllerSlug, endAnchorId? }`. The shell
-  iterates the manifest and calls `bindAmbientFieldControllers` once per
+  iterates the manifest and calls `bindFieldControllers` once per
   entry. This keeps React as the ownership model while giving the build
   spec a single place to add a new chapter without editing the landing
   page's effect body.
 - **Verification**: Add a test manifest with a stubbed `stream` entry;
-  confirm `bindAmbientFieldControllers` is invoked with the stream anchors
-  without modifying `AmbientFieldLandingPage.tsx`.
+  confirm `bindFieldControllers` is invoked with the stream anchors
+  without modifying `FieldLandingPage.tsx`.
 
 ### D5. No cookies / consent banner on the landing page
 
@@ -306,7 +306,7 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
 4. **GSAP `CustomEase("custom", "0.5, 0, 0.1, 1")` is not registered
    globally.** SoleMD uses Framer Motion as the primary motion layer with
    a `smooth` ease exported from `@/lib/motion`. GSAP is still used by
-   `bindAmbientFieldControllers` for the scroll-driven blob timeline
+   `bindFieldControllers` for the scroll-driven blob timeline
    (B10), but the `CustomEase` primitive is local to that module's
    timeline construction. Sanctioned: different motion stack.
 
@@ -323,7 +323,7 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
    orchestrates during page swaps. SoleMD uses Framer Motion
    `AnimatePresence` + per-section `whileInView` triggers; entry and
    exit are component-local, not page-class-global. Sanctioned:
-   architectural divergence, documented in ambient-field SKILL
+   architectural divergence, documented in field SKILL
    §"Canonical Authoring Contract".
 
 8. **Desktop vs mobile detection differs.** Maze's `yi = _y()` + `Qo =
@@ -338,7 +338,7 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
 1. **Where should `bindShellStateClasses` (D3) mount?** Options: (a)
    inside `app/providers.tsx` alongside `DarkClassSync`, (b) a new
    `"use client"` component imported by `app/layout.tsx`, (c) inside the
-   ambient-field surface adapter only. Recommend (b) so the body class
+   field surface adapter only. Recommend (b) so the body class
    vocabulary is available to every route (future wiki / learn / graph
    surfaces), not only the landing page. Flag for build-spec Phase 4
    decision.
@@ -353,7 +353,7 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
    flagging this for build-spec Phase 4, not fixing here.
 
 3. **Does the build spec want a `FixedStageManager` seam (D1, D4)?**
-   The ambient-field SKILL §"Default Architectural Shape" describes it,
+   The field SKILL §"Default Architectural Shape" describes it,
    but the current landing page skips the abstraction and binds
    anchors directly. A build-spec decision is needed on whether D1 and
    D4 fix the landing page imperatively (short-term) or introduce the
@@ -369,7 +369,7 @@ concrete drifts that matter for parity. Five drift items total (1 Must-fix,
    `AnimatePresence`, or a bespoke shell-layer event.
 
 5. **Should the landing preload promise (D1) be exposed to the warmup
-   action?** `AmbientFieldGraphWarmupAction` already gates the
+   action?** `FieldGraphWarmupAction` already gates the
    "Open graph" button on `graphReady`. The stage preload is a separate
    concern — but both should probably feed into a single
    "shell ready" primitive. Defer the coupling decision to the

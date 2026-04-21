@@ -15,11 +15,11 @@ Source ground truth:
 
 SoleMD round-12 primitives:
 
-- `apps/web/features/ambient-field/asset/field-geometry.ts`
-- `apps/web/features/ambient-field/asset/field-attribute-baker.ts`
-- `apps/web/features/ambient-field/asset/image-point-source.ts`
-- `apps/web/features/ambient-field/asset/model-point-source.ts`
-- `apps/web/features/ambient-field/asset/point-source-registry.ts`
+- `apps/web/features/field/asset/field-geometry.ts`
+- `apps/web/features/field/asset/field-attribute-baker.ts`
+- `apps/web/features/field/asset/image-point-source.ts`
+- `apps/web/features/field/asset/model-point-source.ts`
+- `apps/web/features/field/asset/point-source-registry.ts`
 
 ## Registry Shape
 
@@ -235,7 +235,7 @@ Weights sum to `1.0`, matching Maze's 10/12/8/70 split
 draw, so custom bucket sets with non-unit total still normalize correctly.
 
 `buildBucketIndex(buckets)` returns a `Record<string, number>` mapping id to
-position; `AMBIENT_FIELD_BUCKET_INDEX` is the memoized index for
+position; `FIELD_BUCKET_INDEX` is the memoized index for
 `SOLEMD_DEFAULT_BUCKETS`. Consumers that render monochromatic burst sweeps
 (e.g. `renderer/burst-controller.ts`) read `uBurstType` as the integer id
 produced here.

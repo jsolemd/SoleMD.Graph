@@ -15,7 +15,7 @@ description: |
   Neo4j code graph (use /graph).
   NOTE: For Cosmograph CSS theming integration, this skill IS the authority — /cosmograph
   defers here for all CSS variable theming questions.
-version: 3.2.0
+version: 3.3.0
 allowed-tools:
   - Read
   - Edit
@@ -36,18 +36,19 @@ metadata:
 | I want to... | Do this |
 |---|---|
 | **Use a brand color** | CSS: `var(--color-soft-blue)`. Tailwind: `text-[var(--color-soft-blue)]`. See [Colors](references/colors.md) |
-| **Style a card** | `bg-[var(--surface)] rounded-[1rem] shadow-[var(--shadow-md)] border border-[var(--border-default)]`. Matte, opaque — never glass morphism |
+| **Style a card** | Prefer `panelCardStyle` / `panelAccentCardStyle` from `PanelShell`. Matte, opaque, and usually borderless — never glass morphism |
 | **Handle dark mode** | Use CSS vars (auto-swap via `.dark`). Never use `isDark` ternaries in components |
 | **Add a new CSS token** | Add to `:root` AND `.dark` in `app/styles/tokens.css`. See [CSS Architecture](references/css-architecture.md) |
 | **Add a Mantine component** | Import from `@mantine/core`. `className` for Tailwind layout, `styles` prop only for Mantine internals. See [Mantine Patterns](references/mantine-patterns.md) |
 | **Create a floating panel** | Use `PanelShell` from `features/graph/components/panels/PanelShell/`. Pull style objects from `panel-styles.ts` — never hand-roll `--graph-panel-*` triples |
 | **Style a panel component** | Import `panelSurfaceStyle`, `panelTextStyle`, `panelCardStyle`, etc. from `PanelShell`. See [Panel Patterns](references/panel-patterns.md) |
+| **Validate shell styling** | Use `/surface-lab` as the canonical token/panel/prompt verification surface |
 | **Wrap Cosmograph widgets** | Mantine Stack/Group for layout, CSS vars for theming, never inline styles on containers. See [Panel Patterns](references/panel-patterns.md) |
 | **Understand Cosmograph data/props** | See /cosmograph skill for CosmographConfig, strategies, DuckDB bundle, widget refs |
-| **Add hover/motion** | Framer Motion with `PANEL_SPRING`: `{ type: 'spring', stiffness: 300, damping: 30 }`. Float/fade/lift only |
+| **Add hover/motion** | Use `@/lib/motion` presets (`crisp`, `smooth`, `bouncy`, `panelReveal`, etc.). Float/fade/lift only |
 | **Look up Mantine API** | doc-search `/mantinedev/mantine` (8,173 chunks, v8.3.16) → context7 `@mantinedev/mantine` → local `docs/mantine-llms.txt` |
 | **Check the full palette** | [references/colors.md](references/colors.md) — 40+ colors with light/dark pairs |
-| **Fix dark mode inconsistency** | Check `:root` AND `.dark` in `globals.css`. Check `DarkClassSync` in `mantine-theme-provider.tsx` |
+| **Fix dark mode inconsistency** | Check `:root` AND `.dark` in `app/styles/tokens.css`. Check `DarkClassSync` in `app/providers.tsx` |
 | **Theme Cosmograph widgets** | Override the base `--cosmograph-ui-*` vars in `tokens.css` `html:root` block. See [Cosmograph Integration](references/cosmograph-integration.md) |
 | **Style an entity profile** | Use `panelAccentCardEntityStyle` + `data-entity-type={…}`. The `[data-entity-type]` attribute rewires `--entity-accent` per type |
 | **Scale panel sizing** | `panelScaledPx(10)` composes `--app-density` × `--graph-panel-scale`. Never hardcode px in panels |
@@ -58,6 +59,21 @@ metadata:
 
 **Elegant, Precise, Calm.** Refined medical authority with soft confidence.
 Think Apple Health meets the New England Journal of Medicine — premium quality that never shouts.
+
+## Canonical Truth
+
+When this skill needs to choose between older docs and the live implementation,
+the canonical truth is:
+
+- the current landing shell under
+  `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/`
+- the current token and panel system under `apps/web/app/styles/` and
+  `apps/web/features/graph/components/panels/PanelShell/`
+- `/surface-lab` as the self-check surface for panel tones, prompt tones,
+  accents, density, scale, and shell families
+
+`/surface-lab` is the style/tokens authority. It is not the field runtime or
+motion authority.
 
 ---
 
@@ -128,9 +144,9 @@ All defined in `tokens.css`. Use the prefix to find the right block.
 | `--graph-overlay-scrim*`, `--graph-greyout-opacity` | Full-viewport scrims | `--graph-overlay-scrim-strong` |
 | `--wiki-graph-node-*`, `--wiki-graph-link`, `--wiki-graph-label` | Wiki graph colors (10 node types) | `--wiki-graph-node-diso` |
 | `--entity-accent`, `--entity-highlight-radius` | Per-entity-type accent (rewired via `[data-entity-type]`) | — |
-| `--mode-accent*` | Active mode spectrum (set by `ModeColorSync`) | `--mode-accent-subtle`, `--mode-accent-border` |
+| `--mode-accent*` | Active mode spectrum (set by `ModeColorSync`) | `--mode-accent-subtle`, `--mode-accent-hover` |
 | `--filter-bar-*` | Timeline/histogram bars (mode-aware) | `--filter-bar-active` |
-| `--graph-control-*` | Matte control shell idle/hover/pressed/active | `--graph-control-hover-bg` |
+| `--graph-control-*` | Matte control shell base state | `--graph-control-idle-bg` |
 | `--icon-size`, `--icon-stroke-width`, `--panel-icon-*` | Icon sizing (density-scaled) | — |
 | `--feedback-warning-*`, `--feedback-danger-*` | State chrome | `--feedback-danger-bg` |
 | `--app-density` | Global scale multiplier (default 0.8) | — |
@@ -150,12 +166,12 @@ All panel sizing goes through `panelScaledPx(basePx)` (in `panel-styles.ts`), wh
 
 ## Design Principles
 
-1. **White space is a feature, not waste.** 6rem section spacing, 8rem hero padding. Never compress.
-2. **Color communicates meaning.** Each section has a dedicated color that tints the entire UI.
+1. **White space is a feature, not waste.** Use spacious, viewport-driven rhythm for hero and landing surfaces. Do not collapse long-form sections into tight app spacing.
+2. **Color communicates meaning.** Use accent tokens, semantic colors, and mode accents to localize emphasis. Do not wash the entire UI in one chapter tint.
 3. **Motion earns attention.** Soft, scroll-triggered. Float/fade/lift only. Never bounce/shake/flash.
-4. **Depth through layering.** Matte floating cards, deep shadows, hover lift.
+4. **Depth through layering.** Matte, opaque surfaces. In dark mode, rim-light plus soft halo depth are preferred over visible strokes.
 5. **Accessibility non-negotiable.** WCAG AA (4.5:1 text, 3:1 large). Keyboard nav. `prefers-reduced-motion`.
-6. **Zero chrome.** No visible borders on cards unless essential. Depth from shadows alone.
+6. **Mostly borderless chrome.** Visible borders are reserved for true semantic/error states. Regular cards and prompt shells should read through tone, shadow, and rim-light before strokes.
 
 ---
 
@@ -163,27 +179,33 @@ All panel sizing goes through `panelScaledPx(basePx)` (in `panel-styles.ts`), wh
 
 ### Core Brand Colors
 
-| Name | Light | Dark | CSS Variable | Semantic |
-|------|-------|------|-------------|----------|
-| Soft Blue | `#a8c5e9` | `#89a3bf` | `--color-soft-blue` | Home / brand primary |
-| Muted Indigo | `#747caa` | `#8b8fbf` | `--color-muted-indigo` | Foreground accent |
-| Golden Yellow | `#fbb44e` | `#c9a04e` | `--color-golden-yellow` | Innovation |
-| Fresh Green | `#aedc93` | `#8aad7a` | `--color-fresh-green` | Education |
-| Warm Coral | `#ffada4` | `#c48e88` | `--color-warm-coral` | Research / action |
-| Soft Pink | `#eda8c4` | `#b88299` | `--color-soft-pink` | Contact |
-| Soft Lavender | `#d8bee9` | `#a899b3` | `--color-soft-lavender` | About |
+| Name | Light | CSS Variable | Semantic |
+|------|-------|-------------|----------|
+| Soft Blue | `#a8c5e9` | `--color-soft-blue` | Home / brand primary |
+| Muted Indigo | `#747caa` | `--color-muted-indigo` | Foreground accent |
+| Golden Yellow | `#e5c799` | `--color-golden-yellow` | Innovation |
+| Fresh Green | `#aedc93` | `--color-fresh-green` | Education |
+| Warm Coral | `#ffada4` | `--color-warm-coral` | Research / action |
+| Soft Pink | `#e0aed8` | `--color-soft-pink` | Contact |
+| Soft Lavender | `#d8bee9` | `--color-soft-lavender` | About |
 
-Full extended palette (40+ colors, gradients, dark mode rules): [references/colors.md](references/colors.md)
+In dark mode, these pastels intentionally keep their chroma against an AMOLED
+black canvas. Only the neutral ladder flips; the brand voice stays alive.
+
+Full extended palette and token families: [references/colors.md](references/colors.md)
 
 ### System Surfaces
 
 | Token | Light | Dark | Purpose |
 |-------|-------|------|---------|
-| `--background` | `#fafafa` | `#18181b` | Page background |
-| `--foreground` | `#1a1b1e` | `#e4e4e9` | Primary text |
-| `--surface` | `#ffffff` | `#1c1d21` | Card/panel surfaces |
-| `--surface-alt` | `#f5f6f8` | `#232427` | Alternate surfaces (inputs, toolbars) |
-| `--border-default` | `#eaedf0` | `#2a2c31` | Primary borders |
+| `--background` | `#faf9f7` | `#000000` | Page background |
+| `--surface` | `#fffffe` | `#0F1012` | Card/panel surfaces |
+| `--surface-alt` | `#f5f4f1` | `#1A1B1E` | Alternate surfaces (inputs, toolbars) |
+| `--surface-raised` | `#ffffff` | `#2A2C30` | Popovers, prompts, lifted surfaces |
+| `--text-primary` | `#1a1817` | `#E4E6EB` | Primary text |
+| `--text-secondary` | `#5e5c58` | `#AEB1B7` | Secondary text |
+| `--text-tertiary` | `#9e9c97` | `#70747A` | Tertiary text |
+| `--border-default` | `#eae8e4` | `#26272B` | Semantic/error borders only |
 | `--border-subtle` | `rgba(0,0,0,0.06)` | `rgba(255,255,255,0.06)` | Subtle dividers |
 
 ### Shadows
@@ -205,7 +227,9 @@ Full extended palette (40+ colors, gradients, dark mode rules): [references/colo
 
 ### Dark Mode Rule
 
-Dark mode desaturates all pastels: lightness −25-35%, saturation −20-30%, slight hue shift toward neutral. Creates muted, calm variants that never feel neon against `#18181b`.
+Dark mode is a pure-black AMOLED canvas with an inky panel ladder. The product
+keeps brand and semantic pastels alive on black instead of pre-desaturating
+them into charcoal. Do not "mute everything" in dark mode.
 
 ---
 
@@ -219,8 +243,8 @@ Dark mode desaturates all pastels: lightness −25-35%, saturation −20-30%, sl
 
 - **Border radius**: Mantine default `lg` (1rem). Buttons use `xl` (1.5rem).
 - **Mantine radius scale**: `xs: 0.25rem, sm: 0.5rem, md: 0.75rem, lg: 1rem, xl: 1.5rem`
-- **Section spacing**: `6rem` between sections
-- **Hero padding**: `8rem`
+- **Landing rhythm**: long viewport-driven spacing for chaptered surfaces; follow the live landing before introducing a tighter rhythm
+- **Panel spacing**: use `panelScaledPx()` / density helpers instead of hand-tuned raw px
 
 ---
 
@@ -287,7 +311,9 @@ const resolver: CSSVariablesResolver = (theme) => ({
 });
 // <MantineProvider theme={theme} cssVariablesResolver={resolver}>
 ```
-We don't currently use this — our CSS vars live in `globals.css` directly. But it's available if Mantine-scoped light/dark vars are needed.
+We don't currently use this — our design tokens live in `app/styles/tokens.css`
+and are imported through `app/globals.css`. But it's available if
+Mantine-scoped light/dark vars are needed.
 
 **`virtualColor`** — Map one color name to different palettes per scheme:
 ```typescript
@@ -361,26 +387,26 @@ Each mode defines both a `color` (hex) and `colorVar` (CSS variable name) in `li
 | Learn | `#aedc93` | `--color-fresh-green` | `var(--color-fresh-green)` |
 | Write | `#ffada4` | `--color-warm-coral` | `var(--color-warm-coral)` |
 
-**`ModeColorSync`** (sibling of `DarkClassSync`) watches the active mode and sets `--mode-accent: var(<colorVar>)` on `<html>`. This gives every component access to the active mode's color via CSS — and it auto-swaps light/dark because the underlying `--color-*` vars have `.dark` overrides in globals.css.
+**`ModeColorSync`** (sibling of `DarkClassSync`) watches the active mode and sets `--mode-accent: var(<colorVar>)` on `<html>`. This gives every component access to the active mode's color via CSS — and it auto-swaps light/dark because the underlying `--color-*` vars have `.dark` overrides in `app/styles/tokens.css`.
 
-### Mode Accent Spectrum (globals.css)
+### Mode Accent Spectrum (`tokens.css`)
 
 `color-mix()` derives an opacity spectrum from `--mode-accent` automatically:
 
 | Token | Opacity | Purpose |
 |-------|---------|---------|
 | `--mode-accent` | 100% | Full accent color |
-| `--mode-accent-subtle` | 10% | Background fills |
-| `--mode-accent-hover` | 18% | Hover states |
-| `--mode-accent-border` | 30% | Colored borders |
+| `--mode-accent-subtle` | dynamic `color-mix()` | Resting fills and active chips |
+| `--mode-accent-hover` | dynamic `color-mix()` | Hover states |
 
 **To swap mode colors**: Change `color` + `colorVar` in one place in `modes.ts`. Everything propagates — CSS tokens, Mantine controls, timeline bars, pagination, data table row numbers.
 
 ### Mode Color Usage Patterns
 
-**CSS consumers** (components, globals.css) — use `var(--mode-accent)`:
+**CSS consumers** (components and imported CSS layers) — use
+`var(--mode-accent)`:
 ```css
-/* globals.css — pagination active page color */
+/* graph-ui.css — pagination active page color */
 .table-pagination [data-active] { color: var(--mode-accent) !important; }
 ```
 ```tsx
@@ -407,7 +433,7 @@ color: DARK_ON_COLOR  // from brand-colors.ts, always "#1a1b1e"
 | File | Role |
 |------|------|
 | `lib/graph/modes.ts` | Source of truth — `color` + `colorVar` per mode |
-| `components/graph/ModeColorSync.tsx` | Sets `--mode-accent` on `<html>` when mode changes |
+| `features/graph/components/shell/ModeColorSync.tsx` | Sets `--mode-accent` on `<html>` when mode changes |
 | `app/styles/tokens.css` | Defines `--mode-accent-*` spectrum via `color-mix()` |
 
 ---
@@ -419,9 +445,9 @@ WebGL (Cosmograph canvas) cannot read CSS custom properties. This creates two pa
 | System | Values | Source | Used By |
 |--------|--------|--------|---------|
 | **CSS tokens** | `var(--surface)`, `var(--brand-accent)` | `app/styles/tokens.css` | Mantine, Tailwind, Cosmograph CSS widgets |
-| **WebGL hex** | `"#f8f9fa"`, `"#747caa"` | `lib/graph/brand-colors.ts` | Cosmograph React props (`backgroundColor`, `hoveredPointRingColor`, etc.) |
+| **WebGL hex** | `"#faf9f7"`, `"#747caa"` | `apps/web/features/graph/lib/brand-colors.ts` | Cosmograph React props (`backgroundColor`, `hoveredPointRingColor`, etc.) |
 
-**Both files have sync breadcrumbs**: `tokens.css` says `/* WebGL mirror: lib/graph/brand-colors.ts — keep in sync */` and `brand-colors.ts` says `/** Keep in sync with tokens.css. */`.
+**Both files have sync breadcrumbs**: `tokens.css` says `/* WebGL mirror: lib/graph/brand-colors.ts — keep in sync */` and `apps/web/features/graph/lib/brand-colors.ts` says `/** Keep in sync with tokens.css. */`.
 
 When changing brand colors: update `tokens.css` `:root` / `.dark` → update `brand-colors.ts` → update `lib/mantine-theme.ts` brand tuple if the primary blue shade changed.
 
@@ -485,7 +511,10 @@ Intentional. Docked panels use `--graph-panel-*` (subtle shadow, input-bg cards,
 
 ## Cosmograph ↔ Mantine Integration
 
-Cosmograph widgets use their own CSS variable system, completely separate from Mantine. Integration happens through **shared foundation tokens** in `globals.css`. For the full reference, see [references/cosmograph-integration.md](references/cosmograph-integration.md).
+Cosmograph widgets use their own CSS variable system, completely separate from
+Mantine. Integration happens through **shared foundation tokens** in
+`app/styles/tokens.css`. For the full reference, see
+[references/cosmograph-integration.md](references/cosmograph-integration.md).
 
 **Quick summary**: Override Cosmograph's base `--cosmograph-ui-*` vars (7 core tokens: background, text, element color, highlighted/selection, font family + size) in `tokens.css` `html:root`. These cascade to every widget. Then override widget-specific tokens (Timeline, Search, Legend, Button, Histogram, SizeLegend, Popup) only where they must diverge.
 
@@ -516,11 +545,11 @@ Cosmograph widgets use their own CSS variable system, completely separate from M
 | `isDark` ternaries in JSX | CSS vars that auto-swap with `.dark` |
 | `next-themes` | `useMantineColorScheme()` |
 | Glass morphism on panels | Opaque backgrounds with `--graph-panel-bg` |
-| Pure black `#000000` as dark bg | `#18181b` (warm charcoal) |
-| Pure white `#ffffff` as page bg | `#fafafa` (warm off-white) |
+| Invent a second dark backdrop | Use `#000000` for field/viewport cases or tokenized `--background` / `--surface` from `tokens.css` |
+| Pure white `#ffffff` as page bg | `#faf9f7` (warm off-white) |
 | Bounce/shake/flash animations | Float/fade/lift only |
 | Auto-playing animations | Scroll-triggered or interaction-triggered |
-| Dense layouts | 6rem section spacing minimum |
+| Fixed spacing law everywhere | Landing uses viewport-driven rhythm; panel internals use `panelScaledPx(...)` |
 | Enterprise SaaS aesthetic | Soft, premium, Apple-inspired |
 | CSS modules or styled-components | Tailwind + Mantine components |
 | Override every Cosmograph CSS var | Override 9 base vars, let the rest cascade |
@@ -542,7 +571,7 @@ Cosmograph widgets use their own CSS variable system, completely separate from M
 
 | Problem | Solution |
 |---------|----------|
-| Dark mode not updating | Check `.dark` block in `app/styles/tokens.css` has the token. Check `DarkClassSync` in `mantine-theme-provider.tsx` |
+| Dark mode not updating | Check `.dark` block in `app/styles/tokens.css` has the token. Check `DarkClassSync` in `app/providers.tsx` |
 | Mantine component looks wrong | Check `lib/mantine-theme.ts` for defaults. Override with `styles` or `classNames` prop |
 | Shadow not visible | Use `var(--shadow-*)` CSS vars, not raw box-shadow. Check dark variant |
 | Card doesn't float | Add `shadow-[var(--shadow-sm)]` + hover state with higher shadow |

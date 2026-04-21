@@ -469,6 +469,14 @@ async def _open_or_resume_run(
             raise IngestAlreadyPublished(
                 f"release {request.source_code}:{request.release_tag} already published"
             )
+        if request.force_new_run and run.status not in (
+            INGEST_STATUS_PUBLISHED,
+            INGEST_STATUS_FAILED,
+            INGEST_STATUS_ABORTED,
+        ):
+            raise IngestAlreadyInProgress(
+                "unfinished ingest run must resume before force_new_run is allowed"
+            )
         if run.status != INGEST_STATUS_PUBLISHED and not request.force_new_run:
             if run.plan_manifest is not None and _digest_payload(run.plan_manifest) != _digest_payload(plan_payload):
                 raise PlanDrift(

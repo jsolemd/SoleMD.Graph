@@ -10,7 +10,8 @@ CorpusSelectionPhase = Literal[
     "assets",
     "corpus_admission",
     "mapped_promotion",
-    "canonical_materialization",
+    "corpus_baseline_materialization",
+    "mapped_surface_materialization",
     "selection_summary",
 ]
 CorpusWavePhase = Literal["member_selection", "enqueue"]
@@ -22,7 +23,8 @@ CORPUS_SELECTION_PHASES: tuple[CorpusSelectionPhase, ...] = (
     "assets",
     "corpus_admission",
     "mapped_promotion",
-    "canonical_materialization",
+    "corpus_baseline_materialization",
+    "mapped_surface_materialization",
     "selection_summary",
 )
 CORPUS_WAVE_PHASES: tuple[CorpusWavePhase, ...] = (

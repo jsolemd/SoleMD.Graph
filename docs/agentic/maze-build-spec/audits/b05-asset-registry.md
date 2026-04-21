@@ -4,15 +4,15 @@
 **Subsystem**: B5 — Asset registry + bitmap (`fm`) + FBX texture loader (`md`)
 **Maze lines audited**: [42133, 42343] (`fm`), [42344, 42398] (`md`), [42941, 43012] (`vd` / `Ws` / `ku`)
 **SoleMD files audited**:
-- `apps/web/features/ambient-field/asset/point-source-registry.ts`
-- `apps/web/features/ambient-field/asset/image-point-source.ts`
-- `apps/web/features/ambient-field/asset/model-point-source.ts`
-- `apps/web/features/ambient-field/asset/field-geometry.ts`
-- `apps/web/features/ambient-field/asset/field-attribute-baker.ts`
-- `apps/web/features/ambient-field/asset/point-source-types.ts`
+- `apps/web/features/field/asset/point-source-registry.ts`
+- `apps/web/features/field/asset/image-point-source.ts`
+- `apps/web/features/field/asset/model-point-source.ts`
+- `apps/web/features/field/asset/field-geometry.ts`
+- `apps/web/features/field/asset/field-attribute-baker.ts`
+- `apps/web/features/field/asset/point-source-types.ts`
 **Canonical references**:
-- `.claude/skills/ambient-field-modules/references/maze-asset-pipeline.md`
-- `.claude/skills/ambient-field-modules/references/maze-model-point-source-inspection.md`
+- `.claude/skills/module/references/maze-asset-pipeline.md`
+- `.claude/skills/module/references/maze-model-point-source-inspection.md`
 - `data/research/mazehq-homepage/2026-04-18/derived/asset-pipeline-map.md`
 **Date**: 2026-04-19
 
@@ -20,18 +20,18 @@
 
 Maze's asset layer is a **URL-keyed static registry `vd`** paired with a **singleton async loader `Ws` (aliased `ku`)** that resolves every registered slug at startup (`ku.loadAll()`), dispatches on file extension (png/jpg/jpeg → `md.loadImage` → `fm` sprite path; gltf/glb/fbx/obj → `md.loadModel`), runs the source through `jo.fromTexture` / `jo.fromVertices` / `jo.generate`, bakes shared attributes via `jo.addParams`, centers the geometry, builds a material via `Fl.getMaterial("Shader", slug)`, wraps it in `Ts` (`THREE.Points`), and caches the result into `Ws.models[slug]`. Controllers then look up finished point-mesh entries by slug via `Ws.get(slug)`, which also lazily constructs a procedural entry through `Ws.generate(slug)` when the slug is not URL-backed.
 
-SoleMD's asset layer is a **slug-keyed lazy in-memory cache `AmbientFieldPointSourceRegistry`** that emits **typed-array buffers** (position + baked motion/funnel/bucket attributes), **not** materialized `THREE.Points` meshes. It covers three homepage slugs (`blob`, `stream`, `pcb`), materializes on demand during `resolve({ densityScale, isMobile, ids })`, and supports an idempotent `prewarm(...)` that just calls `resolve(...)`. Sources are keyed on the composite `<env>:<density>:<id>` instead of pure slug, so desktop and mobile branches are materialized as parallel cache entries.
+SoleMD's asset layer is a **slug-keyed lazy in-memory cache `FieldPointSourceRegistry`** that emits **typed-array buffers** (position + baked motion/funnel/bucket attributes), **not** materialized `THREE.Points` meshes. It covers three homepage slugs (`blob`, `stream`, `pcb`), materializes on demand during `resolve({ densityScale, isMobile, ids })`, and supports an idempotent `prewarm(...)` that just calls `resolve(...)`. Sources are keyed on the composite `<env>:<density>:<id>` instead of pure slug, so desktop and mobile branches are materialized as parallel cache entries.
 
 The two architectures diverge in deliberate ways that are all sanctioned by `references/maze-asset-pipeline.md`: SoleMD favors buffer caches over mesh caches, procedural sources over URL assets, and deferred lazy materialization over an eager `loadAll` preload. The per-source emission logic (sphere / stream / bitmap / model) matches Maze 1:1 through the round-12 primitives, with one intentional divergence on `countFactor` (documented in the asset pipeline reference). The **pcb slug is the one sanctioned source-type substitution**: Maze consumes `/public/theme/images/pcb.png` via `fromTexture`; SoleMD synthesizes a procedural bitmap via `buildPcbBitmap()` and emits points directly without ever touching an image URL. There is **no GLB/FBX/OBJ code path wired up in SoleMD**, no URL-keyed asset manifest, and no extension-dispatching loader, but the model-vertex conversion primitive (`createModelPointGeometry` + `FieldGeometry.fromVertices`) is implemented and dormant, matching Maze's contract for future slugs.
 
-The most material drift is the **absence of a bulk preload contract**. `Ws.loadAll()` is the sole entry point the stage runtime `xi`/`Os` calls before instantiating any controller; SoleMD's `prewarmAmbientFieldPointSources` is called opportunistically by the stage mount and relies on every consumer holding the cache key correctly. No asset-key present in Maze `vd` is missing from SoleMD in a way that affects the live homepage (`pcb` is the only live bitmap slug and it is present via a different source path); the 5 registry-only slugs (`logo`, `shield`, `cubes`, `hex`, `globe`, `users`) are absent from SoleMD because they are not mounted on the homepage and the ambient-field-pipeline reference explicitly excludes them from parity.
+The most material drift is the **absence of a bulk preload contract**. `Ws.loadAll()` is the sole entry point the stage runtime `xi`/`Os` calls before instantiating any controller; SoleMD's `prewarmFieldPointSources` is called opportunistically by the stage mount and relies on every consumer holding the cache key correctly. No asset-key present in Maze `vd` is missing from SoleMD in a way that affects the live homepage (`pcb` is the only live bitmap slug and it is present via a different source path); the 5 registry-only slugs (`logo`, `shield`, `cubes`, `hex`, `globe`, `users`) are absent from SoleMD because they are not mounted on the homepage and the field-pipeline reference explicitly excludes them from parity.
 
 ## Parity overview
 
 | Behavior | Maze line | SoleMD location | Ownership | State |
 | --- | --- | --- | --- | --- |
-| Registry shape (slug → asset handle) | `vd` at 42941–42949 | `point-source-registry.ts:55` (`Map<cacheKey, AmbientFieldPointSource>`) | surface-local | drift |
-| Slug keys | `logo`, `pcb`, `shield`, `cubes`, `hex`, `globe`, `users` | `blob`, `stream`, `pcb` (via `AMBIENT_FIELD_STAGE_ITEM_IDS`) | surface-local | drift (scope narrowed) |
+| Registry shape (slug → asset handle) | `vd` at 42941–42949 | `point-source-registry.ts:55` (`Map<cacheKey, FieldPointSource>`) | surface-local | drift |
+| Slug keys | `logo`, `pcb`, `shield`, `cubes`, `hex`, `globe`, `users` | `blob`, `stream`, `pcb` (via `FIELD_STAGE_ITEM_IDS`) | surface-local | drift (scope narrowed) |
 | URL manifest (extension-dispatch) | `vd` file-extension switch at 42953–42976 | not implemented | delegated (no URL assets) | missing |
 | Bitmap → points conversion | `jo.fromTexture` 42676–42722, invoked via `Ws.bitmapToPoints` 42997–43002 | `FieldGeometry.fromTexture` + `createImagePointGeometry` (image-point-source.ts) | shared | parity |
 | Bitmap source invocation on `pcb` | `vd.pcb = "/public/theme/images/pcb.png"`, loaded via `md.loadImage` | `buildPcbBitmap()` + inline sampler at `point-source-registry.ts:318–384` | surface-local (procedural substitute) | drift (sanctioned) |
@@ -41,7 +41,7 @@ The most material drift is the **absence of a bulk preload contract**. `Ws.loadA
 | Shared attribute injection | `jo.addParams` 42784–42893 invoked inside `Ws.*` | `bakeFieldAttributes` via `bakeGeometryAttributes(...)` | shared | parity |
 | Recentering after emission | `n.center()` at 42992 / 42999 / 43005 | none at registry layer; bounds computed via `computeBounds` | surface-local | drift |
 | Material construction tied to registry | `Fl.getMaterial("Shader", slug)` + `new Ts(n, i)` at 42993–43007 | separate (registry returns buffers only; material lives in renderer) | architectural split | sanctioned |
-| Bulk preload | `Ws.loadAll()` at 42980–42982 (`Promise.all(Object.keys(vd).map(Ws.load))`) | `prewarmAmbientFieldPointSources({ densityScale, isMobile, ids? })` | surface-local | drift (sync vs. async; scope-restricted) |
+| Bulk preload | `Ws.loadAll()` at 42980–42982 (`Promise.all(Object.keys(vd).map(Ws.load))`) | `prewarmFieldPointSources({ densityScale, isMobile, ids? })` | surface-local | drift (sync vs. async; scope-restricted) |
 | Cache identity | `Ws.models[slug]` keyed by slug | `Map<"${env}:${density}:${id}">` keyed by env×density×slug | surface-local | drift |
 | Cache rebuild | `Ws.rebuild(slug)` → `Ws.generate(slug)` | `registry.clear()` (clears all) | surface-local | drift |
 | Cache invalidation semantics | none explicit; registry survives for the session | cleared on `.clear()`; entries are per-`env:density:id` so density/env changes produce new entries | surface-local | drift |
@@ -49,18 +49,18 @@ The most material drift is the **absence of a bulk preload contract**. `Ws.loadA
 | Extension dispatch (`.png` / `.glb` / `.fbx` / `.obj`) | 42953, 42967 | not implemented | delegated | missing |
 | Bitmap sprite / OBJ subclass (`fm extends as`) | 42133–42343 | none | n/a | sanctioned omission |
 | FBX texture loader (`md.loadImage` / `md.loadModel` / `md.loadGLTF` / `md.loadFBX` / `md.loadOBJ`) | 42344–42398 | `loadImageElement` + `rasterizeToImageData` inside image-point-source.ts (only `.png`-style inputs, no OffscreenCanvas fallback branch needed for models) | surface-local | drift (sanctioned scope) |
-| Output artifact shape | `{ model: THREE.Points }` entry carrying geometry + material | `AmbientFieldPointSource` = `{ id, pointCount, bounds, buffers: {position, aMove, aSpeed, aRandomness, aAlpha, aSelection, aIndex, aStreamFreq, aFunnel*, aBucket, color} }` | architectural split | sanctioned |
+| Output artifact shape | `{ model: THREE.Points }` entry carrying geometry + material | `FieldPointSource` = `{ id, pointCount, bounds, buffers: {position, aMove, aSpeed, aRandomness, aAlpha, aSelection, aIndex, aStreamFreq, aFunnel*, aBucket, color} }` | architectural split | sanctioned |
 | Mobile density split at registry | indirect (mobile path handled inside stream generator via `yi.desktop`) | materialized as separate cache entries (`env = "mobile" | "desktop"`, density quantized to 0.01) | surface-local | drift (improved) |
 | Deterministic seeding | none (`Math.random` throughout) | `createRandomSource(FIELD_SEED + …)` with per-(env, density, slug) offset | surface-local | drift (improved; hygienic) |
-| Aggregate preload | `ku.loadAll()` invoked once from stage runtime at `[49427, 49588]` | opportunistic `prewarmAmbientFieldPointSources` at mount time | surface-local | drift |
+| Aggregate preload | `ku.loadAll()` invoked once from stage runtime at `[49427, 49588]` | opportunistic `prewarmFieldPointSources` at mount time | surface-local | drift |
 
 ## Drift items
 
 ### D1. No URL-keyed asset manifest
 
 - **Maze reference**: `scripts.pretty.js:42941-42948` — `vd` is a literal `{ slug: path }` dictionary. `Ws.load(slug)` extracts the extension (`vd[slug].split(".").pop()`) and dispatches to `md.loadImage` or `md.loadModel`.
-- **SoleMD location**: `apps/web/features/ambient-field/asset/point-source-registry.ts` — registry is keyed on slug-only with no URL field; `buildSource(id, …)` branches on `id` directly.
-- **Drift**: SoleMD has no `AmbientFieldAssetManifest` constant. Adding a new URL-backed slug requires editing `buildSource` rather than adding an entry to a table. All three live sources (`blob`, `stream`, `pcb`) are procedural (sphere, line, or synthetic bitmap), so there is no code path that reads a PNG or GLB off disk from a registry key.
+- **SoleMD location**: `apps/web/features/field/asset/point-source-registry.ts` — registry is keyed on slug-only with no URL field; `buildSource(id, …)` branches on `id` directly.
+- **Drift**: SoleMD has no `FieldAssetManifest` constant. Adding a new URL-backed slug requires editing `buildSource` rather than adding an entry to a table. All three live sources (`blob`, `stream`, `pcb`) are procedural (sphere, line, or synthetic bitmap), so there is no code path that reads a PNG or GLB off disk from a registry key.
 - **Severity**: Doc-only (sanctioned per `maze-asset-pipeline.md § Registry Shape` and § 2 of `derived/asset-pipeline-map.md`: Maze registry includes homepage-inactive slugs; SoleMD is intentionally scoped to homepage-active slugs).
 - **Proposed fix**: If future SoleMD surfaces mount model-backed slugs, formalize a `POINT_SOURCE_MANIFEST: Record<slug, { source: "procedural" | "image" | "model"; url?: string; … }>` inside `point-source-registry.ts`. Use the `ImagePointSourceInput` union (already defined) and `createModelPointGeometry` (already implemented) as the downstream primitives. Do not mirror Maze's extension-dispatch string switch; prefer explicit discriminant on `source`.
 - **Verification**: Grep `point-source-registry.ts` for any URL literal; there should be none at the current scope and any added manifest entry should carry an explicit `source` kind.
@@ -77,10 +77,10 @@ The most material drift is the **absence of a bulk preload contract**. `Ws.loadA
 ### D3. No bulk preload / `loadAll` contract
 
 - **Maze reference**: `scripts.pretty.js:42980-42982` — `Ws.loadAll()` is a single `Promise.all` over every registered slug, called from the stage runtime `xi`/`Os` at slice-pilot `[49427, 49588]` during boot. Controllers assume finished `Ws.models[slug]` entries are available synchronously after the boot promise resolves.
-- **SoleMD location**: `point-source-registry.ts:398–402` — `prewarmAmbientFieldPointSources({ densityScale, isMobile })` is a sync call (since all current sources are procedural) and prewarms only the ids the caller names. `resolve({ ids })` is the main entry; it materializes synchronously on cache miss.
+- **SoleMD location**: `point-source-registry.ts:398–402` — `prewarmFieldPointSources({ densityScale, isMobile })` is a sync call (since all current sources are procedural) and prewarms only the ids the caller names. `resolve({ ids })` is the main entry; it materializes synchronously on cache miss.
 - **Drift**: There is no "fan out over every registered slug" primitive. Consumers must know which slugs they need. With the current three-slug scope and procedural generation this is fine, but any future GLB-backed slug would need an async branch that Maze's `loadAll` hides.
 - **Severity**: Should-fix if any URL-backed slug is ever added.
-- **Proposed fix**: When (and only when) URL-backed slugs appear, change `resolve` to return `Promise<Record<slug, source>>` and add `loadAll({ densityScale, isMobile })` that walks every id in `AMBIENT_FIELD_STAGE_ITEM_IDS`. Keep the current sync shape for procedural-only deployments (e.g., landing) by dispatching on the manifest entry's `source` discriminant.
+- **Proposed fix**: When (and only when) URL-backed slugs appear, change `resolve` to return `Promise<Record<slug, source>>` and add `loadAll({ densityScale, isMobile })` that walks every id in `FIELD_STAGE_ITEM_IDS`. Keep the current sync shape for procedural-only deployments (e.g., landing) by dispatching on the manifest entry's `source` discriminant.
 - **Verification**: Once implemented, the stage mount should await a single `loadAll` and only then construct controllers.
 
 ### D4. Cache key includes environment and density; rebuild semantics differ
@@ -95,14 +95,14 @@ The most material drift is the **absence of a bulk preload contract**. `Ws.loadA
 ### D5. Registry emits typed-array buffers; Maze emits `THREE.Points` meshes
 
 - **Maze reference**: 42993–43007 — every `Ws` output wraps geometry + material into `new Ts(n, i)` (`THREE.Points`) and caches that mesh as `Ws.models[slug].model`.
-- **SoleMD location**: `point-source-types.ts:29–34` — `AmbientFieldPointSource = { id, pointCount, bounds, buffers }`, where buffers is a flat `Record<attribute, Float32Array>`. No mesh, no material, no `THREE.Points` object at the registry layer.
-- **Drift**: Architectural split — material construction belongs to `features/ambient-field/renderer/*` in SoleMD, not to the asset registry. `maze-asset-pipeline.md § Recommended SoleMD Asset Architecture` explicitly endorses this split:
+- **SoleMD location**: `point-source-types.ts:29–34` — `FieldPointSource = { id, pointCount, bounds, buffers }`, where buffers is a flat `Record<attribute, Float32Array>`. No mesh, no material, no `THREE.Points` object at the registry layer.
+- **Drift**: Architectural split — material construction belongs to `features/field/renderer/*` in SoleMD, not to the asset registry. `maze-asset-pipeline.md § Recommended SoleMD Asset Architecture` explicitly endorses this split:
 
   > `AssetRegistry → PointSourceAdapter → SharedAttributeInjector → Cached BufferGeometry / typed arrays → Shared particle material family`
 
 - **Severity**: Sanctioned (not a fix item). Called out so auditors reading Maze expecting `registry.get(slug).model` do not mistake the absence for drift.
 - **Proposed fix**: None.
-- **Verification**: `Grep` for `new THREE.Points` inside `features/ambient-field/asset/` — must remain zero hits.
+- **Verification**: `Grep` for `new THREE.Points` inside `features/field/asset/` — must remain zero hits.
 
 ### D6. No `.center()` call at the registry layer
 
@@ -119,7 +119,7 @@ The most material drift is the **absence of a bulk preload contract**. `Ws.loadA
 - **SoleMD location**: `resolve({ ids })` at 65–96 — always a batch call; there is no `get(id)` that returns a single pre-baked source.
 - **Drift**: Consumers must supply the full `{ densityScale, isMobile }` options even when they want one slug. For landing surfaces that already have this context this is a non-issue; for deeply-nested panels that only know the slug, it is a small ergonomic burden.
 - **Severity**: Nice-to-have.
-- **Proposed fix**: Add `getAmbientFieldPointSource(id, options)` returning `AmbientFieldPointSource` — trivial wrapper around `resolve({ ids: [id], ...options })[id]`. Do not add an options-less overload; the env/density scoping is load-bearing.
+- **Proposed fix**: Add `getFieldPointSource(id, options)` returning `FieldPointSource` — trivial wrapper around `resolve({ ids: [id], ...options })[id]`. Do not add an options-less overload; the env/density scoping is load-bearing.
 - **Verification**: Grep consumers for the pattern `resolve({...ids: [oneId]})` and migrate them to the single-slug form.
 
 ### D8. Bitmap sprite sub-class `fm` (`OBJ` loader) has no SoleMD analog
@@ -135,10 +135,10 @@ The most material drift is the **absence of a bulk preload contract**. `Ws.loadA
 
 - **Maze reference**: `scripts.pretty.js:42344-42398` — `md.loadModel`, `md.loadGLTF`, `md.loadFBX`, `md.loadOBJ`, `md.loadImage`, `md.progressHandler`, `md.errorHandler`.
 - **SoleMD location**: partial — `image-point-source.ts:36-87` implements `loadImageElement` (URL → `HTMLImageElement`) and `rasterizeToImageData` (element → `ImageLikeData`), which together cover `md.loadImage`'s role. There is no SoleMD equivalent of `md.loadModel` or the FBX/OBJ branches.
-- **Drift**: No GLB loader instance is constructed anywhere in `features/ambient-field/asset/`. A future slug that wants to consume a GLB would need to call `GLTFLoader` in the caller's code and hand the `THREE.Group` into `createModelPointGeometry`. That is arguably cleaner — the registry stays pure, and the choice of loader stays with the consumer — but it also means there is no progress / error telemetry path equivalent to Maze's `md.progressHandler`.
+- **Drift**: No GLB loader instance is constructed anywhere in `features/field/asset/`. A future slug that wants to consume a GLB would need to call `GLTFLoader` in the caller's code and hand the `THREE.Group` into `createModelPointGeometry`. That is arguably cleaner — the registry stays pure, and the choice of loader stays with the consumer — but it also means there is no progress / error telemetry path equivalent to Maze's `md.progressHandler`.
 - **Severity**: Doc-only (sanctioned when no model slugs are mounted).
-- **Proposed fix**: When the first model-backed slug lands, add a `features/ambient-field/asset/model-loader.ts` that owns `GLTFLoader` construction, console-warn error handling, and a `loadModelPoints(url: string, options) → Promise<THREE.BufferGeometry>` entry point. Wire it through the manifest-driven registry (D1). Do not re-port `md` verbatim; use three's first-party `GLTFLoader` from `three/examples/jsm/loaders/GLTFLoader.js`.
-- **Verification**: Once implemented, `grep new GLTFLoader` inside `features/ambient-field/asset/` should land exactly inside `model-loader.ts`.
+- **Proposed fix**: When the first model-backed slug lands, add a `features/field/asset/model-loader.ts` that owns `GLTFLoader` construction, console-warn error handling, and a `loadModelPoints(url: string, options) → Promise<THREE.BufferGeometry>` entry point. Wire it through the manifest-driven registry (D1). Do not re-port `md` verbatim; use three's first-party `GLTFLoader` from `three/examples/jsm/loaders/GLTFLoader.js`.
+- **Verification**: Once implemented, `grep new GLTFLoader` inside `features/field/asset/` should land exactly inside `model-loader.ts`.
 
 ### D10. No `cs[slug]`-driven per-slug texture option overrides
 
@@ -177,7 +177,7 @@ Matching:
 
 Diverging:
 
-- **No `loadAll` entry point**. Maze: one call preloads every registered slug. SoleMD: `prewarm({ ids? })` covers only the ids the caller names, defaulting to `AMBIENT_FIELD_STAGE_ITEM_IDS` when omitted — effectively a loadAll-over-homepage-slugs, but not over an extensible manifest.
+- **No `loadAll` entry point**. Maze: one call preloads every registered slug. SoleMD: `prewarm({ ids? })` covers only the ids the caller names, defaulting to `FIELD_STAGE_ITEM_IDS` when omitted — effectively a loadAll-over-homepage-slugs, but not over an extensible manifest.
 - **No async boundary**. Maze returns `Promise.all(...)`; SoleMD `prewarm` is sync because all current sources are procedural. Parity breaks the moment a URL-backed slug lands; see D3.
 - **No per-slug rebuild**. Maze: `Ws.rebuild(slug)` → single-slug regenerate. SoleMD: only `registry.clear()` (full invalidation). See D4.
 - **No ready-signal / error surface**. Maze's `loadAll` rejects if any slug fails; SoleMD's sync `resolve` throws inside `extractAttribute` only if the baker dropped an attribute. Consumer-facing failure modes differ.
@@ -190,7 +190,7 @@ Verdict: **partial parity**. The live procedural-only surface works; the contrac
 
    > `AssetRegistry → PointSourceAdapter → SharedAttributeInjector → Cached BufferGeometry / typed arrays → Shared particle material family`
 
-   Material construction is routed through `features/ambient-field/renderer/*` instead. Consumers that want a `THREE.Points` mesh rehydrate it from the buffers at the renderer boundary.
+   Material construction is routed through `features/field/renderer/*` instead. Consumers that want a `THREE.Points` mesh rehydrate it from the buffers at the renderer boundary.
 
 2. **Scope narrowed to homepage slugs.** Sanctioned by `data/research/mazehq-homepage/2026-04-18/derived/asset-pipeline-map.md § 2` ("do not assume every registry asset participates in the homepage flow just because it exists in the source tree") and by `maze-asset-pipeline.md § Source Families` (five model slugs listed but flagged registry-only). SoleMD implements the `createModelPointGeometry` primitive so the slugs can be added without re-architecting.
 
@@ -212,7 +212,7 @@ Verdict: **partial parity**. The live procedural-only surface works; the contrac
 
 1. **Manifest-driven vs. switch-driven source selection.** If/when model-backed slugs land, should SoleMD formalize the URL manifest (D1) as a constant in `point-source-registry.ts` or as a separate `asset-manifest.ts`? Recommend the latter so the registry stays focused on caching and the manifest stays scannable.
 
-2. **`loadAll` vs. lazy-per-panel.** The current `prewarmAmbientFieldPointSources` pattern works because every consumer of the ambient field passes through the same mount. If wiki modules / evidence overlays become independent asset consumers, should they share the process-scoped `ambientFieldPointSourceRegistry` or own their own instances? Recommend the former — single cache, single invalidation path.
+2. **`loadAll` vs. lazy-per-panel.** The current `prewarmFieldPointSources` pattern works because every consumer of the field passes through the same mount. If wiki modules / evidence overlays become independent asset consumers, should they share the process-scoped `fieldPointSourceRegistry` or own their own instances? Recommend the former — single cache, single invalidation path.
 
 3. **Lazy `get(slug)` ergonomics.** D7's single-slug helper is trivial to add but introduces a divergence between "full resolve" and "one-off read". Recommend explicitly documenting that both live behind the same cache (no separate codepath), to forestall a future "why does `get` double-emit?" bug.
 
@@ -222,7 +222,7 @@ Verdict: **partial parity**. The live procedural-only surface works; the contrac
 
 ## Scope discoveries (Phase 1 re-slicing signal)
 
-Bucket B5 as scoped covers three tightly-coupled concerns: the `vd` dictionary, the `Ws` / `ku` async loader with extension dispatch, and the `fm` / `md` leaf classes that handle OBJ parsing and texture loading. SoleMD fuses the dictionary and the loader into a single `AmbientFieldPointSourceRegistry` and pushes the leaf classes out of scope entirely (absent by sanction). No re-slicing needed.
+Bucket B5 as scoped covers three tightly-coupled concerns: the `vd` dictionary, the `Ws` / `ku` async loader with extension dispatch, and the `fm` / `md` leaf classes that handle OBJ parsing and texture loading. SoleMD fuses the dictionary and the loader into a single `FieldPointSourceRegistry` and pushes the leaf classes out of scope entirely (absent by sanction). No re-slicing needed.
 
 One minor cartography note: `slice-06 § 8` describes `vd` as "lines [42941, 43012]", but the dictionary itself is `42941–42949` and the class `Ws` (aka `ku`) is `42950–43011` with the `var ku = Ws;` alias at `43011`. The combined range is correct; the single-line breakout would make the inheritance of `loadAll` / `get` / `rebuild` / `generate` / `bitmapToPoints` / `modelToPoints` more navigable.
 

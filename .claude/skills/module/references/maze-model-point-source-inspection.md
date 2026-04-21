@@ -17,10 +17,10 @@ Source ground truth:
 
 SoleMD round-12 wrapper:
 
-- `apps/web/features/ambient-field/asset/model-point-source.ts`
+- `apps/web/features/field/asset/model-point-source.ts`
   (`createModelPointGeometry`)
 - underlying buffer producer:
-  `apps/web/features/ambient-field/asset/field-geometry.ts`
+  `apps/web/features/field/asset/field-geometry.ts`
   (`FieldGeometry.fromVertices`)
 
 ## Why This Matters

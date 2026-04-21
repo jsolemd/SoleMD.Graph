@@ -182,13 +182,13 @@ async def _insert_mapped_entity_rule_signals(
         WITH reference_counts AS (
             SELECT
                 raw.corpus_id,
-                count(*)::INTEGER AS reference_out_count
-            FROM solemd.s2_paper_references_raw refs
+                coalesce(sum(metrics.reference_out_count), 0)::INTEGER AS reference_out_count
+            FROM solemd.s2_paper_reference_metrics_raw metrics
             JOIN solemd.s2_papers_raw raw
               ON raw.source_release_id = $3
-             AND raw.paper_id = refs.citing_paper_id
+             AND raw.paper_id = metrics.citing_paper_id
              AND raw.corpus_id IS NOT NULL
-            WHERE refs.source_release_id = $3
+            WHERE metrics.source_release_id = $3
             GROUP BY raw.corpus_id
         ),
         entity_hits AS (
@@ -278,13 +278,13 @@ async def _insert_mapped_relation_rule_signals(
         WITH reference_counts AS (
             SELECT
                 raw.corpus_id,
-                count(*)::INTEGER AS reference_out_count
-            FROM solemd.s2_paper_references_raw refs
+                coalesce(sum(metrics.reference_out_count), 0)::INTEGER AS reference_out_count
+            FROM solemd.s2_paper_reference_metrics_raw metrics
             JOIN solemd.s2_papers_raw raw
               ON raw.source_release_id = $3
-             AND raw.paper_id = refs.citing_paper_id
+             AND raw.paper_id = metrics.citing_paper_id
              AND raw.corpus_id IS NOT NULL
-            WHERE refs.source_release_id = $3
+            WHERE metrics.source_release_id = $3
             GROUP BY raw.corpus_id
         ),
         relation_hits AS (
