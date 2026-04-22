@@ -94,31 +94,32 @@ for new modules.
 
 Every module contract should include:
 
-- module identity
-- ending pattern
+- module identity (including ending pattern, mobile path, reduced-motion path)
 - global locked deviations
 - stage manifest
 - chapter inventory
-- terminology bridge when runtime aliases differ from the preferred
-  author-facing names
-- mobile path
-- reduced-motion path
+- terminology bridge only when the module intentionally diverges from
+  canonical names in `module-terminology.md`
 - naming rules for how to refer to sections/beats
 
 Every chapter entry should include:
 
 - `chapter name`
-- `narrative role`
 - `section id`
-- `historical alias` or runtime alias when it matters for implementation
-- `chapter hook` or runtime hook alias when adapter code is involved
-- `stage owner`, `stage carry`, or `stage overlap` state
-- `purpose`
+- `chapter key` (or `none` if not adapter-wired)
+- `stage state` — `owner` / `carry`, leading family first when two
+  rows are present (e.g. `stream owner + blob carry`)
+- `purpose` — one sentence on what the chapter is *for*. Required.
+  Especially load-bearing for generic structural names like `Story 1`
+  and `Story 2`.
 - `content`
 - `particle behavior`
-- `DOM overlay`
+- `overlay` — `none`, or one of `progress rail`, `hotspot cards`,
+  `connection overlay`, or a named `future overlay`
 - `interaction/motion intent`
-- `data dependencies`
+- `mobile path`
+- `reduced-motion path`
+- `data bridge` (default: none)
 - `deferred items`
 - `locked deviations`
 

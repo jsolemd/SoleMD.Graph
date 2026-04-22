@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef } from "react";
-import { MetaPill } from "@/features/graph/components/panels/PanelShell/MetaPill";
 import { useChapterAdapter } from "../../scroll/chapter-adapters/useChapterAdapter";
 import {
   fieldSurfaceRailItems,
@@ -31,7 +30,6 @@ export function FieldSurfaceRailSection({
     >
       <div className="mx-auto max-w-[1240px]">
         <div className="mx-auto max-w-[760px] text-center">
-          <MetaPill mono>{section.eyebrow}</MetaPill>
           <h2 className="mx-auto mt-5 max-w-[16ch] text-[2rem] font-medium leading-[0.98] tracking-[-0.04em] sm:text-[2.8rem]">
             {section.title}
           </h2>
@@ -40,37 +38,14 @@ export function FieldSurfaceRailSection({
           </p>
         </div>
 
-        <div className="mt-10 grid gap-4 lg:grid-cols-2">
-          {fieldSurfaceRailItems.map((item, index) => (
-            <article
-              key={item.id}
-              data-surface-rail-item
-              className="rounded-[1.5rem] border px-5 py-5"
-              style={{
-                borderColor:
-                  "color-mix(in srgb, var(--graph-panel-border) 72%, transparent)",
-                background:
-                  "linear-gradient(180deg, color-mix(in srgb, var(--graph-panel-bg) 88%, transparent), color-mix(in srgb, var(--graph-bg) 92%, transparent))",
-              }}
+        <div className="mx-auto mt-14 grid max-w-[960px] gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {fieldSurfaceRailItems.map((name) => (
+            <p
+              key={name}
+              className="text-center text-[20px] font-medium tracking-[-0.01em] sm:text-[24px]"
             >
-              <div className="flex items-center justify-between gap-3">
-                <p
-                  className="text-[11px] uppercase tracking-[0.18em]"
-                  style={{
-                    color:
-                      "color-mix(in srgb, var(--graph-panel-text-dim) 88%, transparent)",
-                  }}
-                >
-                  {item.label}
-                </p>
-                <MetaPill style={{ color: index % 2 === 0 ? section.accentVar : "var(--color-teal)" }}>
-                  0{index + 1}
-                </MetaPill>
-              </div>
-              <p className="mt-4 text-[1rem] font-medium leading-6 text-[var(--graph-panel-text)]">
-                {item.name}
-              </p>
-            </article>
+              {name}
+            </p>
           ))}
         </div>
       </div>

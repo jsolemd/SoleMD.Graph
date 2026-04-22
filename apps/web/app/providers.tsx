@@ -12,7 +12,7 @@ import { bindShellStateClasses } from "@/app/shell/bind-shell-state-classes";
 
 /** Syncs Mantine's resolved color scheme to `.dark` class on <html> for CSS custom property cascading. */
 function DarkClassSync({ children }: { children: React.ReactNode }) {
-  const computedScheme = useComputedColorScheme("light");
+  const computedScheme = useComputedColorScheme("dark");
 
   useEffect(() => {
     document.documentElement.classList.toggle(
@@ -45,7 +45,7 @@ export function Providers({
   children: React.ReactNode;
 }) {
   return (
-    <MantineProvider theme={mantineTheme} defaultColorScheme="auto">
+    <MantineProvider theme={mantineTheme} defaultColorScheme="dark">
       <DarkClassSync>
         <ShellRuntimeBindings>{children}</ShellRuntimeBindings>
       </DarkClassSync>

@@ -32,7 +32,7 @@ export default function ThemeToggle({
   surfaceMode?: ChromeSurfaceMode;
 }) {
   const { toggleColorScheme } = useMantineColorScheme();
-  const computedColorScheme = useComputedColorScheme("light");
+  const computedColorScheme = useComputedColorScheme("dark");
   const mounted = useMounted();
   const [spinCount, setSpinCount] = useState(0);
 

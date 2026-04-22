@@ -66,7 +66,7 @@ export function FieldGraphWarmupAction({
 }) {
   const router = useRouter();
   const reduced = useReducedMotion();
-  const computedColorScheme = useComputedColorScheme("light");
+  const computedColorScheme = useComputedColorScheme("dark");
   const lottieRef = useRef<LottieRefCurrentProps | null>(null);
   const prefetchedRef = useRef(false);
   const graphReady = status === "ready";

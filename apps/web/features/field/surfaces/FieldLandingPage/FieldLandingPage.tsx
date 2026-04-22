@@ -52,7 +52,6 @@ import {
   fieldLandingSections,
   FIELD_SECTION_MANIFEST,
 } from "./field-landing-content";
-import { fieldBlobHotspots } from "./field-hotspot-overlay";
 import { FieldCtaSection } from "./FieldCtaSection";
 import { FieldGraphWarmupAction } from "./FieldGraphWarmupAction";
 import { FieldHeroSection } from "./FieldHeroSection";
@@ -260,51 +259,6 @@ function FieldLandingShellContent({
           onHotspotAnimationEnd={(index) => {
             blobControllerRef.current?.onHotspotAnimationEnd(index);
           }}
-          renderCard={(index) => {
-            const hotspot = fieldBlobHotspots[index];
-            if (!hotspot) return null;
-            if (!hotspot.title && hotspot.badges.length === 0) return null;
-            const hotspotLabel = Array.from(
-              new Set(["Selected", ...hotspot.badges]),
-            ).join(" · ");
-            return (
-              <div
-                className="field-hotspot-card-inner w-[198px] max-w-[34vw]"
-                style={{
-                  marginLeft: hotspot.cardLeft ?? "28px",
-                  marginTop: hotspot.cardTop ?? "-18px",
-                }}
-              >
-                <div
-                  className="space-y-2 px-2 py-2 text-left"
-                  style={{
-                    color: "var(--graph-panel-text)",
-                  }}
-                >
-                  <p
-                    className="text-[10px] uppercase tracking-[0.18em]"
-                    style={{
-                      color:
-                        "color-mix(in srgb, var(--graph-panel-text-dim) 88%, transparent)",
-                      textShadow:
-                        "0 1px 16px color-mix(in srgb, var(--graph-bg) 74%, transparent)",
-                    }}
-                  >
-                    {hotspotLabel}
-                  </p>
-                  <p
-                    className="text-[13px] font-medium leading-5"
-                    style={{
-                      textShadow:
-                        "0 1px 20px color-mix(in srgb, var(--graph-bg) 82%, transparent)",
-                    }}
-                  >
-                    {hotspot.title}
-                  </p>
-                </div>
-              </div>
-            );
-          }}
         />
       </div>
 
@@ -337,10 +291,7 @@ function FieldLandingShellContent({
       <FieldScrollCue />
 
       <main id="main-content" className="relative z-10">
-        <FieldHeroSection
-          onExploreRuntime={() => scrollToSection("section-story-1")}
-          section={heroSection}
-        />
+        <FieldHeroSection section={heroSection} />
 
         <FieldSurfaceRailSection section={surfaceRailSection} />
 
@@ -371,9 +322,6 @@ function FieldLandingShellContent({
               router.push("/graph");
             }
           }}
-          onReturnToTop={() =>
-            window.scrollTo({ top: 0, behavior: scrollBehavior })
-          }
           section={ctaSection}
         />
       </main>

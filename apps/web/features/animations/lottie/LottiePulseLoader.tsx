@@ -44,7 +44,7 @@ export function LottiePulseLoader({
   fallbackColor?: LottieRgba;
 }) {
   const reduced = useReducedMotion();
-  const computedColorScheme = useComputedColorScheme("light");
+  const computedColorScheme = useComputedColorScheme("dark");
   const mode = useGraphStore((s) => s.mode);
   const [raw, setRaw] = useState<LottieJson | null>(null);
   const [accent, setAccent] = useState<

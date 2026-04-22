@@ -159,7 +159,7 @@ export function FieldScene({
 }: FieldSceneProps) {
   const viewportWidth = useThree((state) => state.size.width);
   const isMobile = viewportWidth < FIELD_NON_DESKTOP_BREAKPOINT;
-  const colorScheme = useComputedColorScheme("light");
+  const colorScheme = useComputedColorScheme("dark");
   const lightModeValue = colorScheme === "light" ? 1 : 0;
   const activeIdSet = useMemo(() => new Set(activeIds), [activeIds]);
   const pointSources = useMemo(

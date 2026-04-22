@@ -229,35 +229,48 @@ Every field module contract should carry the same core structure.
 At the module level:
 
 - module id
-- surface kind (`landing`, `wiki module`, `expanded module`, `bridge surface`)
+- module kind (`landing`, `wiki module`, `expanded module`, `bridge surface`)
+- runtime family (`Field`)
+- ending pattern (`bookend return`, `persistent carry`, or `authored formation`)
 - human authoring source (Obsidian/wiki path if one exists)
 - checked-in contract path
-- runtime family (`Field`)
 - notes on locked global deviations
+- mobile path
+- reduced-motion path
 
 At the stage-manifest level:
 
-- section id
-- owner family
-- stage item id
-- preset id
-- carry window
-- current particle behavior summary
-- overlay status (`none`, `hotspots`, `progress`, `DOM shell`, `future`)
+- section id (`sectionId` in code)
+- controller family (`stageItemId` in code — `blob`, `stream`,
+  `objectFormation`)
+- ownership (`owner` or `carry` — no third state; two-family chapters
+  declare two rows)
+- carry window (`endSectionId` in code)
+- particle behavior summary (described in product terms)
+- overlay (`none`, `progress rail`, `hotspot cards`, `connection overlay`,
+  or `future overlay` with a short description)
+
+`presetId` is assumed to equal `stageItemId` and is not a separate
+authoring field unless a module intentionally diverges — in which case
+the deviation is recorded as a module-level `locked deviation`.
 
 At the per-chapter level:
 
 - chapter name
-- narrative role
 - section id
-- chapter hook or runtime alias when adapter choreography is involved
-- stage owner or stage state
-- purpose
+- chapter key (or `none` if not adapter-wired)
+- stage state — leading family first when two rows are present
+  (e.g. `stream owner + blob carry`)
+- purpose — one sentence on what the chapter is *for*. Required.
+  Load-bearing for generic structural names like `Story 1` and
+  `Story 2`, where the chapter name alone does not convey intent.
 - content
 - particle behavior
-- DOM overlay
+- overlay
 - interaction or motion intent
-- data dependencies
+- mobile path
+- reduced-motion path
+- data bridge (default: none)
 - deferred items
 - locked deviations
 
@@ -297,10 +310,11 @@ Do not duplicate the full runtime manual into every module markdown file.
 
 Do not force the skill to become a per-module content inventory either.
 
-If a surface is still being storyboarded, prefer stable structural chapter
+If a module is still being storyboarded, prefer stable structural chapter
 names such as `Hero`, `Story 1`, `Story 2`, `Story 3`, `Sequence`, and `CTA`.
-Let `narrative role`, `content`, and `stage state` hold the current meaning
-so later storyboard passes do not require renaming the structure every time.
+Let each chapter's `purpose`, `content`, and `stage state` hold the current
+meaning so later storyboard passes do not require renaming the structure
+every time.
 
 The correct split is:
 
@@ -1200,8 +1214,8 @@ Implication:
 When building a new module, the authoring burden should usually be:
 
 - define chapter names and order
-- assign chapter hooks
-- declare which stage owner carries through which sections
+- assign chapter keys and wire chapter adapters where needed
+- declare which stage owner and carry rows run through which sections
 - choose particle behavior intent in human/product language
 - choose whether DOM/SVG overlays are:
   - shipped now
@@ -1285,7 +1299,7 @@ Authors may specify:
 - what cluster or corpus subset is in focus
 - which claims or papers deserve hotspots
 - which chapter job is active
-- which visual preset family is appropriate
+- which controller family is appropriate
 - which bridge actions should exist
 
 Authors should not specify:

@@ -228,11 +228,12 @@ void main() {
   // when uColorNoise is tweened through a palette at runtime.
   vColor = uColorBase + clamp(vNoise, 0.0, 1.0) * 4.0 * (uColorNoise - uColorBase);
 
-  // Light-mode ink remap: drop particle luminance below the paper
-  // background so saturated-on-black pigment becomes readable ink-on-paper.
-  // 0.55 keeps enough chroma for cyan/magenta rainbow stops to read as hue
-  // rather than flat navy.
-  vColor = mix(vColor, vColor * 0.55 + vec3(0.02), uLightMode);
+  // Light-mode ink remap: gamma-darken midtones while keeping pure palette
+  // stops at full chroma — "bursts" read intense against paper instead of
+  // washed-out. Clamp is required because vColor at line 229 overshoots
+  // [0,1] via vNoise*4 amplification (orange stop R=3.45, magenta G=-1.79)
+  // and pow(negative, …) is NaN.
+  vColor = mix(vColor, pow(clamp(vColor, 0.0, 1.0), vec3(1.55)), uLightMode);
 
   vec3 displaced = position;
   displaced *= (1.0 + (uAmplitude * vNoise));
@@ -272,9 +273,10 @@ void main() {
 
   vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
   // Light-mode alpha boost: particles that were glow on black need more
-  // opacity to hold against paper. Kept modest so higher-luminance hues
-  // (cyan, magenta) don't over-paint at 0.55 multiplier.
-  vAlpha = mix(vAlpha, vAlpha * 1.3, uLightMode);
+  // opacity to hold against paper. All three field layers share this
+  // shader under NormalBlending, so overlaps compound — 1.5 gives bursts
+  // density without letting dense chapters collapse into a solid wash.
+  vAlpha = mix(vAlpha, vAlpha * 1.5, uLightMode);
   if (aSelection > uSelection) {
     vAlpha = 0.0;
   }

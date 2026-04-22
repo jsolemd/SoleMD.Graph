@@ -2,21 +2,16 @@
 
 import { useRef } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { chromePillSurfaceStyle } from "@/features/graph/components/panels/PanelShell/panel-styles";
 import { TextReveal } from "@/features/animations/text-reveal/TextReveal";
 import { smooth } from "@/lib/motion";
 import type { FieldLandingSection } from "./field-landing-content";
 import { useChapterAdapter } from "../../scroll/chapter-adapters/useChapterAdapter";
 
 interface FieldHeroSectionProps {
-  onExploreRuntime: () => void;
   section: FieldLandingSection;
 }
 
-export function FieldHeroSection({
-  onExploreRuntime,
-  section,
-}: FieldHeroSectionProps) {
+export function FieldHeroSection({ section }: FieldHeroSectionProps) {
   const sectionRef = useRef<HTMLElement | null>(null);
   useChapterAdapter(sectionRef, "hero");
   const reducedMotion = useReducedMotion() ?? false;
@@ -55,7 +50,7 @@ export function FieldHeroSection({
 
           <TextReveal
             as="h1"
-            className="mx-auto mt-5 max-w-[10ch] text-[2.9rem] font-medium leading-[0.9] tracking-[-0.05em] sm:text-[4.25rem] lg:text-[5.2rem]"
+            className="mx-auto mt-5 max-w-[14ch] text-[2.9rem] font-medium leading-[0.9] tracking-[-0.05em] sm:text-[4.25rem] lg:text-[5.2rem]"
             grain="words"
             stagger={0.08}
             text={section.title}
@@ -64,7 +59,7 @@ export function FieldHeroSection({
 
           <TextReveal
             as="p"
-            className="mx-auto mt-6 max-w-[38ch] text-[15px] leading-7 sm:text-[17px] sm:leading-8"
+            className="mx-auto mt-6 max-w-[42ch] text-[15px] leading-7 sm:text-[17px] sm:leading-8"
             style={{
               color:
                 "color-mix(in srgb, var(--graph-panel-text) 76%, transparent)",
@@ -75,32 +70,6 @@ export function FieldHeroSection({
             trigger="mount"
           />
         </div>
-
-        <motion.div
-          className="mt-8 flex flex-wrap items-center justify-center gap-3"
-          {...(reducedMotion
-            ? {}
-            : {
-                initial: { opacity: 0, y: 18 },
-                animate: { opacity: 1, y: 0 },
-                transition: {
-                  y: smooth,
-                  opacity: { duration: 0.18, ease: "easeOut", delay: 0.08 },
-                },
-              })}
-        >
-          <button
-            type="button"
-            onClick={onExploreRuntime}
-            className="rounded-full px-4 py-2 text-sm font-medium transition-[filter] hover:brightness-110"
-            style={{
-              ...chromePillSurfaceStyle,
-              color: "var(--graph-panel-text)",
-            }}
-          >
-            Enter the field
-          </button>
-        </motion.div>
       </div>
     </section>
   );

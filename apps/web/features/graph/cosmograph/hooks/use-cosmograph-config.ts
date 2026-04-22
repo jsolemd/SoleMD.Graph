@@ -14,7 +14,7 @@ import { BRAND, CANVAS } from "@/features/graph/lib/brand-colors";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
 
 export function useCosmographConfig(canvas: GraphCanvasSource) {
-  const scheme = useComputedColorScheme("light");
+  const scheme = useComputedColorScheme("dark");
   const isDark = scheme === "dark";
   const colors = isDark ? BRAND.dark : BRAND.light;
 

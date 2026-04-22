@@ -50,11 +50,12 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`} {...mantineHtmlProps}>
       <head>
-        <ColorSchemeScript defaultColorScheme="auto" />
-        {/* Set .dark class before paint to prevent FOUC — mirrors ColorSchemeScript logic */}
+        <ColorSchemeScript defaultColorScheme="dark" />
+        {/* Set .dark class before paint to prevent FOUC — mirrors ColorSchemeScript logic.
+            Default is dark; only an explicit "light" preference in localStorage opts out. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var s=localStorage.getItem("mantine-color-scheme-value");var d=s==="dark"||(s!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches);document.documentElement.classList.toggle("dark",d)}catch(e){}`,
+            __html: `try{var s=localStorage.getItem("mantine-color-scheme-value");document.documentElement.classList.toggle("dark",s!=="light")}catch(e){}`,
           }}
         />
       </head>

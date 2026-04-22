@@ -1,6 +1,6 @@
 # Module Terminology
 
-This file is the canonical vocabulary for field module authoring.
+Canonical vocabulary for authoring field modules.
 
 Use it when translating:
 
@@ -12,289 +12,234 @@ docs/map/modules/<module>.md
 runtime data and code identifiers
 ```
 
-Author-facing names win in module contracts.
-
-Runtime aliases are still recorded when they matter for implementation
-traceability, but they should not be the primary language we use with the
-user when a clearer product term exists.
+This file is the author-facing vocabulary. Deep runtime-tuning terms
+(`visual preset`, `point source`, `chapter hook`, `shell variant`) live
+in the runtime manual at `.claude/skills/module/SKILL.md` and should not
+appear in module contracts unless a module actually diverges from
+defaults.
 
 ## Translation Rule
 
-Every durable change request should be translated into named module parts
-before code changes begin.
+Every durable change request should be expressible as named module
+parts before code changes begin. The minimal path:
 
-The minimal conversion path is:
+1. identify the target `module`
+2. identify the target `chapter` (and `beat`, if any)
+3. identify the stage ownership change (`owner` / `carry` rows)
+4. identify the `overlay` change, if any
+5. identify the `ending pattern`
+6. identify the `data bridge`, if any
+7. identify `locked deviations`
 
-1. identify the target surface
-2. identify the target chapter or beat
-3. identify the fixed-stage ownership change
-4. identify the particle/motion change
-5. identify the overlay or DOM shell change
-6. identify the data-bridge change, if any
-7. identify the ending pattern
-8. identify locked deviations or non-goals
-
-If a request cannot be expressed in those terms yet, the brief is still too
+If a request cannot be expressed in those terms, the brief is too
 vague for implementation.
 
-## Named Authoring Components
+## Core Vocabulary
 
-| Term | Meaning | What it should answer |
-|---|---|---|
-| `surface` | The full landing/module experience being authored. | Which page or module is changing? |
-| `module contract` | The checked-in implementation spec in `docs/map/modules/<module>.md`. | What should be built? |
-| `chapter` | A named story segment with one structural anchor. | Which narrative block is changing? |
-| `beat` | A stable sub-step inside a chapter. | Which sub-moment is changing? |
-| `section id` | The DOM anchor id for a chapter. | Which scroll anchor owns progress? |
-| `stage manifest row` | One authored controller window in the fixed stage. | Which controller family is active where? |
-| `stage owner` | The controller family currently leading the fixed stage. | What carries the scene in this chapter? |
-| `stage carry` | A controller family that remains visible without being the sole owner. | What persists underneath or alongside the owner? |
-| `stage overlap` | A chapter window where two families are intentionally visible together. | Where do the scene families coexist? |
-| `controller family` | A reusable stage archetype such as `blob`, `stream`, or an object-formation surface. | Which runtime family renders this behavior? |
-| `point source` | The particle distribution source for a controller family. | Where do the particles come from? |
-| `visual preset` | The low-level render and motion tuning for a controller family. | How does the family look and feel? |
-| `chapter timeline` | The authored target curve across chapter progress. | What should scrub as progress moves from 0 to 1? |
-| `chapter hook` | The adapter key for DOM/SVG-only choreography. | Which non-canvas chapter choreography runs here? |
-| `overlay` | DOM/SVG/UI layered with the fixed stage. | What shell content must stay synchronized? |
-| `data bridge` | Live graph or data coupling a chapter depends on. | Is this ambient-only, or data-aware? |
-| `ending pattern` | The way a surface resolves at the end. | Does it bookend, persist, or form a new object? |
-| `locked deviation` | An intentional difference from a reference surface or parity target. | What are we deliberately not changing? |
+### Identity
 
-## Vocabulary Layers
+- `module` — the checked-in spec under `docs/map/modules/<module>.md`.
+  Answers: what is being authored.
 
-### 1. Narrative Vocabulary
+### Narrative
 
-Use these terms when discussing story intent with the user:
+- `chapter` — a named story segment. Example: `Story 2`.
+- `beat` — a stable substep inside a chapter. Example: `info-5` is
+  the second beat of Story 3.
+- `purpose` — the semantic role of the chapter, written as a single
+  sentence. Required for every chapter. It replaces the retired
+  `narrative role` label: instead of tagging Story 1 as `focus`, write
+  what Story 1 is *for* ("introduce selection without losing the
+  globe"). Generic structural names like `Story 1` and `Story 2` must
+  carry a purpose line — the name alone does not convey intent.
 
-- `opening state`
-- `middle carrier`
-- `chapter`
-- `beat`
-- `narrative role`
-- `ending pattern`
+### Structural ids
 
-Recommended narrative-role labels:
+- `section id` — DOM anchor for a chapter. Example: `section-story-2`.
+- `chapter key` — adapter key when it differs from the section id.
+  Example: `storyTwo` is the adapter key for `section-story-2`.
 
-- `hero`
-- `orientation`
-- `focus`
-- `detail`
-- `bridge`
-- `synthesis`
-- `review path`
-- `mobile carry`
-- `end state`
+### Stage
 
-Modules may use more specific chapter names, but the role should still be
-clear.
+- `stage` — the fixed, pinned plane that carries the canvas and its
+  overlays. Does not scroll.
+- `controller family` — the reusable stage archetype.
+  Current families: `blob`, `stream`, `object-formation surface`.
+- `owner` — a controller family leading the stage in a chapter.
+- `carry` — a controller family that remains visible without leading.
+- `overlay` — DOM or SVG layered on top of the stage.
+  Current overlays on landing: `FieldHotspotPool`,
+  `FieldConnectionOverlay`, `FieldStoryProgress`.
 
-If a surface is still being storyboarded, prefer stable structural chapter
-names such as:
+If a chapter runs two families at once, list them as two manifest rows
+and describe the state with the **leading family first**:
+`stream owner + blob carry`, never `blob carry + stream owner`.
+There is no separate `overlap` term — overlap is what two rows in the
+same window already describe.
 
-- `Hero`
-- `Story 1`
-- `Story 2`
-- `Story 3`
-- `Sequence`
-- `CTA`
+### Runtime wiring
 
-Then let `narrative role`, `content`, and `stage state` carry the current
-meaning.
+- `chapter progress` — the 0→1 number a chapter publishes as the
+  reader scrolls through it. Controllers and overlays consume this
+  number to drive behavior.
+- `chapter adapter` — the code that translates `chapter progress` into
+  controller and overlay behavior. Example:
+  `scroll/chapters/landing-blob-chapter.ts`. Usually an implementation
+  detail, not named in module contracts.
 
-### 2. Fixed-Stage Vocabulary
+### Qualifiers
 
-Use these terms when discussing the runtime ownership model:
+- `ending pattern` — how the module resolves at the end. One of:
+  - `bookend return` — resolves to the opening state
+  - `persistent carry` — same family stays load-bearing through the close
+  - `authored formation` — particles converge into a specific target shape
+- `data bridge` — live graph or data coupling the module depends on.
+  Default: ambient-only, no bridge.
+- `mobile path` — what changes on narrow or coarse-input viewports.
+  Required field in every module contract and every chapter entry.
+- `reduced-motion path` — what is removed, what stays visible, what
+  becomes static when the user prefers reduced motion. Required field
+  in every module contract and every chapter entry.
+- `locked deviation` — an intentional break from a reference module or
+  parity target.
 
-- `section id`
-- `stage manifest row`
-- `stage owner`
-- `stage carry`
-- `stage overlap`
-- `controller family`
-- `stage item id`
-- `visual preset`
-- `point source`
+## Manifest Row Fields
 
-Important distinction:
+When editing a stage manifest row in code, the field names are:
 
-- `controller family` is the author-facing runtime concept
-- `stage item id` is the exact code identifier used in the manifest and scene
-  state when traceability matters
-
-### 3. Overlay Vocabulary
-
-Use these terms when discussing non-canvas elements synchronized to the stage:
-
-- `progress rail`
-- `hotspot pool`
-- `connection overlay`
-- `DOM shell`
-- `section chrome`
-
-These are overlays. They are not stage owners.
-
-### 4. Bridge Vocabulary
-
-Use these terms when discussing external coupling or behavior constraints:
-
-- `interaction mode`
-- `data bridge`
-- `reduced-motion path`
-- `mobile path`
-- `locked deviation`
-
-## Ending Patterns
-
-Every module contract should name the ending pattern explicitly.
-
-Use one of these terms:
-
-- `bookend return`
-  The surface resolves back to its opening state.
-- `persistent carry`
-  The same family remains load-bearing through the close.
-- `authored formation`
-  Particles converge into a specific target shape or surface.
-
-Do not describe an ending only as "more active" or "feels resolved." Name the
-pattern.
-
-## Historical Alias Map
-
-Most Maze-era landing chapter aliases have been removed from the current
-landing code. Keep this map only for migration work and historical note lookup.
-
-| Canonical term | Retired alias | How to think about it |
-|---|---|---|
-| `hero` chapter key | `welcome` | Landing hero adapter key before the canonical rename pass. |
-| `surfaceRail` chapter key | `clients` | Landing surface-rail adapter key before the canonical rename pass. |
-| `storyTwo` chapter key | `graphRibbon` | Landing Story 2 adapter key before the canonical rename pass. |
-| `sequence` chapter key | `events` | Landing sequence adapter key before the canonical rename pass. |
-| `mobileCarry` chapter key | `moveNew` | Landing mobile-carry adapter key before the canonical rename pass. |
-
-Current generic runtime terms that still matter:
-
-- `object-formation surface` currently uses stage item id `objectFormation`
-- manifest rows use `sectionId` for the section id field
-- manifest rows use `stageItemId` for the controller-family id field
-- manifest rows use `endSectionId` for carry-window end ids
-- manifest rows use `presetId` for the visual preset id field
-
-## Authoring Rules
-
-### 1. Prefer product language over inherited Maze language
-
-Good:
-
-- `Detail Story`
-- `Review Path`
-- `Mobile Carry`
-- `object-formation surface`
-- `Story 2` with `narrative role: detail`
-
-Avoid as the primary authoring term:
-
-- `graphRibbon`
-- `events`
-- `moveNew`
-- `pcb`
-
-Those names are valid only when pointing to archived Maze source notes or
-historical migration material.
-
-### 2. Name the ownership state, not only the visual
-
-Good:
-
-- `blob owner`
-- `blob carry`
-- `blob + stream overlap`
-
-Too vague:
-
-- `blob section`
-- `stream moment`
-- `particles get busier`
-
-### 3. Name the overlay separately from the stage owner
-
-Good:
-
-- `blob owner with progress rail`
-- `blob + stream overlap with connection overlay`
-
-Bad:
-
-- `the overlay chapter`
-
-The overlay is not the chapter owner. It is an attached layer.
-
-### 4. Name the ending pattern explicitly
-
-Good:
-
-- `CTA uses a bookend return to the opening blob`
-- `Story 3 ends in an authored formation`
-
-Bad:
-
-- `make the ending feel like Maze`
-
-## Natural Language To Contract Fields
-
-Use this mapping whenever a conversational brief becomes a checked-in module
-contract.
-
-| If the user says... | Record it as... |
+| Code field | Authoring term |
 |---|---|
-| "the blob should stay through the whole page" | `stage owner` / `stage carry` decision |
-| "the points should become a molecule at the end" | `ending pattern: authored formation` plus `controller family` choice |
-| "the copy cards should appear over the field" | `overlay` requirement |
-| "this section should feel like inspection, not synthesis" | `chapter name` plus `narrative role` |
-| "it should move more on scroll" | `chapter timeline` / `particle behavior` / `interaction or motion intent` |
-| "this should work the same on mobile" | `mobile path` requirement |
-| "don't make it disappear like Maze" | `locked deviation` |
-| "tie this to the graph selection" | `data bridge` requirement |
+| `sectionId` | section id |
+| `stageItemId` | controller family |
+| `endSectionId` | carry window end |
+| `presetId` | visual preset (usually same as `stageItemId`) |
 
-## Minimum Required Names Per Change Request
+`presetId` and `stageItemId` diverge only when a module intentionally
+swaps visual tuning for a family. On landing they match for every row.
 
-If a change is durable enough to touch code or the checked-in module contract,
-it should be expressible with at least these names:
+## Chapter Key Bridge
 
-- `surface`
-- `chapter`
-- `section id`
-- `stage owner or stage state`
-- `particle behavior`
-- `overlay`
-- `ending pattern`
-- `locked deviation`, if one exists
+When adapter code targets a chapter it uses a `FieldChapterKey`
+(`apps/web/features/field/scroll/chapter-adapters/types.ts`). Each key
+maps 1:1 to a section id. Use the key in code, the section id in the
+module contract.
 
-If the request touches a sub-step, add:
-
-- `beat id`
-
-If the request touches DOM/SVG chapter choreography, add:
-
-- `chapter hook`
-- `historical alias`, if you are tracing an older landing note or migration
+| Chapter key | Section id |
+|---|---|
+| `hero` | `section-hero` |
+| `surfaceRail` | `section-surface-rail` |
+| `storyOne` | `section-story-1` |
+| `storyTwo` | `section-story-2` |
+| `storyThree` | `section-story-3` |
+| `sequence` | `section-sequence` |
+| `mobileCarry` | `section-mobile-carry` |
+| `cta` | `section-cta` |
 
 ## Landing Reference Map
 
-When the landing storyboard is still moving, use stable structural chapter
-names and let the narrative role explain what the chapter currently means.
+| Chapter | Section id | Key | Stage state |
+|---|---|---|---|
+| `Hero` | `section-hero` | `hero` | blob owner |
+| `Surface Rail` | `section-surface-rail` | `surfaceRail` | blob carry |
+| `Story 1` | `section-story-1` | `storyOne` | blob owner |
+| `Story 2` | `section-story-2` | `storyTwo` | stream owner + blob carry |
+| `Story 3` | `section-story-3` | `storyThree` | stream owner + blob carry |
+| `Sequence` | `section-sequence` | `sequence` | stream owner + blob carry |
+| `Mobile Carry` | `section-mobile-carry` | `mobileCarry` | stream owner + blob carry |
+| `CTA` | `section-cta` | `cta` | blob owner |
 
-| Structural chapter name | Narrative role | Section id | Chapter key, if any | Stage state |
-|---|---|---|---|---|
-| `Hero` | `hero` | `section-hero` | `hero` | `blob owner` |
-| `Surface Rail` | `orientation` | `section-surface-rail` | `surfaceRail` | `blob carry` |
-| `Story 1` | `focus` | `section-story-1` | none | `blob owner` |
-| `Story 2` | `detail` | `section-story-2` | `storyTwo` | `blob + stream overlap` |
-| `Story 3` | `synthesis` | `section-story-3` | none | `blob + stream overlap` |
-| `Sequence` | `review path` | `section-sequence` | `sequence` | `blob + stream overlap` |
-| `Mobile Carry` | `mobile carry` | `section-mobile-carry` | `mobileCarry` | `blob + stream overlap` |
-| `CTA` | `end state` | `section-cta` | `cta` | `blob owner` |
+`object-formation surface` (stage item id `objectFormation`) is not a
+landing stage owner. It is reserved for future module pages and
+authored-shape endings.
 
-`objectFormation` is not a landing chapter. In current SoleMD language it is
-the stage item id for the object-formation surface family, reserved for future
-modules or authored-shape endings.
+## Authoring Rules
+
+### 1. Prefer product language
+
+Good: `Detail Story`, `Review Path`, `Mobile Carry`.
+Avoid as primary authoring terms: `graphRibbon`, `events`, `moveNew`,
+`pcb`.
+
+### 2. Name ownership, not only visual
+
+Good: `blob owner`, `blob carry`, `stream owner + blob carry`.
+Too vague: `blob section`, `stream moment`, `particles get busier`.
+
+Always lead with the owning family when two are present. The reader
+should know in one glance which family is driving the scene.
+
+### 3. Name overlays separately from the stage
+
+Good: `blob owner with progress rail`.
+Bad: `the progress-rail chapter`. The overlay is not the chapter owner.
+
+### 4. Name the ending pattern explicitly
+
+Good: `CTA uses a bookend return to the opening blob`.
+Bad: `make the ending feel like Maze`.
+
+### 5. Write a purpose line, even for generic chapter names
+
+Good (Story 1): *"Introduce paper selection without losing the globe."*
+Bad (Story 1): no purpose line, relying on the name.
+
+`Story 1`, `Story 2`, and `Story 3` are structural names and do not
+carry semantic content on their own. The purpose line is where the
+reader learns what the chapter is *for*.
+
+## Natural Language to Contract Fields
+
+| If the user says... | Record it as... |
+|---|---|
+| "the blob should stay through the whole page" | owner / carry decision |
+| "the points should become a molecule at the end" | `ending pattern: authored formation` + controller family |
+| "the copy cards should appear over the field" | `overlay` requirement |
+| "this section should feel like inspection, not synthesis" | chapter `purpose` line |
+| "it should move more on scroll" | chapter progress curve |
+| "this should work the same on mobile" | mobile-path note in the module contract |
+| "don't make it disappear like Maze" | `locked deviation` |
+| "tie this to the graph selection" | `data bridge` requirement |
+
+## Minimum Named Parts Per Change Request
+
+If a change is durable enough to touch code or the module contract, it
+should be expressible with at least:
+
+- `module`
+- `chapter` (with a `purpose` line)
+- `section id`
+- `owner` / `carry` for the stage
+- `overlay`, if any
+- `ending pattern`, if the change touches the close
+
+If the change touches a substep, add:
+
+- `beat id`
+
+## Retired Terminology
+
+These terms were retired in favor of the core vocabulary above. Kept
+here only so older notes and migration docs remain decodable.
+
+| Retired | Replaced by |
+|---|---|
+| `surface` | `module` |
+| `module contract` (as noun) | `module` |
+| `stage overlap` | two manifest rows (one owner + one carry, or two owners) |
+| `stage item id` | `controller family` (as authoring term) |
+| `visual preset` / `preset id` / `point source` | runtime tuning — see runtime manual |
+| `chapter timeline` | `chapter progress` (the curve is described, not named) |
+| `chapter hook` | `chapter adapter` (DOM/SVG choreography is an adapter) |
+| `DOM shell` / `section chrome` | `overlay` |
+| `narrative role` | `purpose` line on every chapter |
+| `shell variant` / `interaction mode` | runtime concerns — see runtime manual |
+
+Retired chapter-key aliases (Maze migration):
+
+| Canonical | Retired alias |
+|---|---|
+| `hero` | `welcome` |
+| `surfaceRail` | `clients` |
+| `storyTwo` | `graphRibbon` |
+| `sequence` | `events` |
+| `mobileCarry` | `moveNew` |

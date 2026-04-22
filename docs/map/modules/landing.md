@@ -1,226 +1,305 @@
 # Landing Module Inventory
 
-This file is the canonical section inventory for the field landing
-surface.
+This file is the canonical chapter inventory for the field landing
+module.
 
-Use it when naming work. The goal is to let us say "work on `section-sequence`"
-or "change Story 2 beat 02" without re-deriving the page structure from code.
+Use it when naming work. The goal is to let us say "work on
+`section-sequence`" or "change Story 2 beat 02" without re-deriving
+the page structure from code.
 
 The landing runtime architecture itself lives in
-`.claude/skills/module/SKILL.md`.
+`.claude/skills/module/SKILL.md`. Authoring vocabulary lives in
+`docs/map/modules/module-terminology.md`.
 
-This file is intentionally the inventory/contract view of `Module Zero`, not a
+This file is intentionally the inventory/contract view, not a
 duplicate of the full runtime manual.
+
+## Module Identity
+
+- Module id: `landing`
+- Module kind: `landing`
+- Runtime family: `Field`
+- Ending pattern: `bookend return`
+- Checked-in contract: `docs/map/modules/landing.md`
+- Global locked deviations:
+  - Landing ends on the opening blob (bookend return), not on a
+    Maze-style terminal object-formation surface.
+- Mobile path:
+  - same runtime, same chapter structure, same vocabulary; the field
+    animation drives the visual story on any viewport without a second
+    scene system.
+- Reduced-motion path:
+  - static copy, reduced particle motion, overlays fade-in rather
+    than scrub.
+
+## Narrative Thesis
+
+The landing helps the reader understand what Cosmograph — and the
+SoleMD.Graph product it renders — makes possible. The through-line is
+a zoom through four layers of the graph:
+
+1. **elementary units** — the field as particles (Hero, Surface Rail)
+2. **papers** — individual citable units (Story 1)
+3. **entities** — recurring concepts that thread across papers (Story 2)
+4. **connections** — relations that turn isolated papers into reasoning
+   paths (Story 3)
+5. **synthesis** — clusters, living-knowledge articles, and educational
+   modules that emerge from the field (Sequence)
+
+Mobile Carry asserts the graph travels with the clinician; CTA returns
+the field to its opening state as a bookend.
 
 ## Terminology Bridge
 
-Use these names when discussing landing changes.
-
-Preferred author-facing chapter names:
-
-- `Hero`
-- `Surface Rail`
-- `Story 1`
-- `Story 2`
-- `Story 3`
-- `Sequence`
-- `Mobile Carry`
-- `CTA`
-
-Canonical landing chapter keys:
-
-- `hero`
-- `surfaceRail`
-- `storyTwo`
-- `sequence`
-- `mobileCarry`
-- `cta`
-
-Retired landing aliases kept only for historical lookup:
-
-- `welcome` -> `hero`
-- `clients` -> `surfaceRail`
-- `graphRibbon` -> `storyTwo`
-- `events` -> `sequence`
-- `moveNew` -> `mobileCarry`
-
-Preferred controller-family names:
-
-- `blob`
-- `stream`
-- `object-formation surface`
-
-Current stage item ids:
-
-- `blob`
-- `stream`
-- `objectFormation`
-
-Rule:
-
-- use the author-facing names in chapter discussion and module contracts
-- use canonical section ids and chapter keys in current implementation work
-- use retired aliases only when tracing older notes or migration history
+Uses canonical vocabulary from `module-terminology.md`. No module-
+specific divergence.
 
 ## Stage Manifest
 
-The fixed stage now has one continuous landing substrate plus one overlapping
-middle-chapter carrier:
+The fixed stage runs one continuous landing substrate (`blob`) plus one
+overlapping middle-module carrier (`stream`).
 
-| Order | Section id | Owner family | Preset id | Carry window |
+| Order | Section id | Controller family | Ownership | Carry window |
 |---|---|---|---|---|
-| 1 | `section-hero` | `blob` | `blob` | through `section-surface-rail` |
-| 2 | `section-surface-rail` | `blob` | `blob` | through `section-story-1` |
-| 3 | `section-story-1` | `blob` | `blob` | through `section-story-2` |
-| 4 | `section-story-2` | `blob` | `blob` | through `section-story-3` |
-| 5 | `section-story-2` | `stream` | `stream` | through `section-story-3` |
-| 6 | `section-story-3` | `blob` | `blob` | through `section-sequence` |
-| 7 | `section-story-3` | `stream` | `stream` | through `section-sequence` |
-| 8 | `section-sequence` | `blob` | `blob` | through `section-mobile-carry` |
-| 9 | `section-sequence` | `stream` | `stream` | through `section-mobile-carry` |
-| 10 | `section-mobile-carry` | `blob` | `blob` | through `section-cta` |
-| 11 | `section-mobile-carry` | `stream` | `stream` | through `section-cta` |
-| 12 | `section-cta` | `blob` | `blob` | CTA-local bookend |
+| 1 | `section-hero` | `blob` | `owner` | through `section-surface-rail` |
+| 2 | `section-surface-rail` | `blob` | `carry` | through `section-story-1` |
+| 3 | `section-story-1` | `blob` | `owner` | through `section-story-2` |
+| 4 | `section-story-2` | `blob` | `carry` | through `section-story-3` |
+| 5 | `section-story-2` | `stream` | `owner` | through `section-story-3` |
+| 6 | `section-story-3` | `blob` | `carry` | through `section-sequence` |
+| 7 | `section-story-3` | `stream` | `owner` | through `section-sequence` |
+| 8 | `section-sequence` | `blob` | `carry` | through `section-mobile-carry` |
+| 9 | `section-sequence` | `stream` | `owner` | through `section-mobile-carry` |
+| 10 | `section-mobile-carry` | `blob` | `carry` | through `section-cta` |
+| 11 | `section-mobile-carry` | `stream` | `owner` | through `section-cta` |
+| 12 | `section-cta` | `blob` | `owner` | — |
 
-Supporting stage overlays:
+Landing stage overlays (pinned to the stage, Plane A):
 
-- `FieldHotspotPool` — blob hotspot DOM pool projected into the fixed stage
-- `FieldConnectionOverlay` — connection lines keyed off shared Story 3 chapter progress
+- `FieldHotspotPool` — blob hotspot DOM pool projected onto blob points
+- `FieldConnectionOverlay` — SVG lines keyed off shared Story 3
+  progress. **Deferred for removal** once Story 3's visx graph overlay
+  ships (Phase 2 — see Deferred Overlays below).
+
+In-section UI (rendered inside the scrolling `<section>`, Plane B — not
+a stage overlay):
+
+- `FieldStoryProgress` — beat progress rail, mounted inside Story 1 and
+  Story 3 chapters alongside their beats
+
+## Deferred Overlays (Phase 2 — visx graph overlays)
+
+Four chapter-bound SVG overlays authored with `visx`, each pinned
+during its chapter's carry window and driven by shared chapter
+progress. Maze-grammar layering — field dims behind, overlay strokes
+in as scroll progresses. All four share one illustrative fixture
+dataset (real-feeling cross-specialty content: lithium, delirium,
+QT, haloperidol, catatonia, NMS, encephalopathy).
+
+- Story 1: paper-node reveal pass — ~10 labeled paper nodes fade in
+  one at a time.
+- Story 2: entity layer — entity nodes fade in with arcs linking them
+  to the paper subset from Story 1.
+- Story 3: edge stroke-draw pass — relations between papers and
+  entities draw in as the beats progress. Replaces
+  `FieldConnectionOverlay`.
+- Sequence: cluster/label pass — soft enclosing curves around
+  groups of nodes with three cluster labels matching the synthesis
+  cards.
+
+Not shipped in Phase 1. Tracked as module-level deferred work.
 
 ## Chapter Inventory
 
 ### 1. Hero
 
-- Narrative role: `hero`
 - Section id: `section-hero`
 - Chapter key: `hero`
-- Stage state: blob already visible as the landing substrate
+- Stage state: `blob owner`
+- Purpose: introduce the project with a weighted thesis — *the clinical
+  connectome* — so the reader arrives oriented to the neuroscience /
+  psychiatry / psychology target and the graph-shaped-like-its-subject
+  metaphor before the zoom begins.
 - Content:
   - eyebrow: `Field`
-  - title: `Enter one living evidence field.`
-  - body: one-paragraph intro to the shared evidence field
-  - CTA: `Enter the field`
+  - title: `The clinical connectome.`
+  - body: `A living graph of biomedical evidence — shaped like what
+    it studies.`
+- Overlay: none
+- Interaction: passive scroll. No CTA button in Hero; the
+  `FieldScrollCue` is the only affordance.
 
 ### 2. Surface Rail
 
-- Narrative role: `orientation`
 - Section id: `section-surface-rail`
 - Chapter key: `surfaceRail`
-- Stage state: blob carry
+- Stage state: `blob carry`
+- Purpose: preview the four zoom levels the reader is about to descend
+  through, so the story below reads as a promised arc rather than a
+  sequence of independent sections.
 - Content:
-  - title: `Keep trusted surface types close to the field instead of cutting away.`
-  - six cards:
-    - `Ranked paper clusters`
-    - `Entity neighborhoods`
-    - `Relation paths`
-    - `Evidence claim cards`
-    - `Wiki-ready narratives`
-    - `Graph continuation`
+  - eyebrow: `Zoom Levels`
+  - title: `Four layers deep.`
+  - body: `The same field, resolved four ways — papers, entities,
+    connections, synthesis.`
+  - four zoom labels (rendered as plain-typography grid, no pills):
+    - `Papers`
+    - `Entities`
+    - `Connections`
+    - `Synthesis`
+- Overlay: none
 
 ### 3. Story 1
 
-- Narrative role: `focus`
 - Section id: `section-story-1`
-- Progress rail: Story 1 instance
-- Stage owner: blob
+- Chapter key: `storyOne`
+- Stage state: `blob owner`
+- Purpose: land the first zoom step — individual papers pull out of the
+  substrate as identifiable citable units.
 - Content:
-  - beat `info-1` / progress `01`
-    - title: `Highlight the papers that should pull the reader deeper`
-  - beat `info-2` / progress `02`
-    - title: `Use context to separate high-value papers from the wider field`
-  - beat `info-3` / progress `03`
-    - title: `Prepare the jump from selected papers into paper details and relations`
+  - eyebrow: `Papers`
+  - title: `Each point is a paper.`
+  - body: `Every dot you see is a real paper — indexed, embedded,
+    retrievable.`
+  - beat `info-1` / progress `01` — title: `Papers emerge`
+  - beat `info-2` / progress `02` — title: `Context narrows`
+  - beat `info-3` / progress `03` — title: `Ready to connect`
+    (centered variant)
+- In-section UI:
+  - `FieldStoryProgress` — beat progress rail tracking info-1 → info-3
+- Overlay:
+  - `hotspot cards` (`FieldHotspotPool`) anchored to blob points
+  - `graph overlay (visx)` — Phase 2, deferred; paper-node reveal pass
+    over the shared fixture
 
 ### 4. Story 2
 
-- Narrative role: `detail`
 - Section id: `section-story-2`
 - Chapter key: `storyTwo`
-- Stage state: blob + stream overlap; stream becomes the forward carrier while blob stays visible underneath
+- Stage state: `stream owner + blob carry`
+- Purpose: reveal the entity layer — the concepts (diagnoses, drugs,
+  mechanisms) that recur across papers and organize the field's
+  structure above the paper grain.
 - Content:
-  - eyebrow: `Detail Story`
-  - title: `Move from papers into entities, relations, and paper metadata.`
-  - body: chapter intro to evidence-context inspection
-  - note: open chapter state intended to reveal the stream-owned field directly
-  - deferred asset pass: any future DOM/SVG stream shell is user-authored and not currently part of the shipped landing structure
+  - eyebrow: `Entities`
+  - title: `They thread together.`
+  - body: `The threads are concepts — diagnoses, drugs, mechanisms —
+    that recur across papers.`
+- Overlay:
+  - `graph overlay (visx)` — Phase 2, deferred; entity-node reveal with
+    arcs linking entities to the paper subset from Story 1
 
 ### 5. Story 3
 
-- Narrative role: `synthesis`
 - Section id: `section-story-3`
-- Progress rail: Story 2 instance
-- Stage state: blob + stream overlap
+- Chapter key: `storyThree`
+- Stage state: `stream owner + blob carry`
+- Purpose: make the relational structure explicit — connections turn
+  isolated papers into reasoning paths a clinician could traverse.
 - Content:
-  - beat `info-4` / progress `01`
-    - title: `Keep the selected papers in view while entity detail starts to accumulate`
-  - beat `info-5` / progress `02`
-    - title: `Make the bridges between evidence neighborhoods explicit`
-  - beat `info-6` / progress `03`
-    - title: `Stage the wiki-facing synthesis without collapsing the shared field`
+  - eyebrow: `Connections`
+  - title: `And they connect.`
+  - body: `When concepts recur, the graph records a relation. Delirium,
+    haloperidol, QT, lithium — the literature already reasons this way.
+    The graph makes it visible.`
+  - beat `info-4` / progress `01` — title: `Edges begin`
+  - beat `info-5` / progress `02` — title: `Bridges form`
+  - beat `info-6` / progress `03` — title: `The pattern appears`
+    (centered variant)
+- In-section UI:
+  - `FieldStoryProgress` — beat progress rail tracking info-4 → info-6
+- Overlay:
+  - `connection overlay` (`FieldConnectionOverlay`) — current; deferred
+    for removal once the visx overlay ships
+  - `graph overlay (visx)` — Phase 2, deferred; edge stroke-draw pass
+    that supersedes `FieldConnectionOverlay`
 
 ### 6. Sequence
 
-- Narrative role: `review path`
 - Section id: `section-sequence`
 - Chapter key: `sequence`
-- Stage state: blob + stream overlap
+- Stage state: `stream owner + blob carry`
+- Purpose: show the fourth zoom level — synthesis — where clusters,
+  living-knowledge articles, and educational modules emerge from the
+  field as higher-order structure.
 - Content:
-  - title: `Turn raw motion into an intelligible review sequence.`
-  - three review cards:
-    - `01` — `Surface the paper worth opening`
-    - `02` — `Expose the surrounding entity context`
-    - `03` — `Connect the bridges into synthesis`
+  - eyebrow: `Synthesis`
+  - title: `Structure emerges.`
+  - body: `Clusters form. Articles write themselves. Educators build
+    modules on real nodes.`
+  - three synthesis cards (rendered as plain-typography grid, no pills):
+    - `01` — **Clusters** — `Research communities form from embedding
+      proximity, not predefined categories.`
+    - `02` — **Living Knowledge** — `Auto-synthesized articles per entity
+      — definitions, key findings, open questions — refreshed on every
+      build.`
+    - `03` — **Educational Modules** — `Step-through lessons anchored to
+      real graph nodes. Sourced evidence illuminates around you as you
+      progress.`
+- Overlay:
+  - `graph overlay (visx)` — Phase 2, deferred; cluster/label pass with
+    three cluster labels matching the synthesis cards
 
 ### 7. Mobile Carry
 
-- Narrative role: `mobile carry`
 - Section id: `section-mobile-carry`
 - Chapter key: `mobileCarry`
-- Stage state: blob + stream overlap, with stream fading out toward CTA
+- Stage state: `stream owner + blob carry` with stream fading out
+  toward CTA
+- Purpose: make the mobile claim a product claim, not a UX concession —
+  the same graph, same reasoning, on the device a clinician actually
+  uses at bedside.
 - Content:
-  - title: `Keep the field in motion on smaller screens without inventing a second runtime.`
-  - marquee chips:
-    - `Same field`
-    - `Same particles`
-    - `Mobile carry`
-    - `Evidence context`
-    - `Relation bridges`
-    - `Wiki-ready synthesis`
+  - eyebrow: `Mobile`
+  - title: `The graph comes with you.`
+  - body: `Same field on rounds, at bedside, on the train. No second
+    runtime.`
+- Overlay: none
+- Note: the chapter renders copy only. The marquee adapter
+  (`mobileCarryChapterAdapter`) is preserved in the chapter-adapter
+  registry and gates cleanly on missing DOM, so a future chip or
+  marquee pass can rebuild by reintroducing `[data-mobile-carry-viewport]`
+  + `[data-mobile-carry-track]` markers inside the section.
 
 ### 8. CTA
 
-- Narrative role: `end state`
 - Section id: `section-cta`
 - Chapter key: `cta`
-- Stage owner: blob
+- Stage state: `blob owner`
+- Purpose: resolve the zoom as a bookend — the field returns to its
+  opening state — and invite the reader into the live graph.
 - Content:
   - eyebrow: `End State`
-  - title: `Close on the same globe the reader met at the start.`
-  - body: one-paragraph closing statement about the blob returning to a stable bookend state
+  - title: `Open the graph.`
+  - body: `You've seen the shape of it. The living graph is live.`
   - buttons:
-    - `Go to graph`
-    - `Return to top`
+    - single centered `Enter` button, routing to `/graph`; disabled
+      state labels as `Graph still warming` while warmup is in flight.
+      Return-to-top is delegated to the SoleMD brand pill in the top-left
+      chrome, not to a second CTA button.
+- Overlay: none
 
 ## Runtime Contract Notes
 
-- Landing stage timing is now driven by shared chapter progress in
-  `scroll/field-scroll-state.ts`, not by controller-local
-  ScrollTriggers.
-- `BlobController` and `StreamController` consume declarative chapter target
-  sets from `scroll/chapters/landing-blob-chapter.ts` and
+- Landing stage timing is driven by shared chapter progress in
+  `scroll/field-scroll-state.ts`, not by controller-local ScrollTriggers.
+- `BlobController` and `StreamController` consume declarative chapter
+  target sets from `scroll/chapters/landing-blob-chapter.ts` and
   `scroll/chapters/landing-stream-chapter.ts`.
-- `objectFormation` remains the current stage item id for the
-  object-formation surface family used by future module pages and
-  authored-shape endings, but it is not an active landing-stage owner.
+- `objectFormation` (object-formation surface) is defined as a stage
+  item id but is not an active landing-stage controller. It is reserved
+  for future module pages and authored-shape endings.
+- The Phase 2 visx graph overlays read chapter progress from the same
+  shared scene state — no second scroll observer.
 
 ## Naming Rule
 
-When discussing landing work, refer to sections by:
+When discussing landing work, refer to chapters by:
 
 - chapter name when the target is narrative or product-facing
 - section id when the target is structural or runtime-bound
 - chapter key when the target is adapter/motion-bound
-- beat id when the target is inside Story 1 or Story 2
+- beat id when the target is inside Story 1 or Story 3
 
 Examples:
 

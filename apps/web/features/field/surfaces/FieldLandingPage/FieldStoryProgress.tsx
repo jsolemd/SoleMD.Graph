@@ -29,6 +29,7 @@ export function FieldStoryProgress({
   const sceneStore = useFieldSceneStore();
   const progressRootRef = useRef<HTMLDivElement>(null);
   const barRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const numberRefs = useRef<Array<HTMLDivElement | null>>([]);
   const descRef = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
@@ -38,6 +39,17 @@ export function FieldStoryProgress({
     const mobileMql = window.matchMedia("(max-width: 1023px)");
     const headerHeight = APP_CHROME_PX.panelTop;
     const sectionId = FIELD_CHAPTER_SECTION_IDS[chapterKey];
+
+    const applyNumberEmphasis = (currentVisible: number) => {
+      numberRefs.current.forEach((numNode, index) => {
+        if (!numNode) return;
+        const isCurrent = index + 1 === currentVisible;
+        numNode.style.color = isCurrent
+          ? "var(--graph-panel-text)"
+          : "var(--graph-panel-text-dim)";
+        numNode.style.fontWeight = isCurrent ? "600" : "500";
+      });
+    };
 
     const resetBars = () => {
       beatIds.forEach((_, index) => {
@@ -50,6 +62,7 @@ export function FieldStoryProgress({
       barRefs.current.forEach((bar) => {
         bar?.parentElement?.removeAttribute("aria-current");
       });
+      applyNumberEmphasis(0);
       if (descRef.current) {
         descRef.current.textContent = `Chapter 1 of ${beatIds.length}`;
       }
@@ -128,6 +141,8 @@ export function FieldStoryProgress({
         }
       });
 
+      applyNumberEmphasis(currentVisible);
+
       if (descRef.current) {
         descRef.current.textContent = `Chapter ${currentVisible} of ${beatIds.length}`;
       }
@@ -177,7 +192,12 @@ export function FieldStoryProgress({
           role="listitem"
           className="flex min-w-[124px] items-center gap-3"
         >
-          <div className="text-[11px] font-medium tracking-[0.18em] text-[var(--graph-panel-text-dim)]">
+          <div
+            ref={(node) => {
+              numberRefs.current[index] = node;
+            }}
+            className="text-[11px] font-medium tracking-[0.18em] text-[var(--graph-panel-text-dim)] transition-[color,font-weight] duration-200"
+          >
             {String(index + 1).padStart(2, "0")}
           </div>
           <div
@@ -185,10 +205,10 @@ export function FieldStoryProgress({
               barRefs.current[index] = node;
             }}
             data-progress-bar
-            className="relative h-px flex-1 overflow-hidden rounded-full bg-[color:color-mix(in_srgb,var(--graph-panel-border)_44%,transparent)]"
+            className="relative h-[2px] flex-1 overflow-hidden rounded-full bg-[color:color-mix(in_srgb,var(--graph-panel-border)_65%,transparent)]"
           >
             <div
-              className="absolute inset-y-0 left-0 origin-left rounded-full bg-[var(--color-soft-blue)]"
+              className="absolute inset-y-0 left-0 w-full origin-left rounded-full bg-[var(--color-soft-blue)]"
               style={{
                 transform: `scaleX(var(--progress-${index + 1}, 0))`,
               }}

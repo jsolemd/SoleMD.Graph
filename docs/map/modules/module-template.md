@@ -14,7 +14,7 @@ runtime manual.
 ## Module Identity
 
 - Module id: `module-id`
-- Surface kind: `landing | wiki module | expanded module | bridge surface`
+- Module kind: `landing | wiki module | expanded module | bridge surface`
 - Runtime family: `Field`
 - Ending pattern: `bookend return | persistent carry | authored formation`
 - Human authoring source: `Obsidian/wiki path or note name`
@@ -36,124 +36,90 @@ metaphor, or motion direction.
 - Clarified opening state:
   - what the reader sees first
 - Clarified middle-state behavior:
-  - which controllers/states carry through the middle chapters
+  - which controllers carry through the middle chapters
 - Clarified ending state:
-  - bookend return vs new formed object
+  - `bookend return`, `persistent carry`, or `authored formation`
 - Chapter landmarks:
-  - ordered list of section/chapter names
-- Overlay / shell expectations:
-  - DOM shell, progress rail, hotspots, SVG rails, none
+  - ordered list of chapter names
+- Overlay expectations:
+  - progress rail, hotspot cards, connection lines, future overlays, or none
 - Interaction expectations:
-  - passive scroll, click/tap interactions, hover, graph actions
-- Data / graph coupling:
+  - passive scroll, click/tap, hover, graph actions
+- Data coupling:
   - none, ambient only, or specific graph/data bridge
 - Mobile path:
   - same runtime, alternate shell, density swap, or other explicit rule
 - Reduced-motion path:
   - what is removed, what remains visible, and what becomes static
-- Reference surfaces:
+- Reference modules:
   - `landing.md`, an Obsidian note, Maze parity, or other explicit analogs
 - Open questions still unresolved:
   - `none` if cleared before implementation
 
 ## Terminology Bridge
 
-Use this section when the clearest author-facing chapter or controller-family
-name differs from the current runtime alias.
-
-If the surface is still being storyboarded, prefer stable structural names and
-carry the current meaning in `narrative role` plus `content`.
-
-- Canonical chapter names:
-  - `Hero`
-  - `Surface Rail`
-  - `Story 1`
-  - `Story 2`
-  - `Story 3`
-  - `Sequence`
-  - `Mobile Carry`
-  - `CTA`
-- Canonical chapter keys:
-  - `hero`
-  - `surfaceRail`
-  - `storyTwo`
-  - `sequence`
-  - `mobileCarry`
-  - `cta`
-- Preferred controller-family names:
-  - `blob`
-  - `stream`
-  - `object-formation surface`
-- Current stage item ids used in code:
-  - `blob`
-  - `stream`
-  - `objectFormation`
-- Historical aliases or runtime-only names:
-  - `none`
-
-If no bridge is needed, write:
+Fill this in only when the module intentionally diverges from the canonical
+names in `module-terminology.md`. If the module uses canonical vocabulary
+throughout, write:
 
 - `none`
 
+If a bridge is needed, state it as one mapping per line:
+
+- author-facing name `->` canonical term in `module-terminology.md`
+
 ## Stage Manifest
 
-| Order | Section id | Owner family | Ownership mode | Stage item id | Preset id | Carry window | Particle behavior | Overlay status |
-|---|---|---|---|---|---|---|---|---|
-| 1 | `section-example` | `blob` | `owner` | `blob` | `blob` | through `section-next` | highlighted paper field | `progress` |
+| Order | Section id | Controller family | Ownership | Carry window |
+|---|---|---|---|---|
+| 1 | `section-example` | `blob` | `owner` | through `section-next` |
 
 Notes:
 
-- `Owner family` is the preferred author-facing runtime term.
-- `Ownership mode` should be one of:
-  - `owner`
-  - `carry`
-  - `overlap`
-- `Stage item id` is the code identifier when traceability matters.
-- `Particle behavior` should describe what the particles are doing in product
-  terms, not just the slug name.
-- `Overlay status` should be one of:
-  - `none`
-  - `hotspots`
-  - `progress`
-  - `DOM shell`
-  - `future`
+- `Ownership` is either `owner` or `carry`. When a chapter runs two
+  families at once, list two rows — one `owner`, one `carry`, or both
+  `owner`. Do not use a third ownership state.
+- When describing a two-row chapter in prose, lead with the owning
+  family: `stream owner + blob carry`, never `blob carry + stream owner`.
+- `Carry window` is the section id the row persists through (the
+  runtime field is `endSectionId`). Leave empty for the final row.
+- `presetId` is assumed to equal `stageItemId`. If a module intentionally
+  diverges, add a `Preset` column and record the deviation as a module-
+  level `locked deviation`.
 
 ## Chapter Inventory
 
 ### 1. Chapter Name
 
-- Narrative role: `hero | orientation | focus | detail | bridge | synthesis | review path | mobile carry | end state`
 - Section id: `section-example`
-- Historical alias or runtime alias: `none`
-- Chapter key or runtime alias: `example`
-- Stage owner or state: `blob owner`, `blob carry`, or `blob + stream overlap`
+- Chapter key: `example` (or `none` if not adapter-wired)
+- Stage state: `blob owner`, `blob carry`, or `stream owner + blob carry`
 - Purpose:
-  - one sentence about why this chapter exists
+  - one sentence about what this chapter is *for*. Required.
+  - load-bearing for generic structural names like `Story 1` and
+    `Story 2`, where the chapter name alone does not convey intent.
 - Content:
-  - title or headline
-  - key cards, beats, or supporting text
+  - title, headline, cards, beats, supporting text
 - Particle behavior:
-  - what the particles do in this chapter
+  - what the particles do in this chapter, in product terms
   - examples:
     - `remain a persistent blob while selected papers pulse`
     - `stream points bridge between evidence neighborhoods`
     - `object-formation plane reforms into a closing silhouette`
-- DOM overlay:
-  - `none`
-  - or describe the intended overlay:
-    - `progress rail`
-    - `hotspot cards`
-    - `future DOM shell`
+- Overlay:
+  - `none`, or describe the overlay:
+    - `progress rail` (`FieldStoryProgress`)
+    - `hotspot cards` (`FieldHotspotPool`)
+    - `connection overlay` (`FieldConnectionOverlay`)
+    - `future overlay` with a short description of what is deferred
 - Interaction / motion intent:
-  - what animates
-  - what scrubs
-  - what should remain static
+  - what animates, what scrubs, what stays static
 - Mobile path:
-  - what changes on narrow/coarse input
+  - what changes on narrow or coarse-input viewports
 - Reduced-motion path:
   - what becomes static, fades only, or disappears
-- Data dependencies:
-  - any content/data/graph dependency the chapter needs
+- Data bridge:
+  - any live graph/data dependency the chapter needs
 - Deferred items:
   - what is intentionally not built yet
 - Locked deviations:
@@ -161,11 +127,9 @@ Notes:
 
 ### 2. Beatful Chapter Example
 
-- Narrative role: `bridge`
 - Section id: `section-story`
-- Historical alias or runtime alias: `none`
-- Chapter key or runtime alias: `story`
-- Stage owner or state: `stream carry`
+- Chapter key: `story`
+- Stage state: `stream owner + blob carry`
 - Purpose:
   - narrative bridge from one scene meaning to the next
 - Content:
@@ -177,8 +141,8 @@ Notes:
     - title: `Third stable beat`
 - Particle behavior:
   - points stay visible while bridges become explicit
-- DOM overlay:
-  - story progress rail
+- Overlay:
+  - `progress rail` for beat tracking
 - Interaction / motion intent:
   - background particles scrub
   - foreground copy reveals on chapter entry
@@ -186,13 +150,13 @@ Notes:
   - same runtime, simplified overlay
 - Reduced-motion path:
   - static rail, no scrubbed reveal
-- Data dependencies:
+- Data bridge:
   - highlighted paper subset
   - relation bridge summary
 - Deferred items:
-  - future object-formation surface
+  - future authored formation
 - Locked deviations:
-  - points remain visible through detail story
+  - points remain visible through the detail chapter
 
 ## Naming Rule
 
@@ -200,7 +164,7 @@ When discussing work on this module, refer to:
 
 - `chapter name` for story intent
 - `section id` for structure/runtime ownership
-- `chapter key` only when adapter code is the target
+- `chapter key` when adapter code is the target
 - `beat id` for sub-beat copy or progression changes
 
 Examples:

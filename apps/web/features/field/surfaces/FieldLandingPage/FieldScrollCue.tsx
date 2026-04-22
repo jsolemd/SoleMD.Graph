@@ -19,7 +19,7 @@ const SCROLL_CUE_FALLBACK_COLOR: LottieRgba = [0.102, 0.106, 0.118, 1];
 
 export function FieldScrollCue() {
   const reducedMotion = useReducedMotion();
-  const colorScheme = useComputedColorScheme("light");
+  const colorScheme = useComputedColorScheme("dark");
   const [rgba, setRgba] = useState<LottieRgba | null>(null);
 
   useEffect(() => {
