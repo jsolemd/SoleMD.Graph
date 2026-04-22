@@ -10,7 +10,7 @@ import {
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery, useViewportSize } from "@mantine/hooks";
-import { useReducedMotion } from "framer-motion";
+import { MotionConfig, useReducedMotion } from "framer-motion";
 import type { Camera } from "three";
 import type { GraphBundle } from "@solemd/graph";
 import {
@@ -56,7 +56,6 @@ import {
 import { FieldCtaSection } from "./FieldCtaSection";
 import { FieldGraphWarmupAction } from "./FieldGraphWarmupAction";
 import { FieldHeroSection } from "./FieldHeroSection";
-import { FieldMobileCarrySection } from "./FieldMobileCarrySection";
 import { FieldScrollCue } from "./FieldScrollCue";
 import { FieldStoryChapter } from "./FieldStoryChapter";
 import { FieldStoryTwoSection } from "./FieldStoryTwoSection";
@@ -206,7 +205,6 @@ function FieldLandingShellContent({
   const storyTwoSection = getLandingSection("section-story-2");
   const storyThreeSection = getLandingSection("section-story-3");
   const sequenceSection = getLandingSection("section-sequence");
-  const mobileCarrySection = getLandingSection("section-mobile-carry");
   const ctaSection = getLandingSection("section-cta");
 
   function scrollToSection(sectionId: string) {
@@ -320,8 +318,6 @@ function FieldLandingShellContent({
           section={sequenceSection}
         />
 
-        <FieldMobileCarrySection section={mobileCarrySection} />
-
         <FieldCtaSection
           graphReady={graphReady}
           onOpenGraph={() => {
@@ -386,24 +382,26 @@ function FieldLandingShell({
   }, [reducedMotion]);
 
   return (
-    <FieldSceneStoreProvider store={sceneStore}>
-      <FixedStageManagerProvider
-        isMobile={isCompactFieldViewport}
-        manifest={FIELD_SECTION_MANIFEST}
-        reducedMotion={!!reducedMotion}
-        sceneStore={sceneStore}
-        sceneStateRef={sceneStateRef}
-      >
-        <FieldLandingShellContent
-          activeStageItemIds={activeStageItemIds}
-          graphStatus={graphStatus}
-          isCompactFieldViewport={isCompactFieldViewport}
+    <MotionConfig reducedMotion="user">
+      <FieldSceneStoreProvider store={sceneStore}>
+        <FixedStageManagerProvider
+          isMobile={isCompactFieldViewport}
+          manifest={FIELD_SECTION_MANIFEST}
           reducedMotion={!!reducedMotion}
+          sceneStore={sceneStore}
           sceneStateRef={sceneStateRef}
-          showViewportToc={showViewportToc}
-        />
-      </FixedStageManagerProvider>
-    </FieldSceneStoreProvider>
+        >
+          <FieldLandingShellContent
+            activeStageItemIds={activeStageItemIds}
+            graphStatus={graphStatus}
+            isCompactFieldViewport={isCompactFieldViewport}
+            reducedMotion={!!reducedMotion}
+            sceneStateRef={sceneStateRef}
+            showViewportToc={showViewportToc}
+          />
+        </FixedStageManagerProvider>
+      </FieldSceneStoreProvider>
+    </MotionConfig>
   );
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { motion, type Transition, type Variants } from "framer-motion";
 import { useRef } from "react";
 import { useChapterAdapter } from "../../scroll/chapter-adapters/useChapterAdapter";
 import {
@@ -10,6 +11,33 @@ import {
 interface FieldSurfaceRailSectionProps {
   section: FieldLandingSection;
 }
+
+const REVEAL_EASE: Transition["ease"] = [0.16, 1, 0.3, 1];
+const REVEAL_VIEWPORT = { once: false, margin: "-12% 0px -8% 0px" } as const;
+
+const titleReveal: Variants = {
+  hidden: { opacity: 0, y: 22 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: REVEAL_EASE } },
+};
+
+const bodyReveal: Variants = {
+  hidden: { opacity: 0, y: 16 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.6, delay: 0.08, ease: REVEAL_EASE },
+  },
+};
+
+const railGridReveal: Variants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06, delayChildren: 0.16 } },
+};
+
+const railItemReveal: Variants = {
+  hidden: { opacity: 0, y: 14 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: REVEAL_EASE } },
+};
 
 export function FieldSurfaceRailSection({
   section,
@@ -30,24 +58,43 @@ export function FieldSurfaceRailSection({
     >
       <div className="mx-auto max-w-[1240px]">
         <div className="mx-auto max-w-[760px] text-center">
-          <h2 className="mx-auto mt-5 max-w-[16ch] text-[2rem] font-medium leading-[0.98] tracking-[-0.04em] sm:text-[2.8rem]">
+          <motion.h2
+            variants={titleReveal}
+            initial="hidden"
+            whileInView="visible"
+            viewport={REVEAL_VIEWPORT}
+            className="mx-auto max-w-[16ch] text-[2rem] font-medium leading-[0.98] tracking-[-0.04em] sm:text-[2.8rem]"
+          >
             {section.title}
-          </h2>
-          <p className="mx-auto mt-4 max-w-[56ch] text-[15px] leading-7 text-[var(--graph-panel-text-dim)]">
+          </motion.h2>
+          <motion.p
+            variants={bodyReveal}
+            initial="hidden"
+            whileInView="visible"
+            viewport={REVEAL_VIEWPORT}
+            className="mx-auto mt-4 max-w-[56ch] text-[15px] leading-7 text-[var(--graph-panel-text-dim)]"
+          >
             {section.body}
-          </p>
+          </motion.p>
         </div>
 
-        <div className="mx-auto mt-14 grid max-w-[960px] gap-8 sm:grid-cols-2 lg:grid-cols-4">
+        <motion.div
+          variants={railGridReveal}
+          initial="hidden"
+          whileInView="visible"
+          viewport={REVEAL_VIEWPORT}
+          className="mx-auto mt-14 grid max-w-[960px] gap-8 sm:grid-cols-2 lg:grid-cols-4"
+        >
           {fieldSurfaceRailItems.map((name) => (
-            <p
+            <motion.p
               key={name}
+              variants={railItemReveal}
               className="text-center text-[20px] font-medium tracking-[-0.01em] sm:text-[24px]"
             >
               {name}
-            </p>
+            </motion.p>
           ))}
-        </div>
+        </motion.div>
       </div>
     </section>
   );

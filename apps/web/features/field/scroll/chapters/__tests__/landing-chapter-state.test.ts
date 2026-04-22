@@ -68,7 +68,7 @@ describe("landing chapter state", () => {
     expect(ctaState.hotspotOpacity).toBeCloseTo(0, 3);
   });
 
-  it("brings the stream in through story two/story three and fades it back out by mobile carry", () => {
+  it("brings the stream in through story two/story three and fades it back out by the end of sequence", () => {
     const sceneState = createFieldSceneState();
     sceneState.chapters["section-story-2"] = setChapterProgress(0.75);
 
@@ -81,11 +81,10 @@ describe("landing chapter state", () => {
       "section-story-2": setChapterProgress(1),
       "section-story-3": setChapterProgress(1),
       "section-sequence": setChapterProgress(1),
-      "section-mobile-carry": setChapterProgress(1),
     };
 
-    const mobileCarryState = resolveLandingStreamChapterState(sceneState);
-    expect(mobileCarryState.alpha).toBeLessThan(0.3);
-    expect(mobileCarryState.wrapperZ).toBeGreaterThan(80);
+    const sequenceEndState = resolveLandingStreamChapterState(sceneState);
+    expect(sequenceEndState.alpha).toBeLessThan(0.3);
+    expect(sequenceEndState.wrapperZ).toBeGreaterThan(80);
   });
 });

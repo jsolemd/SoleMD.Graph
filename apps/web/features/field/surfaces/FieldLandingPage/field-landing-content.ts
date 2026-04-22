@@ -8,7 +8,6 @@ export type FieldLandingSectionVariant =
   | "surfaceRail"
   | "story"
   | "sequence"
-  | "mobileCarry"
   | "cta";
 
 export interface FieldLandingSection {
@@ -112,18 +111,6 @@ export const fieldLandingSections: FieldLandingSection[] = [
     bullets: [],
     accentVar: "var(--color-golden-yellow)",
     align: "left",
-  },
-  {
-    id: "section-mobile-carry",
-    preset: "stream",
-    variant: "mobileCarry",
-    eyebrow: "Mobile",
-    title: "The graph comes with you.",
-    body: "Same field on rounds, at bedside, on the train. No second runtime.",
-    detail: "",
-    bullets: [],
-    accentVar: "var(--color-warm-coral)",
-    align: "center",
   },
   {
     id: "section-cta",
@@ -273,23 +260,11 @@ export const FIELD_SECTION_MANIFEST: readonly FieldSectionManifestEntry[] = [
   {
     sectionId: "section-sequence",
     stageItemId: "blob",
-    endSectionId: "section-mobile-carry",
-    presetId: "blob",
-  },
-  {
-    sectionId: "section-sequence",
-    stageItemId: "stream",
-    endSectionId: "section-mobile-carry",
-    presetId: "stream",
-  },
-  {
-    sectionId: "section-mobile-carry",
-    stageItemId: "blob",
     endSectionId: "section-cta",
     presetId: "blob",
   },
   {
-    sectionId: "section-mobile-carry",
+    sectionId: "section-sequence",
     stageItemId: "stream",
     endSectionId: "section-cta",
     presetId: "stream",

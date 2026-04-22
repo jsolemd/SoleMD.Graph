@@ -314,30 +314,11 @@ const sequenceTimeline = createFieldChapterTimeline<LandingBlobChapterKey>([
   },
 ]);
 
-const mobileCarryTimeline = createFieldChapterTimeline<LandingBlobChapterKey>([
-  {
-    atProgress: 0,
-    duration: 0.34,
-    to: {
-      alpha: 0.74,
-      amplitude: 0.16,
-      frequency: 1.1,
-      // Contract from the Sequence peak (1.80) down toward the CTA
-      // bookend. All per-category emphasis returns to identity so the
-      // blob reads as a single uniform substrate again.
-      wrapperScale: 1.2,
-      papersSelection: 1,
-      entitiesSelection: 1,
-      relationsSelection: 1,
-      evidenceSelection: 1,
-      selectionBoostSize: 1,
-      clusterEmergence: 0,
-      focusActive: 0,
-    },
-  },
-]);
-
 const ctaTimeline = createFieldChapterTimeline<LandingBlobChapterKey>([
+  // Opening keyframe: contract from the Sequence peak (1.80) toward the
+  // bookend while restoring identity on all per-category emphasis so the
+  // blob reads as a single uniform substrate again before the bookend
+  // flourish.
   {
     atProgress: 0,
     duration: 0.26,
@@ -348,6 +329,13 @@ const ctaTimeline = createFieldChapterTimeline<LandingBlobChapterKey>([
       frequency: 1.75,
       modelRotationY: Math.PI * 0.9,
       wrapperScale: 1.24,
+      papersSelection: 1,
+      entitiesSelection: 1,
+      relationsSelection: 1,
+      evidenceSelection: 1,
+      selectionBoostSize: 1,
+      clusterEmergence: 0,
+      focusActive: 0,
     },
   },
   {
@@ -365,7 +353,7 @@ const ctaTimeline = createFieldChapterTimeline<LandingBlobChapterKey>([
       wrapperScale: 1,
       // Bookend: restate identity explicitly so the tight opening-blob
       // aesthetic returns without inheriting residual drift from
-      // Sequence/Mobile Carry. Redundant but keeps CTA self-contained.
+      // Sequence. Redundant but keeps CTA self-contained.
       papersSelection: 1,
       entitiesSelection: 1,
       relationsSelection: 1,
@@ -419,10 +407,6 @@ export function resolveLandingBlobChapterState(
   next = sequenceTimeline.sample(
     next,
     getFieldChapterProgress(sceneState, "section-sequence"),
-  );
-  next = mobileCarryTimeline.sample(
-    next,
-    getFieldChapterProgress(sceneState, "section-mobile-carry"),
   );
   next = ctaTimeline.sample(
     next,

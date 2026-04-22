@@ -27,10 +27,19 @@ duplicate of the full runtime manual.
 - Mobile path:
   - same runtime, same chapter structure, same vocabulary; the field
     animation drives the visual story on any viewport without a second
-    scene system.
+    scene system. No dedicated mobile chapter.
 - Reduced-motion path:
   - static copy, reduced particle motion, overlays fade-in rather
     than scrub.
+- Text reveal motion (standard):
+  - every beat's title + body enters with a bidirectional fade + rise
+    keyed off its own viewport crossing (framer-motion `whileInView`,
+    `once: false`). Title leads, body staggers in ~80ms behind. Uses
+    ease `[0.16, 1, 0.3, 1]` over 600ms. Margins `-12% 0px -8% 0px` so
+    reveals trigger slightly before the element is centered.
+  - OS reduced-motion disables the transforms via the app's
+    framer-motion `MotionConfig` so the text reads as static copy
+    without losing the hero's `TextReveal` on mount.
 
 ## Narrative Thesis
 
@@ -46,8 +55,9 @@ a zoom through four layers of the graph:
 5. **synthesis** — clusters, living-knowledge articles, and educational
    modules that emerge from the field (Sequence)
 
-Mobile Carry asserts the graph travels with the clinician; CTA returns
-the field to its opening state as a bookend.
+CTA returns the field to its opening state as a bookend. Mobile parity
+is an accepted product default, not a chapter — no dedicated Mobile
+Carry section.
 
 ## Terminology Bridge
 
@@ -68,11 +78,16 @@ overlapping middle-module carrier (`stream`).
 | 5 | `section-story-2` | `stream` | `owner` | through `section-story-3` |
 | 6 | `section-story-3` | `blob` | `carry` | through `section-sequence` |
 | 7 | `section-story-3` | `stream` | `owner` | through `section-sequence` |
-| 8 | `section-sequence` | `blob` | `carry` | through `section-mobile-carry` |
-| 9 | `section-sequence` | `stream` | `owner` | through `section-mobile-carry` |
-| 10 | `section-mobile-carry` | `blob` | `carry` | through `section-cta` |
-| 11 | `section-mobile-carry` | `stream` | `owner` | through `section-cta` |
-| 12 | `section-cta` | `blob` | `owner` | — |
+| 8 | `section-sequence` | `blob` | `carry` | through `section-cta` |
+| 9 | `section-sequence` | `stream` | `owner` | through `section-cta` |
+| 10 | `section-cta` | `blob` | `owner` | — |
+
+The stream fades out in the tail of the Sequence blob/stream timelines
+(late-Sequence keyframe takes stream alpha → 0.12 and wrapperZ → 88) so
+CTA opens on a pure blob bookend without requiring a dedicated stream
+hand-off in the CTA section. The blob's per-category emphasis reset
+(papers/entities/relations/evidence back to identity, clusterEmergence
++ focusActive to 0) is folded into CTA's first keyframe.
 
 Landing stage overlays (pinned to the stage, Plane A):
 
@@ -255,28 +270,7 @@ Not shipped in Phase 1. Tracked as module-level deferred work.
     blob — no overlay required. Beat-level native-physics grammar is
     authored in `docs/future/field-landing-native-physics.md`.
 
-### 7. Mobile Carry
-
-- Section id: `section-mobile-carry`
-- Chapter key: `mobileCarry`
-- Stage state: `stream owner + blob carry` with stream fading out
-  toward CTA
-- Purpose: make the mobile claim a product claim, not a UX concession —
-  the same graph, same reasoning, on the device a clinician actually
-  uses at bedside.
-- Content:
-  - eyebrow: `Mobile`
-  - title: `The graph comes with you.`
-  - body: `Same field on rounds, at bedside, on the train. No second
-    runtime.`
-- Overlay: none
-- Note: the chapter renders copy only. The marquee adapter
-  (`mobileCarryChapterAdapter`) is preserved in the chapter-adapter
-  registry and gates cleanly on missing DOM, so a future chip or
-  marquee pass can rebuild by reintroducing `[data-mobile-carry-viewport]`
-  + `[data-mobile-carry-track]` markers inside the section.
-
-### 8. CTA
+### 7. CTA
 
 - Section id: `section-cta`
 - Chapter key: `cta`

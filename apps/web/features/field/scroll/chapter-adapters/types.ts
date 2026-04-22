@@ -5,7 +5,6 @@ export type FieldChapterKey =
   | "storyTwo"
   | "storyThree"
   | "sequence"
-  | "mobileCarry"
   | "cta";
 
 export const FIELD_CHAPTER_SECTION_IDS: Record<FieldChapterKey, string> = {
@@ -15,7 +14,6 @@ export const FIELD_CHAPTER_SECTION_IDS: Record<FieldChapterKey, string> = {
   storyTwo: "section-story-2",
   storyThree: "section-story-3",
   sequence: "section-sequence",
-  mobileCarry: "section-mobile-carry",
   cta: "section-cta",
 };
 

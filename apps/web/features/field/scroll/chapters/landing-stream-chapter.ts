@@ -64,6 +64,8 @@ const storyThreeTimeline = createFieldChapterTimeline<LandingStreamChapterKey>([
 ]);
 
 const sequenceTimeline = createFieldChapterTimeline<LandingStreamChapterKey>([
+  // Early Sequence: stream settles to its Sequence presence alongside the
+  // blob — visible thread layer behind the synthesis copy.
   {
     atProgress: 0,
     duration: 0.24,
@@ -74,14 +76,12 @@ const sequenceTimeline = createFieldChapterTimeline<LandingStreamChapterKey>([
       wrapperZ: 24,
     },
   },
-]);
-
-const mobileCarryTimeline = createFieldChapterTimeline<LandingStreamChapterKey>([
+  // Late Sequence: stream fades out so CTA opens on a pure blob bookend.
   {
-    atProgress: 0,
-    duration: 0.4,
+    atProgress: 0.62,
+    duration: 0.38,
     to: {
-      alpha: 0.24,
+      alpha: 0.12,
       amplitude: 0.03,
       frequency: 1.3,
       wrapperZ: 88,
@@ -105,10 +105,6 @@ export function resolveLandingStreamChapterState(
   next = sequenceTimeline.sample(
     next,
     getFieldChapterProgress(sceneState, "section-sequence"),
-  );
-  next = mobileCarryTimeline.sample(
-    next,
-    getFieldChapterProgress(sceneState, "section-mobile-carry"),
   );
 
   return next;

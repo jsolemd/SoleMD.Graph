@@ -1,6 +1,5 @@
 import { ctaChapterAdapter } from "./cta-chapter";
 import { heroChapterAdapter } from "./hero-chapter";
-import { mobileCarryChapterAdapter } from "./mobile-carry-chapter";
 import { sequenceChapterAdapter } from "./sequence-chapter";
 import { storyOneChapterAdapter } from "./story-one-chapter";
 import { storyThreeChapterAdapter } from "./story-three-chapter";
@@ -14,7 +13,6 @@ export const fieldChapterAdapters: Record<
 > = {
   cta: ctaChapterAdapter,
   hero: heroChapterAdapter,
-  mobileCarry: mobileCarryChapterAdapter,
   sequence: sequenceChapterAdapter,
   storyOne: storyOneChapterAdapter,
   storyThree: storyThreeChapterAdapter,
