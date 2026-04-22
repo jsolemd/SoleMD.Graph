@@ -82,10 +82,16 @@
 
 /* Stage wrapper. Hosts a set of FieldHotspotRing mounts and provides
  * the phase-gate hooks (`afr-has-only-reds`, `afr-has-only-single`). The
- * stage itself is purely a positioning/pointer-events shell; hotspots inside
- * are `position: absolute` and imperatively positioned by the caller. */
+ * stage is `position: fixed` so projected DOM children translate against
+ * viewport coordinates — `BlobController.projectHotspots` and
+ * `FieldModuleInModule` both write CSS-pixel viewport coords from
+ * `projectInViewport`, so the containing block must be the viewport, not
+ * the scrollable shell. (This file is unlayered and beats Tailwind's
+ * `@layer utilities .fixed` rule, so writing position explicitly here is
+ * load-bearing — using only `className="fixed"` on the stage element
+ * leaves the global `.afr-stage` selector winning the cascade.) */
 .afr-stage {
-  position: absolute;
+  position: fixed;
   inset: 0;
   pointer-events: none;
 }

@@ -8,6 +8,7 @@ import {
   Group,
   NormalBlending,
   ShaderMaterial,
+  type Camera,
 } from "three";
 import { FIELD_NON_DESKTOP_BREAKPOINT } from "../field-breakpoints";
 import { BlobController as BlobControllerClass } from "../controller/BlobController";
@@ -37,6 +38,7 @@ export type { FieldHotspotFrame } from "../controller/BlobController";
 
 interface FieldSceneProps {
   activeIds?: readonly FieldStageItemId[];
+  cameraRef?: MutableRefObject<Camera | null>;
   densityScale?: number;
   onControllerReady?: (
     id: FieldStageItemId,
@@ -152,6 +154,7 @@ function attachController(
 // shell.
 export function FieldScene({
   activeIds = FIELD_STAGE_ITEM_IDS,
+  cameraRef,
   densityScale = 1,
   onControllerReady,
   sceneStateRef,
@@ -307,6 +310,11 @@ export function FieldScene({
     const camera = state.camera;
     const viewportW = state.gl.domElement.width;
     const viewportH = state.gl.domElement.height;
+
+    // Publish the live R3F camera to the optional cameraRef so stage-level
+    // DOM overlays (FieldModuleInModule) can call projectPointSourceVertex
+    // without owning the camera themselves.
+    if (cameraRef) cameraRef.current = camera;
 
     if (!stageReady) {
       fieldLoopClock.tick(delta);

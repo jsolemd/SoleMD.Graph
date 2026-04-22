@@ -3,6 +3,7 @@
 import { useRef, useState, type CSSProperties, type MutableRefObject } from "react";
 import { PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
+import type { Camera } from "three";
 import { FieldScene } from "./FieldScene";
 import { FrameloopInvalidator } from "./FrameloopInvalidator";
 import { useAdaptiveFrameloop } from "./use-adaptive-frameloop";
@@ -14,6 +15,11 @@ import type {
 
 interface FieldCanvasProps {
   activeIds?: readonly FieldStageItemId[];
+  // Stage-level consumers (e.g. FieldModuleInModule) that need to project
+  // custom particle indices to screen coords can pass a ref here; FieldScene
+  // writes `state.camera` into it each frame so DOM overlays can call
+  // projectPointSourceVertex without owning the R3F camera themselves.
+  cameraRef?: MutableRefObject<Camera | null>;
   sceneStateRef: MutableRefObject<FieldSceneState>;
   reducedMotion?: boolean;
   stageReady?: boolean;
@@ -27,6 +33,7 @@ interface FieldCanvasProps {
 
 export function FieldCanvas({
   activeIds,
+  cameraRef,
   sceneStateRef,
   reducedMotion = false,
   stageReady = true,
@@ -76,6 +83,7 @@ export function FieldCanvas({
         <FrameloopInvalidator active={frameloop === "demand"} />
         <FieldScene
           activeIds={activeIds}
+          cameraRef={cameraRef}
           sceneStateRef={sceneStateRef}
           densityScale={reducedMotion ? Math.min(densityScale, 0.84) : densityScale}
           stageReady={stageReady}

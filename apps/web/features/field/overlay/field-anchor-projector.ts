@@ -123,16 +123,26 @@ export function projectFieldAnchor({
   });
 }
 
-// Project a single point-source vertex through a model group, returning
-// the hotspot-shaped projection used by BlobController's DOM writer.
-// Returns null when the vertex is on the far side of the model
-// (`localZ > 0`) or falls outside the viewport cull window.
+// Project a single point-source vertex through a model group. Returns
+// null when the vertex falls outside the viewport cull window (NDC z >
+// 0.84 catches actual back-facing particles after model+wrapper rotation).
+//
+// `respectLocalFrontFace` (default true) opts into a cheap pre-cull that
+// rejects candidates whose geometry-local Z is positive. This is correct
+// for the hotspot reseed loop (which runs up to 80 attempts per beat and
+// benefits from skipping ~half the matrix multiplies) BUT it is wrong for
+// authored static indices, because geometry-local Z does not track wrapper
+// rotation. A stage-pinned card that authors a focus index whose localZ
+// happens to be positive would never project, regardless of what side of
+// the rotated blob the particle currently faces. Pass false to skip the
+// pre-cull and rely solely on the post-transform NDC viewport cull.
 export function projectPointSourceVertex({
   blobModel,
   camera,
   candidateIndex,
   height,
   pixelRatio = 1,
+  respectLocalFrontFace = true,
   source,
   vector,
   width,
@@ -142,13 +152,16 @@ export function projectPointSourceVertex({
   candidateIndex: number;
   height: number;
   pixelRatio?: number;
+  respectLocalFrontFace?: boolean;
   source: FieldPointSource;
   vector: Vector3;
   width: number;
 }): FieldHotspotVertexProjection | null {
   const positionOffset = candidateIndex * 3;
-  const localZ = source.buffers.position[positionOffset + 2] ?? 0;
-  if (localZ > 0) return null;
+  if (respectLocalFrontFace) {
+    const localZ = source.buffers.position[positionOffset + 2] ?? 0;
+    if (localZ > 0) return null;
+  }
 
   vector.set(
     source.buffers.position[positionOffset] ?? 0,

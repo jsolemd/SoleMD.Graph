@@ -30,6 +30,26 @@ export interface FieldShaderPreset {
   // which BlobController tweens through `LANDING_RAINBOW_RGB` at runtime.
   colorBase: Vec3;
   colorNoise: Vec3;
+  // Per-category selection floors. Each particle's `aBucket` tag (0 paper,
+  // 1 entity, 2 relation, 3 evidence) resolves one of these floors; the
+  // shader culls the particle unless its random `aSelection` score falls
+  // below the chosen floor. Default 1 = every particle visible. Chapter
+  // timelines tween individual floors down (e.g. papersSelection to 0.1
+  // at Story 1 entrance) to light a category while leaving others ambient.
+  papersSelection: number;
+  entitiesSelection: number;
+  relationsSelection: number;
+  evidenceSelection: number;
+  // Multiplicative boost applied to the deepest surviving particles.
+  // `selectionBoostColor` multiplies vColor; `selectionBoostSize` scales
+  // gl_PointSize. Defaults [255,255,255] and 1 are no-ops so the shader
+  // reads identically to today until a chapter timeline drives them.
+  selectionBoostColor: Vec3;
+  selectionBoostSize: number;
+  // Sequence info-7 cluster emergence. Modulates particle brightness
+  // against the existing fbm noise field so neighborhoods emerge from
+  // spatial/motion coherence rather than hard category borders. 0 = off.
+  clusterEmergence: number;
   depth: number;
   frequency: number;
   funnelDistortion: number;
@@ -95,6 +115,13 @@ export interface FieldSceneState {
   heroProgress: number;
   items: Record<FieldStageItemId, FieldStageItemState>;
   motionEnabled: boolean;
+  // Active step index for the Sequence info-9 embedded mini-module.
+  // 0 = inactive (info-9 not in viewport or still on info-7/8); 1/2/3 =
+  // the step whose focus entity the blob currently spotlights.
+  // `FieldModuleInModule` writes this from info-9 scroll sub-progress;
+  // `landing-blob-chapter.ts` reads it to drive the focus-index uniforms
+  // inside Sequence's chapter targets.
+  sequenceFocusStep: number;
 }
 
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
@@ -104,6 +131,20 @@ const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
 // with Maze's default material look.
 const MAZE_CYAN: Vec3 = [40, 197, 234];
 const MAZE_MAGENTA: Vec3 = [202, 50, 223];
+
+// No-op preset defaults for the Phase A1 per-category uniforms. Floors at
+// 1 mean "let every particle through"; boost color [255,255,255] and size 1
+// multiply to identity in the shader. Only chapter timelines drive these
+// values away from identity, so any preset that omits them reads unchanged.
+const PRESET_ALL_VISIBLE_FLOORS = {
+  papersSelection: 1,
+  entitiesSelection: 1,
+  relationsSelection: 1,
+  evidenceSelection: 1,
+} as const;
+const PRESET_BOOST_IDENTITY_COLOR: Vec3 = [255, 255, 255];
+const PRESET_BOOST_IDENTITY_SIZE = 1;
+const PRESET_CLUSTER_EMERGENCE_OFF = 0;
 
 // First rainbow stop doubles as the blob's initial `colorNoise` before
 // BlobController's runtime timeline takes over.
@@ -150,6 +191,10 @@ export const visualPresets: Record<
       amplitude: 0.05,
       colorBase: LANDING_BASE_BLUE,
       colorNoise: LANDING_INITIAL_NOISE,
+      ...PRESET_ALL_VISIBLE_FLOORS,
+      selectionBoostColor: PRESET_BOOST_IDENTITY_COLOR,
+      selectionBoostSize: PRESET_BOOST_IDENTITY_SIZE,
+      clusterEmergence: PRESET_CLUSTER_EMERGENCE_OFF,
       depth: 0.3,
       frequency: 0.5,
       funnelDistortion: 0,
@@ -193,6 +238,10 @@ export const visualPresets: Record<
       amplitude: 0.05,
       colorBase: MAZE_CYAN,
       colorNoise: MAZE_MAGENTA,
+      ...PRESET_ALL_VISIBLE_FLOORS,
+      selectionBoostColor: PRESET_BOOST_IDENTITY_COLOR,
+      selectionBoostSize: PRESET_BOOST_IDENTITY_SIZE,
+      clusterEmergence: PRESET_CLUSTER_EMERGENCE_OFF,
       depth: 0.69,
       frequency: 1.7,
       funnelDistortion: 1,
@@ -239,6 +288,10 @@ export const visualPresets: Record<
       amplitude: 0.05,
       colorBase: MAZE_CYAN,
       colorNoise: MAZE_MAGENTA,
+      ...PRESET_ALL_VISIBLE_FLOORS,
+      selectionBoostColor: PRESET_BOOST_IDENTITY_COLOR,
+      selectionBoostSize: PRESET_BOOST_IDENTITY_SIZE,
+      clusterEmergence: PRESET_CLUSTER_EMERGENCE_OFF,
       depth: 0.3,
       frequency: 0.1,
       funnelDistortion: 0,
@@ -277,6 +330,7 @@ export function createFieldSceneState(): FieldSceneState {
     chapters: {},
     heroProgress: 0,
     motionEnabled: true,
+    sequenceFocusStep: 0,
     items: {
       blob: createStageItemState(1, 0, 1),
       stream: createStageItemState(),

@@ -16,6 +16,10 @@ precision highp float;
 attribute float aAlpha;
 attribute float aIndex;
 attribute float aSelection;
+// Per-particle category tag baked by field-attribute-baker.ts —
+// 0 = paper, 1 = entity, 2 = relation, 3 = evidence (ambient background).
+// Resolves which category floor this particle uses; no color segmenting.
+attribute float aBucket;
 
 attribute float aStreamFreq;
 attribute float aFunnelNarrow;
@@ -40,6 +44,33 @@ uniform float uDepth;
 uniform float uAmplitude;
 uniform float uFrequency;
 uniform float uSelection;
+
+// Phase A1 per-category selection floors + brighten/size boost. Each
+// particle uses its aBucket tag to pick one of the four floors; any
+// particle whose aSelection exceeds min(categoryFloor, uSelection) is
+// culled, surviving particles get a smoothstep falloff boost in color
+// and size. Defaults (floors = 1, boostColor = 1, boostSize = 1) leave
+// the blob visually identical to the pre-A1 baseline.
+uniform float uPapersSelection;
+uniform float uEntitiesSelection;
+uniform float uRelationsSelection;
+uniform float uEvidenceSelection;
+uniform vec3 uSelectionBoostColor;
+uniform float uSelectionBoostSize;
+// info-7 cluster emergence: amplifies brightness against the existing fbm
+// noise so neighborhoods read as spatial coherence rather than as hard
+// category borders. 0 = off (identity), 1 = full amplification.
+uniform float uClusterEmergence;
+
+// info-8 / info-9 focus-entity spotlight. Focus particle (and up to
+// FOCUS_MEMBER_SLOT_COUNT member indices, typically paper context
+// points) survive the cull regardless of category floor and receive a
+// scalable uFocusActive boost. When uFocusEntityIndex is -1 or
+// uFocusActive is 0 the focus logic is inert.
+uniform int uFocusEntityIndex;
+uniform int uFocusMembers[8];
+uniform int uFocusMemberCount;
+uniform float uFocusActive;
 
 uniform float uWidth;
 uniform float uHeight;
@@ -277,9 +308,61 @@ void main() {
   // shader under NormalBlending, so overlaps compound — 1.5 gives bursts
   // density without letting dense chapters collapse into a solid wash.
   vAlpha = mix(vAlpha, vAlpha * 1.5, uLightMode);
-  if (aSelection > uSelection) {
-    vAlpha = 0.0;
+
+  // Phase A1 per-category selection + focus survival. aBucket is
+  // baked as an exact float integer (0/1/2/3); the ternary chain
+  // resolves each particle's category floor. Effective floor is the
+  // tighter of the category floor and the legacy global uSelection so
+  // the Maze-parity hotspot-beat dim continues to work untouched when
+  // floors are at defaults of 1.
+  float categoryFloor =
+    aBucket < 0.5 ? uPapersSelection :
+    aBucket < 1.5 ? uEntitiesSelection :
+    aBucket < 2.5 ? uRelationsSelection :
+    uEvidenceSelection;
+  float effectiveFloor = min(categoryFloor, uSelection);
+
+  int particleIndex = int(aIndex);
+  bool isFocusEntity =
+    (uFocusActive > 0.001) && (uFocusEntityIndex == particleIndex);
+  // Constant-bounded loop (matches Three.js + GLSL ES 1.0 rules); the
+  // early-detect via OR keeps the branch predictable. uFocusMemberCount
+  // gates which slots are active; remaining slots hold the -1 sentinel
+  // and never match a real particle index.
+  bool isFocusMember = false;
+  for (int mi = 0; mi < 8; mi++) {
+    if (mi < uFocusMemberCount && particleIndex == uFocusMembers[mi]) {
+      isFocusMember = true;
+    }
   }
+  isFocusMember = isFocusMember && (uFocusActive > 0.001);
+
+  if (!isFocusEntity && !isFocusMember && aSelection > effectiveFloor) {
+    vAlpha = 0.0;
+  } else {
+    float survivorBoost;
+    if (isFocusEntity) {
+      survivorBoost = uFocusActive;
+    } else if (isFocusMember) {
+      survivorBoost = uFocusActive * 0.6;
+    } else {
+      // Monotonic: strongest at deepest survivors (aSelection ~ 0),
+      // zero at the cull edge. Clamped denominator keeps the divide
+      // safe when a floor tweens through 0.
+      survivorBoost = smoothstep(
+        0.0,
+        max(effectiveFloor, 0.001),
+        max(effectiveFloor - aSelection, 0.0)
+      );
+    }
+    vColor = mix(vColor, vColor * uSelectionBoostColor, survivorBoost);
+    gl_PointSize *= mix(1.0, uSelectionBoostSize, survivorBoost);
+  }
+
+  // info-7 cluster emergence. vNoise already varies spatially via the
+  // fbm pass above; amplifying it modulates brightness across soft
+  // neighborhoods without introducing hard category-colored groups.
+  vColor *= mix(1.0, 1.0 + 0.45 * (vNoise - 0.5), uClusterEmergence);
 }
 `;
 

@@ -6,7 +6,13 @@ import { LANDING_RAINBOW_RGB } from "../scene/accent-palette";
 import { resolveLandingBlobChapterState } from "../scroll/chapters/landing-blob-chapter";
 import { projectPointSourceVertex } from "../overlay/field-anchor-projector";
 import {
+  INFO_EIGHT_FOCUS_ENTRY,
+  INFO_NINE_STEP_FOCUS_TABLE,
+  type InfoNineStepFocusEntry,
+} from "../surfaces/FieldLandingPage/field-lit-particle-indices";
+import {
   FieldController,
+  FOCUS_MEMBER_SLOT_COUNT,
   type FieldControllerInit,
   type FrameContext,
 } from "./FieldController";
@@ -217,6 +223,89 @@ export class BlobController extends FieldController {
     uniforms.uSelection.value +=
       (chapterState.selection - uniforms.uSelection.value) * driftBlend;
 
+    // Reduced-motion + Phase A1 per-category targets. When motion is
+    // disabled the blob reads as a single uniform substrate: every
+    // per-category floor snaps to 1, the selection boost collapses to
+    // identity, clusterEmergence and focusActive shut off. We overwrite
+    // the chapterState targets here (rather than short-circuiting the
+    // blend below) so the drift-blend still runs — that keeps the
+    // transition in-and-out of reduced motion smooth instead of
+    // snap-popping uniforms on toggle.
+    const papersTarget = motionEnabled ? chapterState.papersSelection : 1;
+    const entitiesTarget = motionEnabled ? chapterState.entitiesSelection : 1;
+    const relationsTarget = motionEnabled ? chapterState.relationsSelection : 1;
+    const evidenceTarget = motionEnabled ? chapterState.evidenceSelection : 1;
+    const boostColorRTarget = motionEnabled
+      ? chapterState.selectionBoostColorR
+      : 1;
+    const boostColorGTarget = motionEnabled
+      ? chapterState.selectionBoostColorG
+      : 1;
+    const boostColorBTarget = motionEnabled
+      ? chapterState.selectionBoostColorB
+      : 1;
+    const boostSizeTarget = motionEnabled ? chapterState.selectionBoostSize : 1;
+    const clusterEmergenceTarget = motionEnabled
+      ? chapterState.clusterEmergence
+      : 0;
+    const focusActiveTarget = motionEnabled ? chapterState.focusActive : 0;
+
+    uniforms.uPapersSelection.value +=
+      (papersTarget - uniforms.uPapersSelection.value) * driftBlend;
+    uniforms.uEntitiesSelection.value +=
+      (entitiesTarget - uniforms.uEntitiesSelection.value) * driftBlend;
+    uniforms.uRelationsSelection.value +=
+      (relationsTarget - uniforms.uRelationsSelection.value) * driftBlend;
+    uniforms.uEvidenceSelection.value +=
+      (evidenceTarget - uniforms.uEvidenceSelection.value) * driftBlend;
+
+    // Boost color is a live THREE.Color; blend each channel independently
+    // so timelines can tween R/G/B separately. The shader mixes the blob's
+    // palette toward (vColor * boostColor), so identity (1,1,1) is a no-op.
+    const boostColor = uniforms.uSelectionBoostColor.value;
+    boostColor.r += (boostColorRTarget - boostColor.r) * driftBlend;
+    boostColor.g += (boostColorGTarget - boostColor.g) * driftBlend;
+    boostColor.b += (boostColorBTarget - boostColor.b) * driftBlend;
+
+    uniforms.uSelectionBoostSize.value +=
+      (boostSizeTarget - uniforms.uSelectionBoostSize.value) * driftBlend;
+    uniforms.uClusterEmergence.value +=
+      (clusterEmergenceTarget - uniforms.uClusterEmergence.value) * driftBlend;
+    uniforms.uFocusActive.value +=
+      (focusActiveTarget - uniforms.uFocusActive.value) * driftBlend;
+
+    // Discrete focus lookup: info-9's sequenceFocusStep (1/2/3) indexes
+    // the authored step table; info-8's hold + the inactive gap between
+    // info-9 step boundaries falls back to the single-entity spotlight.
+    // Writes are not drift-blended — the index is discrete, so the
+    // continuous uFocusActive gate (drift-blended above) is what the
+    // shader uses to fade the spotlight in/out.
+    const step = sceneState.sequenceFocusStep;
+    let focusEntry: InfoNineStepFocusEntry | null = null;
+    if (motionEnabled) {
+      if (step >= 1 && step <= INFO_NINE_STEP_FOCUS_TABLE.length) {
+        focusEntry = INFO_NINE_STEP_FOCUS_TABLE[step - 1] ?? null;
+      } else if (chapterState.focusActive > 0.01) {
+        focusEntry = INFO_EIGHT_FOCUS_ENTRY;
+      }
+    }
+
+    if (focusEntry) {
+      uniforms.uFocusEntityIndex.value = focusEntry.focusIndex;
+      const memberBuffer = uniforms.uFocusMembers.value;
+      const count = Math.min(
+        focusEntry.memberIndices.length,
+        FOCUS_MEMBER_SLOT_COUNT,
+      );
+      for (let i = 0; i < FOCUS_MEMBER_SLOT_COUNT; i += 1) {
+        memberBuffer[i] = i < count ? (focusEntry.memberIndices[i] ?? -1) : -1;
+      }
+      uniforms.uFocusMemberCount.value = count;
+    } else {
+      uniforms.uFocusEntityIndex.value = -1;
+      uniforms.uFocusMemberCount.value = 0;
+    }
+
     const targetDepth = chapterState.depth;
     if (!this.introCompleted) {
       const introProgress = Math.max(
@@ -267,9 +356,19 @@ export class BlobController extends FieldController {
     wrapper.rotation.x = 0;
     wrapper.rotation.y = elapsedSec * preset.rotationVelocity[1] * motionScale;
     wrapper.rotation.z = 0;
-    wrapper.scale.x += (chapterState.wrapperScale - wrapper.scale.x) * driftBlend;
-    wrapper.scale.y += (chapterState.wrapperScale - wrapper.scale.y) * driftBlend;
-    wrapper.scale.z += (chapterState.wrapperScale - wrapper.scale.z) * driftBlend;
+    // Phase A1 mobile cap: clamp wrapperScale at 1.6 on mobile. Codex R3
+    // noted desktop cropping gets catastrophic past ~2.2; the mobile
+    // ceiling is tighter because the viewport is proportionally narrower
+    // and there's no dead margin to crop into. Implemented as a per-call
+    // clamp (not a preset field) — alphaMobile isn't read by the
+    // controller today (Codex R6), so following the same per-call pattern
+    // avoids growing the preset surface.
+    const wrapperScaleTarget = isMobile
+      ? Math.min(chapterState.wrapperScale, 1.6)
+      : chapterState.wrapperScale;
+    wrapper.scale.x += (wrapperScaleTarget - wrapper.scale.x) * driftBlend;
+    wrapper.scale.y += (wrapperScaleTarget - wrapper.scale.y) * driftBlend;
+    wrapper.scale.z += (wrapperScaleTarget - wrapper.scale.z) * driftBlend;
 
     void sourceBounds;
   }

@@ -33,11 +33,12 @@ export interface FieldStoryBeat {
   variant: "columns" | "centered";
 }
 
-export interface FieldSequenceItem {
-  body: string;
-  id: string;
-  number: string;
-  title: string;
+export interface FieldSequenceInfoNineStep {
+  readonly body: string;
+  readonly edges: readonly { readonly from: string; readonly to: string }[];
+  readonly focusEntityId: string;
+  readonly heading: string;
+  readonly memberPaperIds: readonly string[];
 }
 
 export interface FieldSectionManifestEntry {
@@ -207,24 +208,61 @@ export const fieldSurfaceRailItems = [
   "Synthesis",
 ] as const;
 
-export const fieldSequenceItems: readonly FieldSequenceItem[] = [
+export const fieldSequenceBeats: readonly FieldStoryBeat[] = [
   {
-    id: "clusters",
-    number: "01",
+    id: "info-7",
+    progressLabel: "01",
     title: "Clusters",
-    body: "Research communities form from embedding proximity, not predefined categories.",
+    body: "Research communities form from embedding proximity, not predefined categories. The graph remembers how papers sit near each other in meaning — and the neighborhoods that emerge are the ones your field already recognizes.",
+    accentVar: "var(--color-soft-blue)",
+    variant: "columns",
   },
   {
-    id: "living-knowledge",
-    number: "02",
+    id: "info-8",
+    progressLabel: "02",
     title: "Living Knowledge",
-    body: "Auto-synthesized articles per entity — definitions, key findings, open questions — refreshed on every build.",
+    body: "Auto-synthesized articles per entity — definitions, key findings, open questions — refreshed on every build. The article doesn't drift from the evidence, because it's generated from the evidence.",
+    accentVar: "var(--color-golden-yellow)",
+    variant: "columns",
   },
   {
-    id: "educational-modules",
-    number: "03",
+    id: "info-9",
+    progressLabel: "03",
     title: "Educational Modules",
-    body: "Step-through lessons anchored to real graph nodes. Sourced evidence illuminates around you as you progress.",
+    body: "Step-through lessons anchored to real graph nodes. Sourced evidence illuminates around you as you progress. Here's one.",
+    accentVar: "var(--color-soft-lavender)",
+    variant: "centered",
+  },
+] as const;
+
+export const sequenceInfoNineSteps: readonly FieldSequenceInfoNineStep[] = [
+  {
+    heading: "Start where the patient is",
+    body: "Your patient is altered — delirium, catatonia, encephalopathy. The syndrome you name is where the module begins. The graph lights the evidence attached to that label.",
+    focusEntityId: "catatonia",
+    memberPaperIds: ["p4", "p7", "p10"],
+    edges: [],
+  },
+  {
+    heading: "Follow the bridges",
+    body: "Catatonia bridges to NMS. Delirium bridges to both. The literature already crossed these edges — the graph makes the trail visible instead of implied. The module walks the trail with you.",
+    focusEntityId: "nms",
+    memberPaperIds: ["p5"],
+    edges: [
+      { from: "catatonia", to: "nms" },
+      { from: "delirium", to: "catatonia" },
+    ],
+  },
+  {
+    heading: "Land on the lever",
+    body: "A lorazepam challenge distinguishes catatonia from NMS — and treats it in the same move. Where evidence converges, the module ends on the next action, sourced to the paper that earned it.",
+    focusEntityId: "catatonia",
+    memberPaperIds: ["p10"],
+    edges: [
+      { from: "catatonia", to: "nms" },
+      { from: "delirium", to: "catatonia" },
+      { from: "catatonia", to: "p10" },
+    ],
   },
 ] as const;
 

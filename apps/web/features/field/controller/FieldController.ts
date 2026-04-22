@@ -35,6 +35,16 @@ import type {
 // read chapter progress during `tick(FrameContext)` rather than constructing
 // their own ScrollTriggers.
 
+// Fixed-size focus-member buffer. Eight stable slots covers any Phase A1
+// step (info-8 spotlights one entity; info-9 steps carry ≤3 member papers
+// plus slack). The shader iterates zero..uFocusMemberCount and ignores
+// trailing -1 sentinels; rebuilding this array needs no reallocation.
+export const FOCUS_MEMBER_SLOT_COUNT = 8;
+export const FOCUS_MEMBER_EMPTY: readonly number[] = Array.from(
+  { length: FOCUS_MEMBER_SLOT_COUNT },
+  () => -1,
+);
+
 export interface LayerUniforms {
   [uniform: string]: { value: unknown };
   pointTexture: { value: Texture };
@@ -57,6 +67,17 @@ export interface LayerUniforms {
   uPixelRatio: { value: number };
   uScale: { value: number };
   uSelection: { value: number };
+  uPapersSelection: { value: number };
+  uEntitiesSelection: { value: number };
+  uRelationsSelection: { value: number };
+  uEvidenceSelection: { value: number };
+  uSelectionBoostColor: { value: Color };
+  uSelectionBoostSize: { value: number };
+  uClusterEmergence: { value: number };
+  uFocusEntityIndex: { value: number };
+  uFocusMembers: { value: number[] };
+  uFocusMemberCount: { value: number };
+  uFocusActive: { value: number };
   uSize: { value: number };
   uSpeed: { value: number };
   uStream: { value: number };
@@ -192,6 +213,7 @@ export abstract class FieldController {
     const { shader } = preset;
     const [baseR, baseG, baseB] = shader.colorBase;
     const [noiseR, noiseG, noiseB] = shader.colorNoise;
+    const [boostR, boostG, boostB] = shader.selectionBoostColor;
     return {
       pointTexture: { value: pointTexture },
       uIsMobile: { value: isMobile },
@@ -207,6 +229,19 @@ export abstract class FieldController {
       uAmplitude: { value: shader.amplitude },
       uFrequency: { value: shader.frequency },
       uSelection: { value: shader.selection },
+      uPapersSelection: { value: shader.papersSelection },
+      uEntitiesSelection: { value: shader.entitiesSelection },
+      uRelationsSelection: { value: shader.relationsSelection },
+      uEvidenceSelection: { value: shader.evidenceSelection },
+      uSelectionBoostColor: {
+        value: new Color(boostR / 255, boostG / 255, boostB / 255),
+      },
+      uSelectionBoostSize: { value: shader.selectionBoostSize },
+      uClusterEmergence: { value: shader.clusterEmergence },
+      uFocusEntityIndex: { value: -1 },
+      uFocusMembers: { value: FOCUS_MEMBER_EMPTY.slice() },
+      uFocusMemberCount: { value: 0 },
+      uFocusActive: { value: 0 },
       uWidth: { value: shader.width },
       uHeight: { value: shader.height },
       uStream: { value: shader.stream },

@@ -11,11 +11,16 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery, useViewportSize } from "@mantine/hooks";
 import { useReducedMotion } from "framer-motion";
+import type { Camera } from "three";
 import type { GraphBundle } from "@solemd/graph";
 import {
   FieldConnectionOverlay,
   type FieldConnectionOverlayHandle,
 } from "./FieldConnectionOverlay";
+import {
+  FieldModuleInModule,
+  type FieldModuleInModuleHandle,
+} from "./FieldModuleInModule";
 import { GraphLoadingChrome } from "@/features/graph/components/shell/loading/GraphLoadingChrome";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import {
@@ -57,11 +62,11 @@ import { FieldGraphWarmupAction } from "./FieldGraphWarmupAction";
 import { FieldHeroSection } from "./FieldHeroSection";
 import { FieldMobileCarrySection } from "./FieldMobileCarrySection";
 import { FieldScrollCue } from "./FieldScrollCue";
-import { FieldSequenceSection } from "./FieldSequenceSection";
 import { FieldStoryChapter } from "./FieldStoryChapter";
 import { FieldStoryTwoSection } from "./FieldStoryTwoSection";
 import { FieldSurfaceRailSection } from "./FieldSurfaceRailSection";
 import {
+  fieldSequenceBeats,
   fieldStoryOneBeats,
   fieldStoryTwoBeats,
 } from "./field-landing-content";
@@ -123,6 +128,8 @@ function FieldLandingShellContent({
   const blobControllerRef = useRef<BlobController | null>(null);
   const blobHotspotRefsRef = useRef<Array<HTMLDivElement | null>>([]);
   const blobHotspotCardRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const cameraRef = useRef<Camera | null>(null);
+  const moduleInModuleRef = useRef<FieldModuleInModuleHandle | null>(null);
   const [blobControllerReady, setBlobControllerReady] = useState(false);
   const sectionNavScrollOffset = isCompactFieldViewport
     ? 24
@@ -132,6 +139,11 @@ function FieldLandingShellContent({
   // per-hotspot card seats stay in sync with the frames BlobController
   // wrote to the DOM pool. No separate RAF, no React reconciliation —
   // a single read-and-write pass off the controller's current frame array.
+  //
+  // FieldModuleInModule piggybacks on the same tick: the R3F camera is
+  // published into cameraRef from FieldScene's useFrame, and we forward
+  // a frame context so the module's stage-level cards can project the
+  // active info-9 focus entity without owning the camera themselves.
   useEffect(() => {
     const disposer = fieldLoopClock.subscribe(
       "landing-hotspot-consumers",
@@ -156,6 +168,27 @@ function FieldLandingShellContent({
           cardNode.style.opacity = cardVisible ? "1" : "0";
           const cardTranslateY = cardVisible ? 0 : 10;
           cardNode.style.transform = `translate3d(${frame.x}px, ${frame.y + cardTranslateY}px, 0)`;
+        });
+
+        const handle = moduleInModuleRef.current;
+        if (!handle) return;
+        const dpr = Math.min(
+          typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
+          2,
+        );
+        const viewportWidth =
+          typeof window === "undefined"
+            ? 0
+            : window.innerWidth * dpr;
+        const viewportHeight =
+          typeof window === "undefined"
+            ? 0
+            : window.innerHeight * dpr;
+        handle.onFrame({
+          camera: cameraRef.current,
+          pixelRatio: dpr,
+          viewportHeight,
+          viewportWidth,
         });
       },
     );
@@ -232,6 +265,7 @@ function FieldLandingShellContent({
       </a>
       <FieldCanvas
         activeIds={activeStageItemIds}
+        cameraRef={cameraRef}
         className="fixed inset-0"
         sceneStateRef={sceneStateRef}
         stageReady={stageReady}
@@ -259,6 +293,11 @@ function FieldLandingShellContent({
           onHotspotAnimationEnd={(index) => {
             blobControllerRef.current?.onHotspotAnimationEnd(index);
           }}
+        />
+        <FieldModuleInModule
+          ref={moduleInModuleRef}
+          blobControllerRef={blobControllerRef}
+          sceneStateRef={sceneStateRef}
         />
       </div>
 
@@ -311,7 +350,11 @@ function FieldLandingShellContent({
           section={storyThreeSection}
         />
 
-        <FieldSequenceSection section={sequenceSection} />
+        <FieldStoryChapter
+          beats={fieldSequenceBeats}
+          chapterKey="sequence"
+          section={sequenceSection}
+        />
 
         <FieldMobileCarrySection section={mobileCarrySection} />
 
