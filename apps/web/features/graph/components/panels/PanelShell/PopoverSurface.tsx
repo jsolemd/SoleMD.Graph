@@ -30,7 +30,7 @@ export const PopoverSurface = forwardRef<HTMLDivElement, PopoverSurfaceProps>(
     return (
       <div
         ref={ref}
-        className={["rounded-lg", className].filter(Boolean).join(" ")}
+        className={["rounded-surface-sm", className].filter(Boolean).join(" ")}
         style={{
           width,
           minWidth,

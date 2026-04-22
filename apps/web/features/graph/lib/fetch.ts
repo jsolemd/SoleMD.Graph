@@ -12,6 +12,10 @@ import {
 } from './fetch/constants'
 import type { GraphRunRow } from './fetch/constants'
 import {
+  getDevFixtureBundleChecksum,
+  loadDevFixtureGraphRun,
+} from './fetch/dev-fixture'
+import {
   assertCanonicalBundleManifest,
   coerceNumber,
   normalizeBundleManifest,
@@ -209,6 +213,20 @@ async function getCachedGraphRunByChecksum(bundleChecksum: string): Promise<Grap
 }
 
 export async function fetchActiveGraphBundle(): Promise<GraphBundle> {
+  // Pre-rebuild dev path: resolve the active bundle from
+  // /mnt/solemd-graph/bundles/by-checksum/<checksum>/ when
+  // GRAPH_DEV_FIXTURE_BUNDLE_CHECKSUM is set. Remove when the warehouse/serve
+  // rebuild restores solemd.graph_runs. See docs/rag/05b-graph-bundles.md §11.7.
+  const fixtureChecksum = getDevFixtureBundleChecksum()
+  if (fixtureChecksum) {
+    return buildGraphBundle(
+      await withGraphBundleTimeout(
+        `dev fixture graph bundle ${fixtureChecksum}`,
+        loadDevFixtureGraphRun(fixtureChecksum)
+      )
+    )
+  }
+
   return buildGraphBundle(
     await withGraphBundleTimeout('active graph bundle metadata', queryCurrentGraphRun())
   )

@@ -2,6 +2,10 @@
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { ClusterExemplar, ClusterInfo } from "@solemd/graph";
+import {
+  panelAccentCardClassName,
+  panelAccentCardStyle,
+} from "@/features/graph/components/panels/PanelShell";
 import { KV, panelTextDimStyle, panelTextStyle } from "../ui";
 
 export function ClusterContent({ cluster }: { cluster: ClusterInfo | null }) {
@@ -42,11 +46,8 @@ export function ExemplarsContent({
         return (
           <div
             key={`${exemplar.clusterId}:${exemplar.rank}:${exemplar.pointId}`}
-            className="rounded-xl px-3 py-3"
-            style={{
-              backgroundColor: "var(--mode-accent-subtle)",
-              border: "1px solid var(--mode-accent)",
-            }}
+            className={panelAccentCardClassName}
+            style={panelAccentCardStyle}
           >
             <Group justify="space-between" gap="sm" align="flex-start">
               <div style={{ flex: 1 }}>

@@ -81,7 +81,7 @@ export function PromptBoxCard({
   return (
     <motion.div
       ref={cardRef}
-      className="rounded-3xl flex flex-col"
+      className="rounded-surface-lg flex flex-col"
       style={{
         padding,
         ...promptSurfaceStyle,

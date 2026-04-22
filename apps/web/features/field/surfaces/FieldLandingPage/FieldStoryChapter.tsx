@@ -64,15 +64,17 @@ export function FieldStoryChapter({
                 data-story-beat
                 className="grid min-h-[72svh] grid-cols-1 gap-6 py-[20vh] lg:grid-cols-12 lg:items-center lg:gap-10"
               >
-                <div className="lg:col-span-5 lg:col-start-1">
-                  <h2 className="mt-5 text-[2rem] font-medium leading-[0.98] tracking-[-0.035em] sm:text-[2.7rem]">
+                <div className="max-w-[44ch] lg:col-span-4 lg:col-start-1">
+                  <h2 className="text-[2rem] font-medium leading-[1.02] tracking-[-0.035em] sm:text-[2.7rem]">
                     {beat.title}
                   </h2>
-                  <p className="mt-4 text-[15px] leading-7 text-[var(--graph-panel-text-dim)]">
-                    {beat.body}
-                  </p>
+                  {beat.body ? (
+                    <p className="mt-3 text-[15px] leading-7 text-[var(--graph-panel-text-dim)]">
+                      {beat.body}
+                    </p>
+                  ) : null}
                 </div>
-                <div aria-hidden="true" className="lg:col-span-3 lg:col-start-9" />
+                <div aria-hidden="true" className="lg:col-span-7 lg:col-start-6" />
               </div>
             ),
           )}

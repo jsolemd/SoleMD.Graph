@@ -39,7 +39,7 @@ export function EditorOverlaySurface({
           ref={promptInteractionMenuRef}
           tabIndex={-1}
           onKeyDown={handlePromptInteractionMenuKeyDown}
-          className="rounded-2xl px-2 py-2"
+          className="px-2 py-2"
           style={floatingMenuStyle(promptInteractionMenu.x, promptInteractionMenu.y)}
           minWidth={240}
           maxWidth={280}
@@ -74,7 +74,7 @@ export function EditorOverlaySurface({
 
       {referenceMentionMenu && (
         <PopoverSurface
-          className="rounded-2xl px-2 py-2"
+          className="px-2 py-2"
           style={floatingMenuStyle(referenceMentionMenu.x, referenceMentionMenu.y)}
           minWidth={300}
           maxWidth={360}
@@ -134,7 +134,7 @@ function floatingMenuStyle(x: number, y: number) {
 function floatingMenuItemStyle(isActive: boolean) {
   return {
     backgroundColor: isActive ? "var(--mode-accent-subtle)" : "transparent",
-    border: "1px solid var(--mode-accent)",
+    border: "1px solid transparent",
     color: "var(--graph-prompt-text)",
   };
 }
@@ -153,7 +153,8 @@ const floatingMenuSnippetStyle = {
 };
 
 const floatingMenuEmptyStateStyle = {
-  border: "1px solid var(--mode-accent)",
+  backgroundColor: "var(--graph-panel-input-bg)",
+  border: "1px solid transparent",
   color: "var(--graph-prompt-placeholder)",
   fontSize: "0.74rem",
   lineHeight: 1.45,

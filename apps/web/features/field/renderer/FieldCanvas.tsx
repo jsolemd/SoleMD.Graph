@@ -15,10 +15,10 @@ import type {
 
 interface FieldCanvasProps {
   activeIds?: readonly FieldStageItemId[];
-  // Stage-level consumers (e.g. FieldModuleInModule) that need to project
-  // custom particle indices to screen coords can pass a ref here; FieldScene
-  // writes `state.camera` into it each frame so DOM overlays can call
-  // projectPointSourceVertex without owning the R3F camera themselves.
+  // Stage-level DOM overlays that need to project custom particle indices
+  // to screen coords can pass a ref here; FieldScene writes `state.camera`
+  // into it each frame so consumers can call projectPointSourceVertex
+  // without owning the R3F camera themselves.
   cameraRef?: MutableRefObject<Camera | null>;
   sceneStateRef: MutableRefObject<FieldSceneState>;
   reducedMotion?: boolean;

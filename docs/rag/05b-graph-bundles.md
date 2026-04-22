@@ -1248,6 +1248,75 @@ A new check in CI runs both:
 **deferred** for the implementation; the rule (the two must agree) is
 **locked** in §10.5.
 
+### 11.7 Pre-rebuild frontend dev fixture (temporary)
+
+While the warehouse / serve rebuild has not yet restored the
+`solemd.graph_runs` ledger, the frontend needs a way to keep loading the
+existing on-disk bundle
+(`/mnt/solemd-graph/bundles/<graph_run_id>/` with its
+`by-checksum/<hash>/` alias, built 2026-04-12 against bundle version 4).
+The dev path is a **temporary** env-gated shim, not a production
+resolution mode:
+
+- Env var: `GRAPH_DEV_FIXTURE_BUNDLE_CHECKSUM`. When set,
+  `fetchActiveGraphBundle()` in
+  `apps/web/features/graph/lib/fetch.ts` skips the DB lookup and
+  synthesizes the `GraphRunRow` shape from the bundle's on-disk
+  `manifest.json`.
+- Env loading: Next resolves `.env*` relative to `next.config.ts`
+  (`apps/web/`), not the monorepo root. The dev fixture var is declared
+  in the repo-root `.env.local`, so `apps/web/next.config.ts` calls
+  `loadEnvConfig(path.resolve(__dirname, '..', '..'), dev)` from
+  `@next/env` at the top of the module. That populates `process.env`
+  before Next's own env loader runs, so the server sees every repo-root
+  var (`DATABASE_URL`, the fixture checksum, etc.) without a symlink.
+  This is the canonical Next monorepo pattern; remove the
+  `loadEnvConfig` call only if the repo-root env file moves into
+  `apps/web/` or a shared env loader replaces it.
+- Shim module:
+  `apps/web/features/graph/lib/fetch/dev-fixture.ts`. Memoizes per
+  checksum. Only runs when the env var is set.
+- Asset serving is unchanged: the Next.js
+  `/graph-bundles/<bundle_checksum>/<file>` route (`§9`) resolves files
+  via the `by-checksum/` symlink regardless of where the metadata came
+  from. The route's DB-backed recovery path
+  (`bundle-assets.ts:queryGraphRunBundleDirectory`) is never hit while
+  the symlink is healthy, so the shim is purely a metadata bypass.
+- Nothing else moves. No frontend code should branch on whether the
+  fixture is active — the `GraphBundle` it produces is contract-
+  identical to a DB-backed one.
+
+**Adjacent gap — not a fixture responsibility.** The fixture delivers
+a warm DuckDB session to both the landing page and `/graph`. It does
+**not** close the "landing → `/graph` renders with zero visible
+loading state" gap, because the current shell mounts a fresh
+Cosmograph canvas on every `/graph` navigation and waits on its first
+paint (`use-dashboard-shell-controller.ts:116-117`). That is an
+app-architecture issue (persistent canvas above routes), tracked in
+`docs/future/graph-landing-stealth-handoff.md`. Closing it unblocks
+the orb handoff contract too
+(`docs/future/graph-orb-3d-renderer.md`). The fixture neither causes
+this gap nor blocks the fix.
+
+**Cleanup at cutover** — when the rest of §11 lands and the first real
+`solemd.graph_runs` row exists:
+
+1. Delete `apps/web/features/graph/lib/fetch/dev-fixture.ts`.
+2. Drop the fixture branch and its import in
+   `apps/web/features/graph/lib/fetch.ts` (`fetchActiveGraphBundle`).
+3. Remove `GRAPH_DEV_FIXTURE_BUNDLE_CHECKSUM` from `.env.local` and
+   `.env.example`.
+4. Leave the `loadEnvConfig` call in `apps/web/next.config.ts` in
+   place. It is independently load-bearing — it is also how the dev
+   server sees `DATABASE_URL` and every other repo-root var during
+   `npm run dev`. Remove it only if the repo later moves env files
+   into `apps/web/` or introduces a different shared loader.
+5. Remove this subsection and the corresponding Deferred row in `§N`.
+
+This shim has no corresponding `12 §9` ledger row because it never
+writes SQL. It exists strictly to keep Next.js boot green during the
+rebuild window.
+
 ## §12 Failure modes & retention
 
 ### 12.1 Build fails mid-stage (stages 1–3)
@@ -1429,6 +1498,7 @@ bundle lane enforces:
 | Bundle-build parallelism beyond `EXPORT_WORKERS` thread pool | First-sample wall-clock pressure not addressed by §5/§6. |
 | Bundle promotion enqueued via Dramatiq actor `bundle.build_and_publish` instead of CLI | First Dramatiq deploy with a graph-build trigger flow. |
 | `--refresh-eligibility` flag on `python -m app.graph.build` | Operator-driven rebuild cadence outpacing ingest. |
+| Pre-rebuild frontend dev fixture `GRAPH_DEV_FIXTURE_BUNDLE_CHECKSUM` per §11.7 | Removed the moment §11 lands a real `solemd.graph_runs` row; cleanup steps in §11.7. Temporary scaffolding, not a production resolution mode. |
 
 ## Open items
 

@@ -34,7 +34,7 @@ export function BottomTrayShell({
         bottom: crisp,
         opacity: { duration: 0.1, ease: "easeOut" },
       }}
-      className={["absolute left-0 right-0 z-20 flex flex-col rounded-t-xl", className].filter(Boolean).join(" ")}
+      className={["absolute left-0 right-0 z-20 flex flex-col rounded-t-surface", className].filter(Boolean).join(" ")}
       style={{
         height,
         ...panelSurfaceStyle,

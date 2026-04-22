@@ -7,7 +7,6 @@ import { resolveLandingBlobChapterState } from "../scroll/chapters/landing-blob-
 import { projectPointSourceVertex } from "../overlay/field-anchor-projector";
 import {
   INFO_EIGHT_FOCUS_ENTRY,
-  INFO_NINE_STEP_FOCUS_TABLE,
   type InfoNineStepFocusEntry,
 } from "../surfaces/FieldLandingPage/field-lit-particle-indices";
 import {
@@ -274,20 +273,14 @@ export class BlobController extends FieldController {
     uniforms.uFocusActive.value +=
       (focusActiveTarget - uniforms.uFocusActive.value) * driftBlend;
 
-    // Discrete focus lookup: info-9's sequenceFocusStep (1/2/3) indexes
-    // the authored step table; info-8's hold + the inactive gap between
-    // info-9 step boundaries falls back to the single-entity spotlight.
-    // Writes are not drift-blended — the index is discrete, so the
-    // continuous uFocusActive gate (drift-blended above) is what the
+    // Focus entity lookup: the Sequence keyframe holds focusActive while
+    // info-8 / info-9 are on screen, so BlobController spotlights the
+    // single-entity entry (catatonia) whenever that gate is open. The
+    // continuous uFocusActive tween (drift-blended above) is what the
     // shader uses to fade the spotlight in/out.
-    const step = sceneState.sequenceFocusStep;
     let focusEntry: InfoNineStepFocusEntry | null = null;
-    if (motionEnabled) {
-      if (step >= 1 && step <= INFO_NINE_STEP_FOCUS_TABLE.length) {
-        focusEntry = INFO_NINE_STEP_FOCUS_TABLE[step - 1] ?? null;
-      } else if (chapterState.focusActive > 0.01) {
-        focusEntry = INFO_EIGHT_FOCUS_ENTRY;
-      }
+    if (motionEnabled && chapterState.focusActive > 0.01) {
+      focusEntry = INFO_EIGHT_FOCUS_ENTRY;
     }
 
     if (focusEntry) {

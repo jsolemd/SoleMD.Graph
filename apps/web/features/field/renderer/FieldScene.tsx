@@ -312,8 +312,8 @@ export function FieldScene({
     const viewportH = state.gl.domElement.height;
 
     // Publish the live R3F camera to the optional cameraRef so stage-level
-    // DOM overlays (FieldModuleInModule) can call projectPointSourceVertex
-    // without owning the camera themselves.
+    // DOM overlays can call projectPointSourceVertex without owning the
+    // camera themselves.
     if (cameraRef) cameraRef.current = camera;
 
     if (!stageReady) {

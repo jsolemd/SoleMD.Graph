@@ -352,7 +352,7 @@ export function PanelShell({
             : `calc(100vh - ${PANEL_TOP + APP_CHROME_PX.floatingViewportInset}px)`,
         ...panelSurfaceStyle,
       }}
-      className="absolute z-30 flex flex-col rounded-xl"
+      className="absolute z-30 flex flex-col rounded-surface"
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
         <PanelChrome

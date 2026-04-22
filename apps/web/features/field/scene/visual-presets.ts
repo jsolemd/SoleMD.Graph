@@ -115,13 +115,6 @@ export interface FieldSceneState {
   heroProgress: number;
   items: Record<FieldStageItemId, FieldStageItemState>;
   motionEnabled: boolean;
-  // Active step index for the Sequence info-9 embedded mini-module.
-  // 0 = inactive (info-9 not in viewport or still on info-7/8); 1/2/3 =
-  // the step whose focus entity the blob currently spotlights.
-  // `FieldModuleInModule` writes this from info-9 scroll sub-progress;
-  // `landing-blob-chapter.ts` reads it to drive the focus-index uniforms
-  // inside Sequence's chapter targets.
-  sequenceFocusStep: number;
 }
 
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
@@ -330,7 +323,6 @@ export function createFieldSceneState(): FieldSceneState {
     chapters: {},
     heroProgress: 0,
     motionEnabled: true,
-    sequenceFocusStep: 0,
     items: {
       blob: createStageItemState(1, 0, 1),
       stream: createStageItemState(),

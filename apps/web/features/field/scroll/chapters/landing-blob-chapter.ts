@@ -39,7 +39,7 @@ type LandingBlobChapterKey =
   // modulation in the shader). Info-8/9 focus-active gate (1 = focus
   // spotlight wake, 0 = disabled). focusActive is continuous so the
   // on/off transition can fade; the discrete focus index itself rotates
-  // via sceneState.sequenceFocusStep read by BlobController.
+  // via the authored Sequence keyframes read by BlobController.
   | "clusterEmergence"
   | "focusActive";
 
@@ -253,11 +253,11 @@ const storyThreeTimeline = createFieldChapterTimeline<LandingBlobChapterKey>([
 ]);
 
 // Sequence is one timeline over section-sequence progress, sub-ranged
-// into three beats keyed off `atProgress` windows. Beat boundaries are
-// the authored progress quartiles (0.33 / 0.66) — FieldModuleInModule
-// (Stream 3) uses the same thirds to derive sequenceFocusStep, so the
-// controller's discrete focus-index swap lines up with the continuous
-// scale + clusterEmergence + focusActive tweens authored here.
+// into three beats keyed off `atProgress` windows that mirror the three
+// primary beats in the section (info-7 / info-8 / info-9). The continuous
+// shader state (alpha/amplitude/wrapperScale/clusterEmergence/focusActive)
+// holds focusActive through info-8 + info-9 so BlobController can spotlight
+// the single-entity entry (catatonia) across both beats.
 const sequenceTimeline = createFieldChapterTimeline<LandingBlobChapterKey>([
   // info-7 Clusters (0.00 – 0.33): hold the Story 3 peak at 2.10, let
   // every category relax to ambient so no single bucket dominates, and
@@ -298,9 +298,8 @@ const sequenceTimeline = createFieldChapterTimeline<LandingBlobChapterKey>([
     },
   },
   // info-9 Educational Modules (0.66 – 1.00): partial pullback to 1.80
-  // so the three step cards have viewport room; focus stays active while
-  // sceneState.sequenceFocusStep rotates 1/2/3 and BlobController
-  // swaps the discrete focus index per step.
+  // as the Sequence chapter closes; focus stays on catatonia so the
+  // single-entity spotlight carries into the chapter closer.
   {
     atProgress: 0.66,
     duration: 0.34,

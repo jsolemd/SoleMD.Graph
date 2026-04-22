@@ -566,6 +566,37 @@ That keeps the through-line clean:
 warehouse graph outputs → export helper chosen by measurement → immutable Parquet
 bundle → checksum-addressed asset serving → DuckDB-WASM → Cosmograph
 
+One piece of temporary scaffolding lives alongside this lane during the
+rebuild window: the frontend dev fixture
+(`GRAPH_DEV_FIXTURE_BUNDLE_CHECKSUM`, `05b §11.7`) resolves the active
+bundle directly off the `/mnt/solemd-graph/bundles/by-checksum/` alias
+so `apps/web` can keep running against the 2026-04-12 bundle while the
+`solemd.graph_runs` ledger is offline. It is contract-identical to the
+DB path and is deleted at cutover per the cleanup steps in §11.7. The
+fixture loads through `loadEnvConfig` from `@next/env` in
+`apps/web/next.config.ts` pointed at the monorepo root, which is the
+canonical Next pattern for loading repo-root `.env*` files into a
+workspace app — that call stays in place after the fixture is
+removed, because every other repo-root env var (`DATABASE_URL` etc.)
+reaches the dev server through it.
+
+A separate gap lives alongside: the landing → `/graph` boundary still
+plays a fresh-canvas first-paint loading screen even when the DuckDB
+session is warm, because Cosmograph mounts per-route today and no
+shared shell exists above the landing / graph pages. Tracked in
+`docs/future/graph-landing-stealth-handoff.md`; the target is a
+hybrid-route architecture where `/` and `/graph` render the same
+`<GraphShell>` component (different `mode` props) and the internal
+landing → graph flow is scroll-driven on a single route, eliminating
+the route boundary without needing a persistent canvas above the
+App Router. External cold entry at `/graph` accepts the usual
+cold-mount loading frame. The orb plan
+(`docs/future/graph-orb-3d-renderer.md` M6 and the "Landing →
+`/graph` boundary" contract) has been reconciled to this framing;
+its earlier "we do not hoist above the route tree" caveat is
+superseded because no hoisting is needed under the shared-shell
+plan.
+
 ## 10. Auth posture in the through-line
 
 `13-auth.md` belongs in the system, but not yet in the implementation path.

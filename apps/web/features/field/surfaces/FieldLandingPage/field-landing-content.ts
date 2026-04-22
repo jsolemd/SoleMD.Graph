@@ -33,14 +33,6 @@ export interface FieldStoryBeat {
   variant: "columns" | "centered";
 }
 
-export interface FieldSequenceInfoNineStep {
-  readonly body: string;
-  readonly edges: readonly { readonly from: string; readonly to: string }[];
-  readonly focusEntityId: string;
-  readonly heading: string;
-  readonly memberPaperIds: readonly string[];
-}
-
 export interface FieldSectionManifestEntry {
   sectionId: string;
   stageItemId: FieldStageItemId;
@@ -229,40 +221,9 @@ export const fieldSequenceBeats: readonly FieldStoryBeat[] = [
     id: "info-9",
     progressLabel: "03",
     title: "Educational Modules",
-    body: "Step-through lessons anchored to real graph nodes. Sourced evidence illuminates around you as you progress. Here's one.",
+    body: "Step-through lessons anchored to real graph nodes. Sourced evidence illuminates around you as you progress.",
     accentVar: "var(--color-soft-lavender)",
     variant: "centered",
-  },
-] as const;
-
-export const sequenceInfoNineSteps: readonly FieldSequenceInfoNineStep[] = [
-  {
-    heading: "Start where the patient is",
-    body: "Your patient is altered — delirium, catatonia, encephalopathy. The syndrome you name is where the module begins. The graph lights the evidence attached to that label.",
-    focusEntityId: "catatonia",
-    memberPaperIds: ["p4", "p7", "p10"],
-    edges: [],
-  },
-  {
-    heading: "Follow the bridges",
-    body: "Catatonia bridges to NMS. Delirium bridges to both. The literature already crossed these edges — the graph makes the trail visible instead of implied. The module walks the trail with you.",
-    focusEntityId: "nms",
-    memberPaperIds: ["p5"],
-    edges: [
-      { from: "catatonia", to: "nms" },
-      { from: "delirium", to: "catatonia" },
-    ],
-  },
-  {
-    heading: "Land on the lever",
-    body: "A lorazepam challenge distinguishes catatonia from NMS — and treats it in the same move. Where evidence converges, the module ends on the next action, sourced to the paper that earned it.",
-    focusEntityId: "catatonia",
-    memberPaperIds: ["p10"],
-    edges: [
-      { from: "catatonia", to: "nms" },
-      { from: "delirium", to: "catatonia" },
-      { from: "catatonia", to: "p10" },
-    ],
   },
 ] as const;
 

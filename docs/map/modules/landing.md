@@ -231,17 +231,25 @@ Not shipped in Phase 1. Tracked as module-level deferred work.
     modules on real nodes.`
   - beat `info-7` / progress `01` — title: `Clusters` — body:
     `Research communities form from embedding proximity, not predefined
-    categories.`
+    categories. The graph remembers how papers sit near each other in
+    meaning — and the neighborhoods that emerge are the ones your field
+    already recognizes.`
   - beat `info-8` / progress `02` — title: `Living Knowledge` — body:
     `Auto-synthesized articles per entity — definitions, key findings,
-    open questions — refreshed on every build.`
+    open questions — refreshed on every build. The article doesn't
+    drift from the evidence, because it's generated from the evidence.`
   - beat `info-9` / progress `03` — title: `Educational Modules`
     (centered variant) — body: `Step-through lessons anchored to real
     graph nodes. Sourced evidence illuminates around you as you
     progress.`
+  - Educational Modules is currently a thesis beat only. The earlier
+    three-step walkthrough ("Start where the patient is" / "Follow the
+    bridges" / "Land on the lever") was pulled for rethinking; any
+    future version should be re-authored from scratch rather than
+    revived from this doc's history.
 - In-section UI:
   - `FieldStoryProgress` — beat progress rail tracking info-7 → info-9
-    (same primitive Stories 1 and 3 use)
+    (same primitive Stories 1 and 3 use).
 - Overlay:
   - none. Each beat's synthesis facet is expressed natively on the
     blob — no overlay required. Beat-level native-physics grammar is
@@ -306,7 +314,7 @@ When discussing landing work, refer to chapters by:
 - chapter name when the target is narrative or product-facing
 - section id when the target is structural or runtime-bound
 - chapter key when the target is adapter/motion-bound
-- beat id when the target is inside Story 1 or Story 3
+- beat id when the target is inside Story 1, Story 3, or Sequence
 
 Examples:
 

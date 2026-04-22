@@ -29,7 +29,7 @@ export function PromptStageSurface({
   return (
     <div
       className={[
-        "rounded-[1.5rem]",
+        "rounded-surface-lg",
         compact ? "p-2.5" : "p-3.5",
         className,
       ]
