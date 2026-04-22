@@ -221,24 +221,31 @@ Not shipped in Phase 1. Tracked as module-level deferred work.
 - Stage state: `stream owner + blob carry`
 - Purpose: show the fourth zoom level — synthesis — where clusters,
   living-knowledge articles, and educational modules emerge from the
-  field as higher-order structure.
+  field as higher-order structure. Three scroll beats parallel to
+  Story 1 and Story 3 so each synthesis facet has its own vertical
+  airspace and its own native-physics beat on the blob.
 - Content:
   - eyebrow: `Synthesis`
   - title: `Structure emerges.`
   - body: `Clusters form. Articles write themselves. Educators build
     modules on real nodes.`
-  - three synthesis cards (rendered as plain-typography grid, no pills):
-    - `01` — **Clusters** — `Research communities form from embedding
-      proximity, not predefined categories.`
-    - `02` — **Living Knowledge** — `Auto-synthesized articles per entity
-      — definitions, key findings, open questions — refreshed on every
-      build.`
-    - `03` — **Educational Modules** — `Step-through lessons anchored to
-      real graph nodes. Sourced evidence illuminates around you as you
-      progress.`
+  - beat `info-7` / progress `01` — title: `Clusters` — body:
+    `Research communities form from embedding proximity, not predefined
+    categories.`
+  - beat `info-8` / progress `02` — title: `Living Knowledge` — body:
+    `Auto-synthesized articles per entity — definitions, key findings,
+    open questions — refreshed on every build.`
+  - beat `info-9` / progress `03` — title: `Educational Modules`
+    (centered variant) — body: `Step-through lessons anchored to real
+    graph nodes. Sourced evidence illuminates around you as you
+    progress.`
+- In-section UI:
+  - `FieldStoryProgress` — beat progress rail tracking info-7 → info-9
+    (same primitive Stories 1 and 3 use)
 - Overlay:
-  - `graph overlay (visx)` — Phase 2, deferred; cluster/label pass with
-    three cluster labels matching the synthesis cards
+  - none. Each beat's synthesis facet is expressed natively on the
+    blob — no overlay required. Beat-level native-physics grammar is
+    authored in `docs/future/field-landing-native-physics.md`.
 
 ### 7. Mobile Carry
 
