@@ -437,6 +437,34 @@ async def run_release_ingest(
                         reason=str(exc),
                     )
                 raise
+            except asyncio.CancelledError:
+                _observe_active_phase(
+                    source_code=request.source_code,
+                    release_tag=request.release_tag,
+                    phase_name=active_phase_name,
+                    phase_started=active_phase_started,
+                )
+                if ingest_run_id is not None:
+                    try:
+                        await _set_terminal_status(
+                            control_connection,
+                            ingest_run_id,
+                            INGEST_STATUS_ABORTED,
+                            "run cancelled (time_limit or worker shutdown)",
+                        )
+                        record_ingest_run(source_code=request.source_code, outcome="aborted")
+                        _emit_event(
+                            "ingest.cycle.aborted",
+                            ingest_run_id=ingest_run_id,
+                            source_code=request.source_code,
+                            release_tag=request.release_tag,
+                            reason="cancelled",
+                        )
+                    except Exception:
+                        LOGGER.exception(
+                            "failed to mark ingest run aborted during cancellation",
+                        )
+                raise
             except Exception as exc:
                 failure_phase = active_phase_name or ("loading" if family_name is not None else "start")
                 _observe_active_phase(

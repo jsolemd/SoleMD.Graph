@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from time import perf_counter
 from uuid import UUID
 
@@ -56,6 +58,9 @@ from app.telemetry.metrics import (
     record_corpus_selection_summary_rows,
     track_corpus_selection_lock_age,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def run_corpus_selection(
@@ -298,6 +303,35 @@ async def run_corpus_selection(
                         )
                     return str(run_id)
             except (CorpusSelectionAlreadyPublished, CorpusSelectionAlreadyInProgress):
+                raise
+            except asyncio.CancelledError:
+                if active_phase_name is not None and active_phase_started is not None:
+                    observe_corpus_selection_phase(
+                        selector_version=request.selector_version,
+                        phase=active_phase_name,
+                        duration_seconds=perf_counter() - active_phase_started,
+                    )
+                if run_id is not None:
+                    try:
+                        await _set_selection_terminal_status(
+                            connection,
+                            run_id,
+                            "run cancelled (time_limit or worker shutdown)",
+                        )
+                        record_corpus_selection_run(
+                            selector_version=request.selector_version,
+                            outcome="aborted",
+                        )
+                        emit_event(
+                            "corpus.selection.aborted",
+                            corpus_selection_run_id=run_id,
+                            reason="cancelled",
+                            total_duration_s=perf_counter() - cycle_started,
+                        )
+                    except Exception:
+                        _LOGGER.exception(
+                            "failed to mark corpus selection run aborted during cancellation",
+                        )
                 raise
             except Exception as exc:
                 if active_phase_name is not None and active_phase_started is not None:

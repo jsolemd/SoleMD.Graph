@@ -20,7 +20,7 @@ from app.ingest.runtime import run_release_ingest
     max_retries=2,
     min_backoff=10_000,
     max_backoff=600_000,
-    time_limit=6 * 60 * 60 * 1000,
+    time_limit=24 * 60 * 60 * 1000,
     throws=(
         IngestAlreadyPublished,
         IngestAlreadyInProgress,

@@ -205,7 +205,37 @@ def _stream_biocxml(
                         handle = archive.extractfile(member)
                         if handle is None:
                             continue
-                        for _, document in etree.iterparse(handle, events=("end",), tag="document"):
+                        try:
+                            document_iter = etree.iterparse(
+                                handle,
+                                events=("end",),
+                                tag="document",
+                                recover=True,
+                            )
+                        except etree.XMLSyntaxError as exc:
+                            skipped["member_xml_syntax_error"] += 1
+                            LOGGER.warning(
+                                "PubTator BioCXML member %s failed to open (%s); skipping",
+                                member.name,
+                                exc,
+                            )
+                            continue
+                        while True:
+                            try:
+                                event = next(document_iter)
+                            except StopIteration:
+                                break
+                            except etree.XMLSyntaxError as exc:
+                                skipped["member_xml_syntax_error"] += 1
+                                LOGGER.warning(
+                                    "PubTator BioCXML member %s parse error "
+                                    "after %d documents (%s); skipping remainder",
+                                    member.name,
+                                    yielded,
+                                    exc,
+                                )
+                                break
+                            _, document = event
                             try:
                                 if on_progress is not None and yielded % _PROGRESS_REPORT_LINE_INTERVAL == 0:
                                     on_progress(raw_handle.tell())

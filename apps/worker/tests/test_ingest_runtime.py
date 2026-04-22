@@ -11,7 +11,11 @@ from prometheus_client.parser import text_string_to_metric_families
 from app.db import init_connection, open_pools
 from app.ingest.errors import IngestAlreadyInProgress, IngestAlreadyPublished
 from app.ingest.models import IngestPlan, StartReleaseRequest
-from app.ingest.runtime import _open_or_resume_run, run_release_ingest
+from app.ingest.runtime import (
+    INGEST_STATUS_ABORTED,
+    _open_or_resume_run,
+    run_release_ingest,
+)
 from app.ingest.sources import pubtator, semantic_scholar
 from app.telemetry.metrics import collect_metrics_text
 from helpers import write_jsonl_gz, write_manifest, write_tar_gz, write_tsv_gz
@@ -1812,3 +1816,163 @@ async def test_writer_failure_releases_lock_and_records_family_failure(
                 f"worker_active_run_info.run_label leaked a UUID-shaped "
                 f"segment: {run_label!r}"
             )
+
+
+def test_stream_biocxml_skips_members_with_null_bytes(tmp_path: Path) -> None:
+    import gzip
+    import io
+    import tarfile
+
+    from app.ingest.sources.pubtator import _stream_biocxml
+
+    good_member = (
+        "<collection>\n"
+        "  <document>\n"
+        "    <id>12345</id>\n"
+        "    <passage>\n"
+        "      <offset>0</offset>\n"
+        "      <text>Aspirin relieved headache.</text>\n"
+        '      <annotation id="A1">\n'
+        '        <infon key="type">Chemical</infon>\n'
+        '        <infon key="identifier">Chemical|MESH:D000001</infon>\n'
+        '        <location offset="0" length="7" />\n'
+        "        <text>Aspirin</text>\n"
+        "      </annotation>\n"
+        "    </passage>\n"
+        "  </document>\n"
+        "</collection>\n"
+    ).encode("utf-8")
+    bad_member = (
+        b"<collection><document><id>999</id><passage>"
+        b"<offset>0</offset><text>Corrupt\x00record</text>"
+        b"</passage></document></collection>"
+    )
+
+    path = tmp_path / "BioCXML.null.tar.gz"
+    with path.open("wb") as handle:
+        with gzip.GzipFile(fileobj=handle, mode="wb") as gz:
+            with tarfile.open(fileobj=gz, mode="w|") as archive:
+                for name, data in (("good.BioC.XML", good_member), ("bad.BioC.XML", bad_member)):
+                    info = tarfile.TarInfo(name=name)
+                    info.size = len(data)
+                    archive.addfile(info, io.BytesIO(data))
+
+    rows = list(_stream_biocxml(path, max_records=None))
+
+    # good member yields one entity row; bad member is skipped, not fatal.
+    assert len(rows) == 1, (
+        f"expected exactly one entity row from the good member; got {len(rows)}"
+    )
+    assert rows[0]["pmid"] == 12345
+    assert rows[0]["row_kind"] == "entity"
+
+
+@pytest.mark.asyncio
+async def test_cancellation_marks_run_aborted_and_releases_lock(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+    monkeypatch,
+) -> None:
+    release_tag = "2026-04-22"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+
+    async def cancelling_load_family(*args, **kwargs):
+        raise asyncio.CancelledError()
+
+    from app.ingest.runtime import SOURCE_WRITERS, SourceWriter
+
+    monkeypatch.setitem(
+        SOURCE_WRITERS,
+        "s2",
+        SourceWriter(load_family=cancelling_load_family),
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await run_release_ingest(
+                StartReleaseRequest(
+                    source_code="s2",
+                    release_tag=release_tag,
+                    requested_by="tester",
+                    family_allowlist=("citations",),
+                ),
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+
+        ingest_pool = pools.get("ingest_write")
+        async with ingest_pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT ir.status, ir.completed_at, ir.error_message
+                FROM solemd.ingest_runs ir
+                JOIN solemd.source_releases sr USING (source_release_id)
+                WHERE sr.source_name = 's2'
+                  AND sr.source_release_key = $1
+                ORDER BY ir.started_at DESC
+                LIMIT 1
+                """,
+                release_tag,
+            )
+            assert row is not None, "expected ingest_run row for cancelled run"
+            assert row["status"] == INGEST_STATUS_ABORTED, (
+                f"cancelled run should be marked ABORTED; got status={row['status']}"
+            )
+            assert row["completed_at"] is not None, (
+                "cancelled run must set completed_at (not stranded)"
+            )
+            assert row["error_message"], (
+                "cancelled run must set error_message (not stranded empty)"
+            )
+            assert "cancel" in row["error_message"].lower(), (
+                f"error_message should mention cancellation, got: {row['error_message']!r}"
+            )
+
+            lock_key = await connection.fetchval(
+                "SELECT hashtextextended($1, 0)::bigint",
+                f"ingest:s2:{release_tag}",
+            )
+            acquired = await connection.fetchval(
+                "SELECT pg_try_advisory_lock($1)", lock_key
+            )
+            try:
+                assert acquired, (
+                    "advisory lock must be released after cancellation"
+                )
+            finally:
+                if acquired:
+                    await connection.execute(
+                        "SELECT pg_advisory_unlock($1)", lock_key
+                    )
+    finally:
+        await pools.close()
