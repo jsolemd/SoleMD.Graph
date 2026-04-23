@@ -1,7 +1,7 @@
 "use client";
 
 import { gsap } from "gsap";
-import type { ChapterAdapter } from "./types";
+import { NOOP_CHAPTER_HANDLE, type ChapterAdapter } from "./types";
 
 export const storyTwoChapterAdapter: ChapterAdapter = (ctx) => {
   const { element, reducedMotion, subscribe, getState } = ctx;
@@ -9,7 +9,7 @@ export const storyTwoChapterAdapter: ChapterAdapter = (ctx) => {
   const targets = Array.from(
     element.querySelectorAll<HTMLElement>("[data-story-two-target]"),
   );
-  if (targets.length === 0) return { dispose() {} };
+  if (targets.length === 0) return NOOP_CHAPTER_HANDLE;
 
   const restoreTargets = () => {
     targets.forEach((node) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { gsap } from "gsap";
-import type { ChapterAdapter } from "./types";
+import { NOOP_CHAPTER_HANDLE, type ChapterAdapter } from "./types";
 
 export const surfaceRailChapterAdapter: ChapterAdapter = (ctx) => {
   const { element, reducedMotion, subscribe, getState } = ctx;
@@ -11,7 +11,7 @@ export const surfaceRailChapterAdapter: ChapterAdapter = (ctx) => {
   );
   const prefersCenteredStagger = element.hasAttribute("data-center");
 
-  if (items.length === 0) return { dispose() {} };
+  if (items.length === 0) return NOOP_CHAPTER_HANDLE;
 
   const restoreItems = () => {
     items.forEach((node) => {

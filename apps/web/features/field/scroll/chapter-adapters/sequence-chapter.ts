@@ -1,7 +1,7 @@
 "use client";
 
 import { gsap } from "gsap";
-import type { ChapterAdapter } from "./types";
+import { NOOP_CHAPTER_HANDLE, type ChapterAdapter } from "./types";
 
 function prepareCheckmarkPaths(element: HTMLElement) {
   return Array.from(
@@ -23,7 +23,7 @@ export const sequenceChapterAdapter: ChapterAdapter = (ctx) => {
   );
   const checkmarkPaths = prepareCheckmarkPaths(element);
 
-  if (!main || items.length === 0) return { dispose() {} };
+  if (!main || items.length === 0) return NOOP_CHAPTER_HANDLE;
 
   const restoreCheckmarks = () => {
     checkmarkPaths.forEach(({ length, path }) => {

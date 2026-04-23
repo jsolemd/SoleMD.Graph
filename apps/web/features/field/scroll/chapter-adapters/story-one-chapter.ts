@@ -1,7 +1,7 @@
 "use client";
 
 import { gsap } from "gsap";
-import type { ChapterAdapter } from "./types";
+import { NOOP_CHAPTER_HANDLE, type ChapterAdapter } from "./types";
 
 export const storyOneChapterAdapter: ChapterAdapter = (ctx) => {
   const { element, reducedMotion, subscribe, getState } = ctx;
@@ -9,7 +9,7 @@ export const storyOneChapterAdapter: ChapterAdapter = (ctx) => {
   const beats = Array.from(
     element.querySelectorAll<HTMLElement>("[data-story-beat]"),
   );
-  if (beats.length === 0) return { dispose() {} };
+  if (beats.length === 0) return NOOP_CHAPTER_HANDLE;
 
   const restoreBeats = () => {
     beats.forEach((node) => {

@@ -37,3 +37,12 @@ export interface ChapterAdapterHandle {
 export type ChapterAdapter = (
   context: ChapterAdapterContext,
 ) => ChapterAdapterHandle;
+
+// Shared handle returned by adapters that short-circuit during setup
+// (empty query selectors, missing required sub-elements, etc.). Centralizing
+// the noop dispose avoids 5+ copies of `{ dispose() {} }` scattered across
+// the per-chapter adapter modules; every short-circuit path resolves to the
+// same object since the teardown is unconditionally inert.
+export const NOOP_CHAPTER_HANDLE: ChapterAdapterHandle = Object.freeze({
+  dispose() {},
+});
