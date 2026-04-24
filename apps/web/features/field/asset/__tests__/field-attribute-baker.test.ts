@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry } from "three";
+import { BufferAttribute, BufferGeometry, DynamicDrawUsage } from "three";
 import {
   bakeFieldAttributes,
   buildBucketIndex,
@@ -140,5 +140,72 @@ describe("bakeFieldAttributes", () => {
     expect(index.entity).toBe(1);
     expect(index.relation).toBe(2);
     expect(index.evidence).toBe(3);
+  });
+
+  /* ---- Shared-shader contract: paper-mode attribute defaults ---- */
+
+  it("always bakes aSizeFactor, aLogicalPaperId, aClickAttraction", () => {
+    const geometry = makeGeometry(256);
+    bakeFieldAttributes(geometry, { random: seededRandom(11) });
+    expect(geometry.getAttribute("aSizeFactor")).toBeDefined();
+    expect(geometry.getAttribute("aLogicalPaperId")).toBeDefined();
+    expect(geometry.getAttribute("aClickAttraction")).toBeDefined();
+  });
+
+  it("lands-mode defaults make the shader additions no-ops: size=1, id=-1, click=0", () => {
+    const pointCount = 1024;
+    const geometry = makeGeometry(pointCount);
+    bakeFieldAttributes(geometry, { random: seededRandom(13) });
+
+    const aSizeFactor = geometry.getAttribute("aSizeFactor")!.array as Float32Array;
+    const aLogicalPaperId = geometry.getAttribute("aLogicalPaperId")!.array as Float32Array;
+    const aClickAttraction = geometry.getAttribute("aClickAttraction")!.array as Float32Array;
+
+    for (let i = 0; i < pointCount; i += 1) {
+      expect(aSizeFactor[i]).toBe(1);
+      expect(aLogicalPaperId[i]).toBe(-1);
+      expect(aClickAttraction[i * 3]).toBe(0);
+      expect(aClickAttraction[i * 3 + 1]).toBe(0);
+      expect(aClickAttraction[i * 3 + 2]).toBe(0);
+    }
+  });
+
+  it("marks aClickAttraction for DynamicDraw (orb's d3-force partial updates)", () => {
+    const geometry = makeGeometry(128);
+    bakeFieldAttributes(geometry, { random: seededRandom(1) });
+    const attr = geometry.getAttribute("aClickAttraction")!;
+    expect(attr.usage).toBe(DynamicDrawUsage);
+  });
+
+  it("lands-mode is bit-exact reproducible across calls with the same seed", () => {
+    const geometry1 = makeGeometry(512);
+    const geometry2 = makeGeometry(512);
+    bakeFieldAttributes(geometry1, { random: seededRandom(9001) });
+    bakeFieldAttributes(geometry2, { random: seededRandom(9001) });
+
+    for (const name of [
+      "aMove",
+      "aSpeed",
+      "aRandomness",
+      "aAlpha",
+      "aSelection",
+      "aIndex",
+      "aStreamFreq",
+      "aFunnelThickness",
+      "aFunnelNarrow",
+      "aFunnelStartShift",
+      "aFunnelEndShift",
+      "aBucket",
+      "aSizeFactor",
+      "aLogicalPaperId",
+      "aClickAttraction",
+    ]) {
+      const a = geometry1.getAttribute(name)!.array as Float32Array;
+      const b = geometry2.getAttribute(name)!.array as Float32Array;
+      expect(a.length).toBe(b.length);
+      for (let i = 0; i < a.length; i += 1) {
+        expect(a[i]).toBe(b[i]);
+      }
+    }
   });
 });

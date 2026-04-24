@@ -31,6 +31,13 @@ attribute vec3 aMove;
 attribute vec3 aSpeed;
 attribute vec3 aRandomness;
 
+// Paper-mode additions (orb-field pivot, step 4). Lands-mode bakes
+// aSizeFactor=1.0, aLogicalPaperId=-1, aClickAttraction=(0,0,0) so
+// these additions are no-ops and Maze parity is preserved.
+attribute float aSizeFactor;
+attribute float aLogicalPaperId;
+attribute vec3 aClickAttraction;
+
 uniform bool uIsMobile;
 uniform float uPixelRatio;
 uniform float uScale;
@@ -71,6 +78,11 @@ uniform int uFocusEntityIndex;
 uniform int uFocusMembers[8];
 uniform int uFocusMemberCount;
 uniform float uFocusActive;
+
+// Click-attraction displacement gate. 0 by default (lands-mode no-op).
+// d3-force-3d writes to aClickAttraction per click and tweens this to
+// 1.0 briefly; see features/field/physics/click-attraction-sim.ts (step 7).
+uniform float uClickStrength;
 
 uniform float uWidth;
 uniform float uHeight;
@@ -272,6 +284,11 @@ void main() {
     uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uTimeFactor * uSpeed))
   );
 
+  // Click-attraction displacement. aClickAttraction is zero in lands-mode
+  // AND when no click sim is active; uClickStrength gates the fade-in/out.
+  // Combined, this is a perfect zero in lands-mode.
+  displaced += aClickAttraction * uClickStrength;
+
   if (uStream > 0.0) {
     displaced.x += uTime * uTimeFactor * uSpeed * uStream * 0.3;
     displaced.x = mod(displaced.x - uWidth * 0.5, uWidth) - uWidth * 0.5;
@@ -301,6 +318,9 @@ void main() {
   gl_PointSize = uSize;
   gl_PointSize *= 100.0 / vDistance;
   gl_PointSize *= uPixelRatio;
+  // Paper-mode per-particle size modulation. aSizeFactor=1.0 in
+  // lands-mode, so this multiply is a bit-exact no-op by construction.
+  gl_PointSize *= aSizeFactor;
 
   vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
   // Light-mode alpha boost: particles that were glow on black need more

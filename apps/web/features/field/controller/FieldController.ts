@@ -78,6 +78,9 @@ export interface LayerUniforms {
   uFocusMembers: { value: number[] };
   uFocusMemberCount: { value: number };
   uFocusActive: { value: number };
+  // Paper-mode click-attraction gate. 0 in lands-mode; step 7 tweens to
+  // ~1 during a d3-force-3d click sim, then back to 0.
+  uClickStrength: { value: number };
   uSize: { value: number };
   uSpeed: { value: number };
   uStream: { value: number };
@@ -242,6 +245,7 @@ export abstract class FieldController {
       uFocusMembers: { value: FOCUS_MEMBER_EMPTY.slice() },
       uFocusMemberCount: { value: 0 },
       uFocusActive: { value: 0 },
+      uClickStrength: { value: 0 },
       uWidth: { value: shader.width },
       uHeight: { value: shader.height },
       uStream: { value: shader.stream },

@@ -7,6 +7,18 @@ import * as THREE from "three";
 //
 // Bucket id -> aBucket float (0..N-1) is exposed via `buildBucketIndex()`
 // so consumers can gate per-bucket color behavior on-field.
+//
+// Field-shader contract (orb-field pivot, step 4): three additional
+// attributes are ALWAYS baked so the shared vertex shader can reference
+// them unconditionally. The field substrate gives them no-op defaults;
+// features/orb/bake/apply-paper-overrides.ts rewrites them in place when
+// paper data streams in. Keeping the field baker paper-unaware preserves
+// the substrate/orb boundary.
+//
+//   - aSizeFactor    — 1.0 (gl_PointSize *= 1 is a no-op)
+//   - aLogicalPaperId — -1 sentinel (shader never matches a real index)
+//   - aClickAttraction — (0,0,0), DynamicDraw so orb physics can write
+//     partial updates later without reallocating the buffer
 
 export interface FieldSemanticBucket {
   id: string;
@@ -106,7 +118,9 @@ function pickBucketIndex(
 
 // Writes every Maze attribute (aMove, aSpeed, aRandomness, aAlpha, aSelection,
 // aIndex, aStreamFreq, aFunnelThickness, aFunnelNarrow, aFunnelStartShift,
-// aFunnelEndShift) plus SoleMD `aBucket` onto the given BufferGeometry.
+// aFunnelEndShift) plus SoleMD `aBucket` onto the given BufferGeometry,
+// plus the three paper-mode defaults required by the shared vertex shader
+// (aSizeFactor=1, aLogicalPaperId=-1, aClickAttraction=0 DynamicDraw).
 // Requires the position attribute to already be present (determines count).
 export function bakeFieldAttributes(
   geometry: THREE.BufferGeometry,
@@ -143,6 +157,11 @@ export function bakeFieldAttributes(
   const aFunnelEndShift = new Float32Array(count);
   const aBucket = new Float32Array(count);
 
+  // Shared-shader defaults — orb's apply-paper-overrides overwrites these.
+  const aSizeFactor = new Float32Array(count);
+  const aLogicalPaperId = new Float32Array(count);
+  const aClickAttraction = new Float32Array(count * 3);
+
   const alphaMin = alphaRange[0];
   const alphaSpan = alphaRange[1] - alphaRange[0];
 
@@ -172,6 +191,10 @@ export function bakeFieldAttributes(
     aFunnelStartShift[i] = bucket.aFunnelStartShift;
     aFunnelEndShift[i] = bucket.aFunnelEndShift;
     aBucket[i] = bucketIndex;
+
+    aSizeFactor[i] = 1;
+    aLogicalPaperId[i] = -1;
+    // aClickAttraction is already zero from the Float32Array constructor.
   }
 
   geometry.setAttribute("aMove", new THREE.BufferAttribute(aMove, 3));
@@ -204,4 +227,17 @@ export function bakeFieldAttributes(
     new THREE.BufferAttribute(aFunnelEndShift, 1),
   );
   geometry.setAttribute("aBucket", new THREE.BufferAttribute(aBucket, 1));
+  geometry.setAttribute(
+    "aSizeFactor",
+    new THREE.BufferAttribute(aSizeFactor, 1),
+  );
+  geometry.setAttribute(
+    "aLogicalPaperId",
+    new THREE.BufferAttribute(aLogicalPaperId, 1),
+  );
+  // DynamicDrawUsage: orb's d3-force-3d click-attraction sim (step 7)
+  // writes partial index ranges here per frame without reallocating.
+  const clickAttr = new THREE.BufferAttribute(aClickAttraction, 3);
+  clickAttr.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("aClickAttraction", clickAttr);
 }
