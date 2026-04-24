@@ -95,6 +95,7 @@ export async function createGraphBundleSession(
       get canvas() {
         return overlayController.getCanvas()
       },
+      duckdbConnection: conn,
       async dispose() {
         if (disposed) {
           return

@@ -150,7 +150,7 @@ export function usePaperAttributesBaker(
 
         // Step 2: open a streaming read in particle_idx order so each
         // batch is a contiguous chunk of particles.
-        const reader = await connection.send<any>(
+        const reader = await connection.send(
           `SELECT particle_idx, paper_id, cluster_id,
                   paper_reference_count, paper_entity_count,
                   paper_relation_count, year

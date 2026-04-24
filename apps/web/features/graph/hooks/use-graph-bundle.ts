@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 import {
   invalidateGraphBundleSessionCache,
   loadGraphBundle,
@@ -19,6 +20,7 @@ import type {
 interface ResolvedGraphBundleState {
   bundleChecksum: string | null
   canvas: GraphCanvasSource | null
+  connection: AsyncDuckDBConnection | null
   error: Error | null
   progress: GraphBundleLoadProgress | null
   queries: GraphBundleQueries | null
@@ -26,6 +28,7 @@ interface ResolvedGraphBundleState {
 
 interface GraphBundleState {
   canvas: GraphCanvasSource | null
+  connection: AsyncDuckDBConnection | null
   error: Error | null
   loading: boolean
   progress: GraphBundleLoadProgress | null
@@ -52,6 +55,7 @@ export function useGraphBundle(bundle: GraphBundle | null): GraphBundleState {
   const [state, setState] = useState<ResolvedGraphBundleState>({
       bundleChecksum: null,
       canvas: null,
+      connection: null,
       error: null,
       progress: null,
       queries: null,
@@ -84,6 +88,7 @@ export function useGraphBundle(bundle: GraphBundle | null): GraphBundleState {
       setState({
         bundleChecksum: sessionBundle.bundleChecksum,
         canvas: null,
+        connection: null,
         error: null,
         progress: null,
         queries: null,
@@ -165,6 +170,7 @@ export function useGraphBundle(bundle: GraphBundle | null): GraphBundleState {
           ...current,
           bundleChecksum: sessionBundle.bundleChecksum,
           canvas: session.canvas,
+          connection: session.duckdbConnection,
           queries,
           error: null,
         }))
@@ -177,6 +183,7 @@ export function useGraphBundle(bundle: GraphBundle | null): GraphBundleState {
         setState({
           bundleChecksum: sessionBundle.bundleChecksum,
           canvas: null,
+          connection: null,
           error: error instanceof Error ? error : new Error('Failed to load graph bundle'),
           progress: null,
           queries: null,
@@ -198,6 +205,7 @@ export function useGraphBundle(bundle: GraphBundle | null): GraphBundleState {
 
   return {
     canvas: isCanvasReady ? state.canvas : null,
+    connection: isCanvasReady ? state.connection : null,
     error: isResolvedBundle ? state.error : null,
     loading: !isCanvasReady && !state.error,
     progress: isResolvedBundle ? state.progress : null,

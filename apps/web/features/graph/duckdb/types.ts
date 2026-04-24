@@ -37,6 +37,14 @@ export type GraphCanvasListener = (canvas: GraphCanvasSource) => void
 export interface GraphBundleSession {
   availableLayers: GraphLayer[]
   canvas: GraphCanvasSource
+  /**
+   * Live DuckDB-Wasm connection for callers that need streaming
+   * (`conn.send(sql, true)`) or temp-table creation beyond what the
+   * typed query methods expose. Used by the orb paper-attribute baker;
+   * general-purpose consumers should prefer the typed methods on this
+   * session instead of reaching into the connection directly.
+   */
+  duckdbConnection: AsyncDuckDBConnection
   dispose: () => Promise<void>
   subscribeCanvas: (listener: GraphCanvasListener) => () => void
   setSelectedPointIndices: (pointIndices: number[]) => Promise<void>
