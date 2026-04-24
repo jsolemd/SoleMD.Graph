@@ -5,6 +5,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import {
   AdditiveBlending,
+  BufferGeometry,
   Group,
   NormalBlending,
   ShaderMaterial,
@@ -36,6 +37,22 @@ import { getFieldPointTexture } from "./field-point-texture";
 
 export type { FieldHotspotFrame } from "../controller/BlobController";
 
+/**
+ * Out-of-tree subscriber for the blob layer's BufferGeometry.
+ *
+ * FieldScene calls this once the blob geometry has been attached to the
+ * scene graph, passing (geometry, invalidate). The callback installs
+ * whatever subscription it wants — e.g. an orb-mode paper-mutation store
+ * — and returns a disposer run on scene unmount or prop-change.
+ *
+ * The callback is opaque from FieldScene's perspective: this is the
+ * substrate→feature boundary. Renderer code stays unaware of orb.
+ */
+export type BlobGeometrySubscriber = (args: {
+  geometry: BufferGeometry;
+  invalidate: () => void;
+}) => () => void;
+
 interface FieldSceneProps {
   activeIds?: readonly FieldStageItemId[];
   cameraRef?: MutableRefObject<Camera | null>;
@@ -46,6 +63,13 @@ interface FieldSceneProps {
   ) => void;
   sceneStateRef: MutableRefObject<FieldSceneState>;
   stageReady?: boolean;
+  /**
+   * Optional blob-geometry subscriber. When provided, FieldScene installs
+   * it once the blob layer's BufferGeometry is attached and tears it
+   * down on unmount. Used by orb mode to stream paper-attribute chunks
+   * into the same 16384-particle buffer.
+   */
+  blobGeometrySubscriber?: BlobGeometrySubscriber;
 }
 
 interface StageLayerHandle {
@@ -53,6 +77,7 @@ interface StageLayerHandle {
   model: MutableRefObject<Group | null>;
   mouseWrapper: MutableRefObject<Group | null>;
   wrapper: MutableRefObject<Group | null>;
+  geometry: MutableRefObject<BufferGeometry | null>;
 }
 
 // Maze parity toggle: source exposes `?blending` to swap AdditiveBlending
@@ -85,7 +110,7 @@ function FieldStageLayer({
       <group ref={handles.mouseWrapper}>
         <group ref={handles.model}>
           <points frustumCulled={false}>
-            <bufferGeometry>
+            <bufferGeometry ref={handles.geometry}>
               <bufferAttribute attach="attributes-position" args={[buffers.position, 3]} />
               <bufferAttribute attach="attributes-aMove" args={[buffers.aMove, 3]} />
               <bufferAttribute attach="attributes-aSpeed" args={[buffers.aSpeed, 3]} />
@@ -159,8 +184,10 @@ export function FieldScene({
   onControllerReady,
   sceneStateRef,
   stageReady = true,
+  blobGeometrySubscriber,
 }: FieldSceneProps) {
   const viewportWidth = useThree((state) => state.size.width);
+  const invalidate = useThree((state) => state.invalidate);
   const isMobile = viewportWidth < FIELD_NON_DESKTOP_BREAKPOINT;
   const colorScheme = useComputedColorScheme("dark");
   const lightModeValue = colorScheme === "light" ? 1 : 0;
@@ -232,14 +259,17 @@ export function FieldScene({
   const blobModelRef = useRef<Group | null>(null);
   const blobMouseWrapperRef = useRef<Group | null>(null);
   const blobWrapperRef = useRef<Group | null>(null);
+  const blobGeometryRef = useRef<BufferGeometry | null>(null);
   const streamMaterialRef = useRef<ShaderMaterial | null>(null);
   const streamModelRef = useRef<Group | null>(null);
   const streamMouseWrapperRef = useRef<Group | null>(null);
   const streamWrapperRef = useRef<Group | null>(null);
+  const streamGeometryRef = useRef<BufferGeometry | null>(null);
   const objectFormationMaterialRef = useRef<ShaderMaterial | null>(null);
   const objectFormationModelRef = useRef<Group | null>(null);
   const objectFormationMouseWrapperRef = useRef<Group | null>(null);
   const objectFormationWrapperRef = useRef<Group | null>(null);
+  const objectFormationGeometryRef = useRef<BufferGeometry | null>(null);
 
   const blobHandles = useMemo<StageLayerHandle>(
     () => ({
@@ -247,6 +277,7 @@ export function FieldScene({
       model: blobModelRef,
       mouseWrapper: blobMouseWrapperRef,
       wrapper: blobWrapperRef,
+      geometry: blobGeometryRef,
     }),
     [],
   );
@@ -256,6 +287,7 @@ export function FieldScene({
       model: streamModelRef,
       mouseWrapper: streamMouseWrapperRef,
       wrapper: streamWrapperRef,
+      geometry: streamGeometryRef,
     }),
     [],
   );
@@ -265,6 +297,7 @@ export function FieldScene({
       model: objectFormationModelRef,
       mouseWrapper: objectFormationMouseWrapperRef,
       wrapper: objectFormationWrapperRef,
+      geometry: objectFormationGeometryRef,
     }),
     [],
   );
@@ -374,6 +407,33 @@ export function FieldScene({
     onControllerReady,
     streamController,
     streamHandles,
+  ]);
+
+  // Install the blob-geometry subscriber once blob is mounted AND the
+  // subscriber prop is present (orb mode). Renderer stays agnostic about
+  // what the subscriber does; it hands over (geometry, invalidate) and
+  // tears down on unmount or prop change. With `frameloop="demand"`, the
+  // subscriber MUST call `invalidate()` after mutating buffer attrs for
+  // the GPU to observe the change — that's the contract.
+  //
+  // Effect keys on `pointSources.blob` so it reinstalls whenever the
+  // blob layer's source (which owns the geometry attributes) is rebuilt.
+  useEffect(() => {
+    if (!blobGeometrySubscriber) return;
+    if (!activeIdSet.has("blob")) return;
+    if (!pointSources.blob) return;
+    const geometry = blobHandles.geometry.current;
+    if (!geometry) return;
+    const dispose = blobGeometrySubscriber({ geometry, invalidate });
+    return () => {
+      dispose();
+    };
+  }, [
+    activeIdSet,
+    blobGeometrySubscriber,
+    blobHandles,
+    invalidate,
+    pointSources.blob,
   ]);
 
   useFrame((state, delta) => {

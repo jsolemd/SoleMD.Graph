@@ -30,8 +30,11 @@ import {
   FieldSceneStoreProvider,
 } from "@/features/field/scroll/field-scene-store";
 import type { FieldController } from "@/features/field/controller/FieldController";
+import { installBlobMutationSubscriber } from "@/features/orb/bake/install-blob-mutation-subscriber";
+import { useOrbGeometryMutationStore } from "@/features/orb/stores/geometry-mutation-store";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import { useShellVariant } from "@/features/graph/components/shell/use-shell-variant";
+import { useEffect } from "react";
 
 /**
  * Layout-owned client shell for the (dashboard) route group.
@@ -85,6 +88,17 @@ export function DashboardClientShell({
     [],
   );
 
+  // Only wire the orb → blob mutation bridge when /graph is active. On
+  // navigation back to landing, reset the store so stale chunks don't
+  // replay when the user returns to /graph without a full bundle refetch.
+  const blobGeometrySubscriber =
+    fieldMode === "orb" ? installBlobMutationSubscriber : undefined;
+
+  useEffect(() => {
+    if (fieldMode === "orb") return;
+    useOrbGeometryMutationStore.getState().reset();
+  }, [fieldMode]);
+
   const bridge = useMemo<FieldRuntimeBridge>(
     () => ({
       cameraRef,
@@ -104,6 +118,7 @@ export function DashboardClientShell({
           <FieldRuntimeContext.Provider value={bridge}>
             <FieldCanvas
               activeIds={FIELD_STAGE_ITEM_IDS}
+              blobGeometrySubscriber={blobGeometrySubscriber}
               cameraRef={cameraRef}
               className="fixed inset-0"
               onControllerReady={handleControllerReady}

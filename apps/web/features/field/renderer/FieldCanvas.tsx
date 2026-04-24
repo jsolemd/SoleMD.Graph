@@ -4,7 +4,7 @@ import { useRef, useState, type CSSProperties, type MutableRefObject } from "rea
 import { PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import type { Camera } from "three";
-import { FieldScene } from "./FieldScene";
+import { FieldScene, type BlobGeometrySubscriber } from "./FieldScene";
 import { FrameloopInvalidator } from "./FrameloopInvalidator";
 import { useAdaptiveFrameloop } from "./use-adaptive-frameloop";
 import type { FieldController } from "../controller/FieldController";
@@ -27,6 +27,12 @@ interface FieldCanvasProps {
     id: FieldStageItemId,
     controller: FieldController,
   ) => void;
+  /**
+   * Orb-mode hook: when provided, FieldScene installs this subscriber on
+   * the blob layer's BufferGeometry so out-of-tree surfaces (the paper
+   * baker) can stream attribute mutations into the running scene.
+   */
+  blobGeometrySubscriber?: BlobGeometrySubscriber;
   className?: string;
   style?: CSSProperties;
 }
@@ -38,6 +44,7 @@ export function FieldCanvas({
   reducedMotion = false,
   stageReady = true,
   onControllerReady,
+  blobGeometrySubscriber,
   className,
   style,
 }: FieldCanvasProps) {
@@ -88,6 +95,7 @@ export function FieldCanvas({
           densityScale={reducedMotion ? Math.min(densityScale, 0.84) : densityScale}
           stageReady={stageReady}
           onControllerReady={onControllerReady}
+          blobGeometrySubscriber={blobGeometrySubscriber}
         />
       </Canvas>
     </div>
