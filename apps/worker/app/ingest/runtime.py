@@ -14,6 +14,7 @@ from uuid import UUID
 import asyncpg
 
 from app.config import Settings, settings
+from app.db import open_named_connection
 from app.ingest.errors import (
     IngestAborted,
     IngestAlreadyInProgress,
@@ -107,7 +108,7 @@ async def run_release_ingest(
     plan = adapter.build_plan(runtime_settings, request)
     cycle_started = perf_counter()
 
-    async with ingest_pool.acquire() as control_connection:
+    async with open_named_connection(runtime_settings, name="ingest_write") as control_connection:
         lock_key = await _acquire_release_lock(control_connection, request)
         ingest_run_id: UUID | None = None
         family_name: str | None = None
@@ -137,8 +138,6 @@ async def run_release_ingest(
                 ) as active_run:
                     total_progress_units = float(max(1, len(plan.family_names) + 2))
                     completed_family_count = len(run.families_loaded)
-                    abort_check_lock = asyncio.Lock()
-                    last_abort_check_at = 0.0
                     active_run.set_progress(
                         progress_kind="overall",
                         completed_units=float(completed_family_count),
@@ -171,26 +170,20 @@ async def run_release_ingest(
                     active_phase_started = perf_counter()
                     active_run.set_state(phase="loading")
 
+                    abort_error = IngestAborted(f"operator requested abort for run {ingest_run_id}")
+                    abort_requested = asyncio.Event()
+
+                    def raise_if_abort_requested() -> None:
+                        if abort_requested.is_set():
+                            raise abort_error
+
                     async def on_batch_processed(file_path: Path, batch_row_count: int) -> None:
-                        nonlocal last_abort_check_at
                         del batch_row_count
+                        raise_if_abort_requested()
                         active_run.set_state(
                             phase="loading",
                             work_item=f"{family_name}:{file_path.name}" if family_name is not None else file_path.name,
                         )
-                        now = perf_counter()
-                        if now - last_abort_check_at < runtime_settings.ingest_abort_poll_interval_seconds:
-                            return
-                        async with abort_check_lock:
-                            now = perf_counter()
-                            if now - last_abort_check_at < runtime_settings.ingest_abort_poll_interval_seconds:
-                                return
-                            # Reuse the outer control connection here. Worker
-                            # loaders already hold pool connections while this
-                            # callback runs, so reacquiring from the same pool
-                            # can deadlock under tighter pool sizing.
-                            await _assert_not_aborted(control_connection, ingest_run_id)
-                            last_abort_check_at = now
 
                     for family_name in plan.family_names:
                         await _assert_not_aborted(control_connection, ingest_run_id)
@@ -247,6 +240,7 @@ async def run_release_ingest(
 
                         def on_file_completed(_file_path: Path, _written_rows: int) -> None:
                             nonlocal completed_file_count
+                            raise_if_abort_requested()
                             completed_file_count += 1
                             file_input_progress[_file_path] = max(
                                 file_input_progress.get(_file_path, 0),
@@ -264,6 +258,7 @@ async def run_release_ingest(
                             update_family_progress()
 
                         def on_input_progress(_file_path: Path, input_bytes: int) -> None:
+                            raise_if_abort_requested()
                             next_bytes = min(
                                 family_file_sizes.get(_file_path, 0),
                                 max(file_input_progress.get(_file_path, 0), input_bytes),
@@ -279,6 +274,7 @@ async def run_release_ingest(
 
                         def on_rows_written(_file_path: Path, batch_row_count: int) -> None:
                             nonlocal written_row_count
+                            raise_if_abort_requested()
                             written_row_count += batch_row_count
                             active_run.set_state(
                                 phase="loading",
@@ -290,19 +286,23 @@ async def run_release_ingest(
                                 total_units=0,
                             )
 
-                        stats = await writer.load_family(
-                            ingest_pool,
-                            runtime_settings,
-                            request,
-                            plan,
-                            family_name,
-                            source_release_id,
-                            ingest_run_id,
+                        stats = await _load_family_with_abort_monitor(
+                            writer=writer,
+                            ingest_pool=ingest_pool,
+                            runtime_settings=runtime_settings,
+                            request=request,
+                            plan=plan,
+                            family_name=family_name,
+                            source_release_id=source_release_id,
+                            ingest_run_id=ingest_run_id,
+                            abort_requested=abort_requested,
+                            abort_error=abort_error,
                             on_file_completed=on_file_completed,
                             on_rows_written=on_rows_written,
                             on_input_progress=on_input_progress,
                             on_batch_processed=on_batch_processed,
                         )
+                        raise_if_abort_requested()
                         await _assert_not_aborted(control_connection, ingest_run_id)
                         async with control_connection.transaction():
                             await adapter.promote_family(
@@ -422,20 +422,20 @@ async def run_release_ingest(
                     phase_started=active_phase_started,
                 )
                 if ingest_run_id is not None:
-                    await _set_terminal_status(
-                        control_connection,
-                        ingest_run_id,
-                        INGEST_STATUS_ABORTED,
-                        str(exc),
-                    )
-                    record_ingest_run(source_code=request.source_code, outcome="aborted")
-                    _emit_event(
-                        "ingest.cycle.aborted",
+                    if await _record_terminal_status_fresh(
+                        runtime_settings,
                         ingest_run_id=ingest_run_id,
-                        source_code=request.source_code,
-                        release_tag=request.release_tag,
-                        reason=str(exc),
-                    )
+                        status_code=INGEST_STATUS_ABORTED,
+                        error_message=str(exc),
+                    ):
+                        record_ingest_run(source_code=request.source_code, outcome="aborted")
+                        _emit_event(
+                            "ingest.cycle.aborted",
+                            ingest_run_id=ingest_run_id,
+                            source_code=request.source_code,
+                            release_tag=request.release_tag,
+                            reason=str(exc),
+                        )
                 raise
             except asyncio.CancelledError:
                 _observe_active_phase(
@@ -446,21 +446,24 @@ async def run_release_ingest(
                 )
                 if ingest_run_id is not None:
                     try:
-                        await _set_terminal_status(
-                            control_connection,
-                            ingest_run_id,
-                            INGEST_STATUS_ABORTED,
-                            "run cancelled (time_limit or worker shutdown)",
+                        recorded = await asyncio.shield(
+                            _record_terminal_status_fresh(
+                                runtime_settings,
+                                ingest_run_id=ingest_run_id,
+                                status_code=INGEST_STATUS_ABORTED,
+                                error_message="run cancelled (time_limit or worker shutdown)",
+                            )
                         )
-                        record_ingest_run(source_code=request.source_code, outcome="aborted")
-                        _emit_event(
-                            "ingest.cycle.aborted",
-                            ingest_run_id=ingest_run_id,
-                            source_code=request.source_code,
-                            release_tag=request.release_tag,
-                            reason="cancelled",
-                        )
-                    except Exception:
+                        if recorded:
+                            record_ingest_run(source_code=request.source_code, outcome="aborted")
+                            _emit_event(
+                                "ingest.cycle.aborted",
+                                ingest_run_id=ingest_run_id,
+                                source_code=request.source_code,
+                                release_tag=request.release_tag,
+                                reason="cancelled",
+                            )
+                    except BaseException:
                         LOGGER.exception(
                             "failed to mark ingest run aborted during cancellation",
                         )
@@ -474,47 +477,65 @@ async def run_release_ingest(
                     phase_started=active_phase_started,
                 )
                 if ingest_run_id is not None:
-                    await _set_terminal_status(
-                        control_connection,
-                        ingest_run_id,
-                        INGEST_STATUS_FAILED,
-                        str(exc),
-                    )
-                    record_ingest_run(source_code=request.source_code, outcome="failed")
-                    record_ingest_failure(
-                        source_code=request.source_code,
-                        phase=failure_phase,
-                        failure_class=type(exc).__name__,
-                        family=family_name,
-                    )
-                    _emit_event(
-                        "ingest.cycle.failed",
+                    if await _record_terminal_status_fresh(
+                        runtime_settings,
                         ingest_run_id=ingest_run_id,
-                        source_code=request.source_code,
-                        release_tag=request.release_tag,
-                        phase=failure_phase,
-                        family=family_name,
-                        error_class=type(exc).__name__,
+                        status_code=INGEST_STATUS_FAILED,
                         error_message=str(exc),
-                    )
+                    ):
+                        record_ingest_run(source_code=request.source_code, outcome="failed")
+                        record_ingest_failure(
+                            source_code=request.source_code,
+                            phase=failure_phase,
+                            failure_class=type(exc).__name__,
+                            family=family_name,
+                        )
+                        _emit_event(
+                            "ingest.cycle.failed",
+                            ingest_run_id=ingest_run_id,
+                            source_code=request.source_code,
+                            release_tag=request.release_tag,
+                            phase=failure_phase,
+                            family=family_name,
+                            error_class=type(exc).__name__,
+                            error_message=str(exc),
+                        )
                 raise
             finally:
-                await control_connection.execute("SELECT pg_advisory_unlock($1)", lock_key)
+                await _unlock_advisory_lock_best_effort(
+                    control_connection,
+                    lock_key,
+                    scope=f"ingest:{request.source_code}:{request.release_tag}",
+                )
 
 
 async def _acquire_release_lock(
     connection: asyncpg.Connection,
     request: StartReleaseRequest,
 ) -> int:
-    lock_key = await connection.fetchval(
-        "SELECT hashtextextended($1, 0)::bigint",
-        f"ingest:{request.source_code}:{request.release_tag}",
+    lock_key = await resolve_release_advisory_lock_key(
+        connection,
+        source_code=request.source_code,
+        release_tag=request.release_tag,
     )
     acquired = await connection.fetchval("SELECT pg_try_advisory_lock($1)", lock_key)
     if not acquired:
         raise IngestAlreadyInProgress(
             f"release {request.source_code}:{request.release_tag} is already locked"
         )
+    return int(lock_key)
+
+
+async def resolve_release_advisory_lock_key(
+    connection: asyncpg.Connection,
+    *,
+    source_code: SourceCode,
+    release_tag: str,
+) -> int:
+    lock_key = await connection.fetchval(
+        "SELECT hashtextextended($1, 0)::bigint",
+        f"ingest:{source_code}:{release_tag}",
+    )
     return int(lock_key)
 
 
@@ -575,7 +596,7 @@ async def _open_or_resume_run(
     latest = await connection.fetchrow(
         """
         SELECT ingest_run_id, source_release_id, status, families_loaded, last_loaded_family,
-               manifest_uri, plan_manifest
+               manifest_uri, plan_manifest, requested_status
         FROM solemd.ingest_runs
         WHERE source_release_id = $1
         ORDER BY started_at DESC
@@ -600,10 +621,32 @@ async def _open_or_resume_run(
                 "unfinished ingest run must resume before force_new_run is allowed"
             )
         if run.status != INGEST_STATUS_PUBLISHED and not request.force_new_run:
-            if run.plan_manifest is not None and _digest_payload(run.plan_manifest) != _digest_payload(plan_payload):
+            if (
+                run.plan_manifest is not None
+                and _resume_contract_digest(
+                    run.plan_manifest,
+                    loaded_families=run.families_loaded,
+                )
+                != _resume_contract_digest(
+                    plan_payload,
+                    loaded_families=run.families_loaded,
+                )
+            ):
                 raise PlanDrift(
                     f"planned family layout drifted for {request.source_code}:{request.release_tag}"
                 )
+            if latest["requested_status"] == INGEST_REQUESTED_STATUS_ABORT and run.status not in (
+                INGEST_STATUS_FAILED,
+                INGEST_STATUS_ABORTED,
+            ):
+                abort_message = f"operator requested abort for run {run.ingest_run_id}"
+                await _set_terminal_status(
+                    connection,
+                    run.ingest_run_id,
+                    INGEST_STATUS_ABORTED,
+                    abort_message,
+                )
+                raise IngestAborted(abort_message)
             await connection.execute(
                 """
                 UPDATE solemd.ingest_runs
@@ -747,7 +790,8 @@ async def _set_terminal_status(
         UPDATE solemd.ingest_runs
         SET status = $1,
             completed_at = now(),
-            error_message = $2
+            error_message = $2,
+            requested_status = NULL
         WHERE ingest_run_id = $3
         """,
         status_code,
@@ -756,9 +800,189 @@ async def _set_terminal_status(
     )
 
 
-def _digest_payload(payload: dict) -> str:
+async def _record_terminal_status_fresh(
+    runtime_settings: Settings,
+    *,
+    ingest_run_id: UUID,
+    status_code: int,
+    error_message: str,
+) -> bool:
+    try:
+        async with open_named_connection(runtime_settings, name="ingest_write") as connection:
+            await _set_terminal_status(
+                connection,
+                ingest_run_id,
+                status_code,
+                error_message,
+            )
+        return True
+    except Exception:
+        LOGGER.exception(
+            "failed to persist terminal ingest status",
+            extra={
+                "ingest_run_id": str(ingest_run_id),
+                "status_code": status_code,
+            },
+        )
+        return False
+
+
+async def _load_family_with_abort_monitor(
+    *,
+    writer: SourceWriter,
+    ingest_pool: asyncpg.Pool,
+    runtime_settings: Settings,
+    request: StartReleaseRequest,
+    plan: IngestPlan,
+    family_name: str,
+    source_release_id: int,
+    ingest_run_id: UUID,
+    abort_requested: asyncio.Event,
+    abort_error: IngestAborted,
+    on_file_completed: Callable[[Path, int], None] | None = None,
+    on_rows_written: Callable[[Path, int], None] | None = None,
+    on_input_progress: Callable[[Path, int], None] | None = None,
+    on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
+) -> CopyStats:
+    family_task = asyncio.create_task(
+        writer.load_family(
+            ingest_pool,
+            runtime_settings,
+            request,
+            plan,
+            family_name,
+            source_release_id,
+            ingest_run_id,
+            on_file_completed=on_file_completed,
+            on_rows_written=on_rows_written,
+            on_input_progress=on_input_progress,
+            on_batch_processed=on_batch_processed,
+        )
+    )
+    try:
+        async with open_named_connection(runtime_settings, name="ingest_write") as abort_connection:
+            abort_task = asyncio.create_task(
+                _wait_for_abort_signal(
+                    abort_connection,
+                    ingest_run_id=ingest_run_id,
+                    abort_requested=abort_requested,
+                    poll_interval_seconds=runtime_settings.ingest_abort_poll_interval_seconds,
+                    abort_error=abort_error,
+                )
+            )
+            try:
+                done, _pending = await asyncio.wait(
+                    {family_task, abort_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if family_task in done:
+                    abort_task.cancel()
+                    await asyncio.gather(abort_task, return_exceptions=True)
+                    try:
+                        return await family_task
+                    except BaseException as exc:
+                        if _contains_exception(exc, IngestAborted):
+                            raise abort_error from exc
+                        raise
+
+                abort_exception = await abort_task
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(family_task),
+                        timeout=runtime_settings.ingest_abort_poll_interval_seconds,
+                    )
+                except TimeoutError:
+                    family_task.cancel()
+                except BaseException as exc:
+                    if _contains_exception(exc, IngestAborted):
+                        pass
+                    else:
+                        raise
+                await asyncio.gather(family_task, return_exceptions=True)
+                raise abort_exception
+            finally:
+                if not abort_task.done():
+                    abort_task.cancel()
+                    await asyncio.gather(abort_task, return_exceptions=True)
+    finally:
+        if not family_task.done():
+            family_task.cancel()
+            await asyncio.gather(family_task, return_exceptions=True)
+
+
+async def _wait_for_abort_signal(
+    connection: asyncpg.Connection,
+    *,
+    ingest_run_id: UUID,
+    abort_requested: asyncio.Event,
+    poll_interval_seconds: float,
+    abort_error: IngestAborted,
+) -> IngestAborted:
+    while True:
+        await asyncio.sleep(poll_interval_seconds)
+        try:
+            await _assert_not_aborted(connection, ingest_run_id)
+        except IngestAborted:
+            abort_requested.set()
+            return abort_error
+
+
+async def _unlock_advisory_lock_best_effort(
+    connection: asyncpg.Connection,
+    lock_key: int,
+    *,
+    scope: str,
+) -> None:
+    try:
+        await asyncio.shield(connection.execute("SELECT pg_advisory_unlock($1)", lock_key))
+    except BaseException:
+        LOGGER.exception("failed to release advisory lock for %s", scope)
+
+
+def _contains_exception(exc: BaseException, expected_type: type[BaseException]) -> bool:
+    if isinstance(exc, expected_type):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_contains_exception(item, expected_type) for item in exc.exceptions)
+    return False
+
+
+def _resume_contract_digest(
+    payload: dict,
+    *,
+    loaded_families: tuple[str, ...] = (),
+) -> str:
+    loaded_family_set = set(loaded_families)
+    canonical_families: list[dict[str, object]] = []
+    for family in payload.get("families", ()):
+        family_name = family.get("family")
+        if family_name in loaded_family_set:
+            continue
+        canonical_families.append(
+            {
+                "family": family_name,
+                "source_datasets": family.get("source_datasets", ()),
+                "target_tables": family.get("target_tables", ()),
+                "files": [
+                    {
+                        "dataset": file_plan.get("dataset"),
+                        "byte_count": file_plan.get("byte_count"),
+                        "content_kind": file_plan.get("content_kind"),
+                    }
+                    for file_plan in family.get("files", ())
+                ],
+            }
+        )
+    canonical_payload = {
+        "schema_version": payload.get("schema_version"),
+        "source_code": payload.get("source_code"),
+        "release_tag": payload.get("release_tag"),
+        "release_checksum": payload.get("release_checksum"),
+        "source_published_at": payload.get("source_published_at"),
+        "families": canonical_families,
+    }
     return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
 
 

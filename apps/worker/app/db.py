@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from contextlib import asynccontextmanager
 import json
 from typing import Literal
 
@@ -91,17 +92,21 @@ def resolve_boot_pool_names(settings: Settings) -> tuple[PoolName, ...]:
 
 
 async def open_pool(spec: PoolSpec) -> asyncpg.Pool:
-    kwargs: dict[str, object] = {
-        "dsn": spec.dsn,
-        "min_size": spec.min_size,
-        "max_size": spec.max_size,
-        "command_timeout": spec.command_timeout,
-        "statement_cache_size": spec.statement_cache_size,
-        "init": init_connection,
-    }
-    if spec.server_settings:
-        kwargs["server_settings"] = dict(spec.server_settings)
+    kwargs = _connection_kwargs(spec)
+    kwargs["min_size"] = spec.min_size
+    kwargs["max_size"] = spec.max_size
+    kwargs["init"] = init_connection
     return await asyncpg.create_pool(**kwargs)
+
+
+async def open_connection(spec: PoolSpec) -> asyncpg.Connection:
+    connection = await asyncpg.connect(**_connection_kwargs(spec))
+    try:
+        await init_connection(connection)
+    except Exception:
+        await connection.close()
+        raise
+    return connection
 
 
 def _ingest_write_server_settings(settings: Settings) -> tuple[tuple[str, str], ...]:
@@ -119,6 +124,17 @@ def _ingest_write_server_settings(settings: Settings) -> tuple[tuple[str, str], 
     if keepalives_count > 0:
         pairs.append(("tcp_keepalives_count", str(keepalives_count)))
     return tuple(pairs)
+
+
+def _connection_kwargs(spec: PoolSpec) -> dict[str, object]:
+    kwargs: dict[str, object] = {
+        "dsn": spec.dsn,
+        "command_timeout": spec.command_timeout,
+        "statement_cache_size": spec.statement_cache_size,
+    }
+    if spec.server_settings:
+        kwargs["server_settings"] = dict(spec.server_settings)
+    return kwargs
 
 
 async def init_connection(connection: asyncpg.Connection) -> None:
@@ -158,6 +174,22 @@ async def open_pools(
         raise
 
     return WorkerPools(pools=pools)
+
+
+@asynccontextmanager
+async def open_named_connection(
+    settings: Settings,
+    *,
+    name: PoolName,
+):
+    specs = build_pool_specs(settings)
+    if name not in specs:
+        raise RuntimeError(f"missing DSN configuration for pool: {name}")
+    connection = await open_connection(specs[name])
+    try:
+        yield connection
+    finally:
+        await connection.close()
 
 
 def set_worker_pools(pools: WorkerPools | None) -> None:

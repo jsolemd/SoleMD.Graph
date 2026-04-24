@@ -131,12 +131,31 @@ export function createWikiComponentMap(
     entityMatchIndex.set(`${encodeURIComponent(m.entity_type)}:${encodeURIComponent(m.source_identifier)}`, m)
   }
 
+  // Set of known resolved slugs (values of `resolvedLinks`) so that plain
+  // markdown links whose href is a known wiki slug — with or without a
+  // `/wiki/` public-path prefix — also route through in-panel navigation.
+  // Authored `[[target]]` wikilinks are rewritten to `wiki:` by
+  // preprocessWikilinks, but content can also ship raw `[foo](entities/foo)`
+  // or `[foo](/wiki/entities/foo)` hrefs; both should stay inside the panel.
+  const knownSlugs = new Set(Object.values(data.resolvedLinks))
+
+  function resolveWikiSlug(href: string): string | null {
+    if (href.startsWith('wiki:')) return href.slice(5)
+    // Strip `/wiki/` public-path prefix, then check against known slugs.
+    const trimmed = href.startsWith('/wiki/') ? href.slice('/wiki/'.length) : href
+    // Only relative paths without a scheme (no `://`, no `scheme:`) qualify.
+    if (/^[a-z][a-z0-9+\-.]*:/i.test(trimmed)) return null
+    if (trimmed.startsWith('/')) return null
+    return knownSlugs.has(trimmed) ? trimmed : null
+  }
+
   /* eslint-disable @typescript-eslint/no-explicit-any */
   return {
     a: (props: any) => {
       const href: string | undefined = props.href
-      if (href?.startsWith('wiki:')) {
-        const slug = href.slice(5)
+      const wikiSlug = href ? resolveWikiSlug(href) : null
+      if (wikiSlug !== null) {
+        const slug = wikiSlug
         const linked = linkedEntities[slug] ?? null
         return (
           <WikiLink

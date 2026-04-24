@@ -89,7 +89,9 @@ export function EntityHoverCardProvider({
           if (sequenceRef.current !== seq) return;
           setCard(buildModel(args, detail));
         })
-        .catch(() => {});
+        .catch((error: unknown) => {
+          console.error("[EntityHoverCardProvider] fetchGraphEntityDetail failed", error);
+        });
     },
     [cancelDismiss],
   );

@@ -62,14 +62,16 @@ _PAPER_ASSET_COLUMNS: tuple[str, ...] = (
     "asset_checksum",
 )
 
-_CITATION_METRIC_COLUMNS: tuple[str, ...] = (
+_CITATION_METRIC_STAGE_COLUMNS: tuple[str, ...] = (
+    "ingest_run_id",
     "source_release_id",
+    "file_name",
+    "batch_ordinal",
     "citing_paper_id",
     "reference_out_count",
     "influential_reference_count",
     "linked_reference_count",
     "orphan_reference_count",
-    "last_seen_run_id",
 )
 
 _S2ORC_DOCUMENT_COLUMNS: tuple[str, ...] = (
@@ -443,14 +445,19 @@ async def _load_citations(
 ) -> CopyStats:
     async with pool.acquire() as control_connection, control_connection.transaction():
         await control_connection.execute(
-            "DELETE FROM solemd.s2_paper_reference_metrics_raw WHERE source_release_id = $1",
+            """
+            DELETE FROM solemd.s2_paper_reference_metrics_stage
+            WHERE source_release_id = $1
+               OR ingest_run_id = $2
+            """,
             source_release_id,
+            ingest_run_id,
         )
     semaphore = asyncio.Semaphore(max(1, settings.ingest_max_concurrent_files))
 
     async def worker(file_path: Path) -> int:
         async with semaphore, pool.acquire() as connection:
-            written = await _upsert_citation_metrics_for_file(
+            written = await _stage_citation_metrics_for_file(
                 connection,
                 file_path=file_path,
                 request=request,
@@ -465,11 +472,25 @@ async def _load_citations(
                 on_file_completed(file_path, written)
             return written
 
-    async with asyncio.TaskGroup() as group:
-        tasks = [group.create_task(worker(file_plan.path)) for file_plan in files]
+    try:
+        async with asyncio.TaskGroup() as group:
+            tasks = [group.create_task(worker(file_plan.path)) for file_plan in files]
+    except Exception:
+        async with pool.acquire() as control_connection, control_connection.transaction():
+            await control_connection.execute(
+                "DELETE FROM solemd.s2_paper_reference_metrics_stage WHERE ingest_run_id = $1",
+                ingest_run_id,
+            )
+        raise
+    async with pool.acquire() as control_connection, control_connection.transaction():
+        final_row_count = await _replace_citation_metrics_from_stage(
+            control_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+        )
     return CopyStats(
         family="citations",
-        row_count=sum(task.result() for task in tasks),
+        row_count=final_row_count,
         file_count=len(files),
     )
 
@@ -861,7 +882,7 @@ async def _upsert_author_registry(
     )
 
 
-async def _upsert_citation_metrics_for_file(
+async def _stage_citation_metrics_for_file(
     connection: asyncpg.Connection,
     *,
     file_path: Path,
@@ -874,6 +895,7 @@ async def _upsert_citation_metrics_for_file(
     on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> int:
     written = 0
+    batch_ordinal = 0
     async for row_batch in _iter_s2_row_batches(
         file_path,
         family_name="citations",
@@ -896,54 +918,81 @@ async def _upsert_citation_metrics_for_file(
             else:
                 counts[3] += 1
         paper_ids = list(metrics_by_paper.keys())
-        reference_out_counts = [metrics_by_paper[paper_id][0] for paper_id in paper_ids]
-        influential_counts = [metrics_by_paper[paper_id][1] for paper_id in paper_ids]
-        linked_counts = [metrics_by_paper[paper_id][2] for paper_id in paper_ids]
-        orphan_counts = [metrics_by_paper[paper_id][3] for paper_id in paper_ids]
+        stage_rows = [
+            (
+                ingest_run_id,
+                source_release_id,
+                file_path.name,
+                batch_ordinal,
+                paper_id,
+                metrics_by_paper[paper_id][0],
+                metrics_by_paper[paper_id][1],
+                metrics_by_paper[paper_id][2],
+                metrics_by_paper[paper_id][3],
+            )
+            for paper_id in paper_ids
+        ]
         async with connection.transaction():
-            await connection.execute(
-                """
-                INSERT INTO solemd.s2_paper_reference_metrics_raw (
-                    source_release_id,
-                    citing_paper_id,
-                    reference_out_count,
-                    influential_reference_count,
-                    linked_reference_count,
-                    orphan_reference_count,
-                    last_seen_run_id
-                )
-                SELECT * FROM unnest(
-                    $1::integer[],
-                    $2::text[],
-                    $3::integer[],
-                    $4::integer[],
-                    $5::integer[],
-                    $6::integer[],
-                    $7::uuid[]
-                )
-                ON CONFLICT (source_release_id, citing_paper_id)
-                DO UPDATE SET
-                    reference_out_count = solemd.s2_paper_reference_metrics_raw.reference_out_count
-                        + EXCLUDED.reference_out_count,
-                    influential_reference_count = solemd.s2_paper_reference_metrics_raw.influential_reference_count
-                        + EXCLUDED.influential_reference_count,
-                    linked_reference_count = solemd.s2_paper_reference_metrics_raw.linked_reference_count
-                        + EXCLUDED.linked_reference_count,
-                    orphan_reference_count = solemd.s2_paper_reference_metrics_raw.orphan_reference_count
-                        + EXCLUDED.orphan_reference_count,
-                    last_seen_run_id = EXCLUDED.last_seen_run_id
-                """,
-                [source_release_id] * len(paper_ids),
-                paper_ids,
-                reference_out_counts,
-                influential_counts,
-                linked_counts,
-                orphan_counts,
-                [ingest_run_id] * len(paper_ids),
+            await copy_records(
+                connection,
+                table_name="s2_paper_reference_metrics_stage",
+                schema_name="solemd",
+                columns=_CITATION_METRIC_STAGE_COLUMNS,
+                records=stage_rows,
             )
         written += len(paper_ids)
+        batch_ordinal += 1
         if on_rows_written is not None:
             on_rows_written(file_path, len(paper_ids))
         if on_batch_processed is not None and paper_ids:
             await on_batch_processed(file_path, len(paper_ids))
     return written
+
+
+async def _replace_citation_metrics_from_stage(
+    connection: asyncpg.Connection,
+    *,
+    source_release_id: int,
+    ingest_run_id: UUID,
+) -> int:
+    await connection.execute(
+        "DELETE FROM solemd.s2_paper_reference_metrics_raw WHERE source_release_id = $1",
+        source_release_id,
+    )
+    inserted_count = await connection.fetchval(
+        """
+        WITH inserted AS (
+            INSERT INTO solemd.s2_paper_reference_metrics_raw (
+                source_release_id,
+                citing_paper_id,
+                reference_out_count,
+                influential_reference_count,
+                linked_reference_count,
+                orphan_reference_count,
+                last_seen_run_id
+            )
+            SELECT
+                source_release_id,
+                citing_paper_id,
+                SUM(reference_out_count)::integer,
+                SUM(influential_reference_count)::integer,
+                SUM(linked_reference_count)::integer,
+                SUM(orphan_reference_count)::integer,
+                $2::uuid
+            FROM solemd.s2_paper_reference_metrics_stage
+            WHERE source_release_id = $1
+              AND ingest_run_id = $2
+            GROUP BY source_release_id, citing_paper_id
+            ORDER BY source_release_id, citing_paper_id
+            RETURNING 1
+        )
+        SELECT count(*)::integer FROM inserted
+        """,
+        source_release_id,
+        ingest_run_id,
+    )
+    await connection.execute(
+        "DELETE FROM solemd.s2_paper_reference_metrics_stage WHERE ingest_run_id = $1",
+        ingest_run_id,
+    )
+    return int(inserted_count or 0)

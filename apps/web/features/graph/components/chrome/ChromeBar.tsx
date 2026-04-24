@@ -456,7 +456,7 @@ export function ChromeBar() {
 
         <SubgroupDivider />
 
-        <ThemeToggle />
+        <ThemeToggle grouped />
       </div>
 
       {/* Pill 2 — four grouped menu icons (same on mobile + desktop). */}

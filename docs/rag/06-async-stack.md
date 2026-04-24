@@ -735,9 +735,11 @@ runtime shape tighter than the eventual full worker fleet:
 - Worker boot for that process uses `pool_names=("ingest_write",)` only.
 - Start with low thread count and, for the current operator default, two ingest
   processes
-  (`dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest` or the
-  equivalent wrapper). COPY fanout lives inside each actor via bounded asyncpg
-  coroutines; Dramatiq thread count is not the partition-concurrency knob.
+  (`dramatiq_queue_prefetch=1 dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest`
+  or the equivalent wrapper). COPY fanout lives inside each actor via bounded
+  asyncpg coroutines; Dramatiq thread count is not the partition-concurrency
+  knob. Keep queue prefetch at 1 so one long release-level ingest does not
+  reserve another release message behind it inside the same worker process.
 - Duplicate manifest/manual triggers should resolve through typed early exits
   or actor `throws=` for `IngestAlreadyPublished` and
   `IngestAlreadyInProgress`, not through retry churn.
@@ -748,6 +750,10 @@ runtime shape tighter than the eventual full worker fleet:
 - Post-publish chunk/evidence fanout stays a separate queue and actor family.
   The ingest worker may enqueue it later, but it should not collapse the two
   lanes into one actor body.
+- Source-retention cleanup is an operator CLI path, not a Dramatiq actor. The
+  `source-retention` command uses the same release-level advisory lock as
+  `ingest.start_release`, reads warehouse run state through `ingest_write`,
+  and remains dry-run-first so hot-storage pruning cannot race a live ingest.
 
 ## §7 Connection strings & secrets
 

@@ -21,6 +21,7 @@ GRANT INSERT ON TABLE
     solemd.s2_authors_raw,
     solemd.s2orc_documents_raw,
     solemd.s2_paper_reference_metrics_raw,
+    solemd.s2_paper_reference_metrics_stage,
     solemd.s2_paper_references_raw,
     solemd.s2_paper_assets_raw
 TO engine_ingest_write;
@@ -38,6 +39,7 @@ GRANT UPDATE ON TABLE
     solemd.s2_authors_raw,
     solemd.s2orc_documents_raw,
     solemd.s2_paper_reference_metrics_raw,
+    solemd.s2_paper_reference_metrics_stage,
     solemd.s2_paper_references_raw,
     solemd.s2_paper_assets_raw
 TO engine_ingest_write;
@@ -52,6 +54,7 @@ GRANT DELETE ON TABLE
     solemd.s2orc_documents_raw,
     solemd.s2_paper_assets_raw,
     solemd.s2_paper_reference_metrics_raw,
+    solemd.s2_paper_reference_metrics_stage,
     solemd.s2_paper_references_raw
 TO engine_ingest_write;
 GRANT SELECT ON TABLE
@@ -69,6 +72,7 @@ GRANT SELECT ON TABLE
     solemd.s2_authors_raw,
     solemd.s2orc_documents_raw,
     solemd.s2_paper_reference_metrics_raw,
+    solemd.s2_paper_reference_metrics_stage,
     solemd.s2_paper_references_raw,
     solemd.s2_paper_assets_raw
 TO engine_ingest_write;

@@ -201,7 +201,7 @@ describe('base point projections', () => {
 
     expect(query).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining(`CREATE TEMP TABLE IF NOT EXISTS ${BASE_POINT_CANONICAL_SOURCE_TABLE} AS`)
+      expect.stringContaining(`CREATE TABLE IF NOT EXISTS ${BASE_POINT_CANONICAL_SOURCE_TABLE} AS`)
     )
     expect(query).toHaveBeenNthCalledWith(
       1,
@@ -217,7 +217,7 @@ describe('base point projections', () => {
     )
     expect(query).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining(`CREATE TEMP TABLE IF NOT EXISTS ${BASE_CLUSTER_CANONICAL_SOURCE_TABLE} AS`)
+      expect.stringContaining(`CREATE TABLE IF NOT EXISTS ${BASE_CLUSTER_CANONICAL_SOURCE_TABLE} AS`)
     )
     expect(query).toHaveBeenNthCalledWith(
       2,

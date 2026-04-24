@@ -1,44 +1,14 @@
 /**
- * Route transition template — default crossfade for Next.js 16
- * unstable_ViewTransition.
+ * Route transition template — placeholder for route-scoped overrides.
  *
- * Apply by importing this CSS from `app/template.tsx`. The
- * ::view-transition-* pseudo-elements are automatically bound by the
- * browser when a view transition is triggered.
+ * The default crossfade (`::view-transition-*` + `solemd-fade-in/out`
+ * keyframes, 180ms enter / 120ms exit, reduced-motion aware) lives in
+ * `apps/web/app/styles/base.css` under the VIEW TRANSITION DEFAULTS
+ * section. Do NOT duplicate those rules here — whichever loads later
+ * silently wins.
  *
- * Durations: 180ms enter, 120ms exit (exits faster per brand rules).
- * All timings should map to CSS variables where possible.
+ * To author a route-specific transition, import this file from the
+ * route's `template.tsx` and add overrides that target a
+ * `view-transition-name` scoped to that route. Durations should map to
+ * CSS variables where possible.
  */
-
-::view-transition-old(root) {
-  animation: solemd-fade-out 120ms ease-out both;
-}
-
-::view-transition-new(root) {
-  animation: solemd-fade-in 180ms ease-out both;
-}
-
-@keyframes solemd-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-@keyframes solemd-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(root),
-  ::view-transition-new(root) {
-    animation-duration: 1ms;
-  }
-}

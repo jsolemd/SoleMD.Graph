@@ -48,6 +48,17 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 
+# Secrets / keys (defense-in-depth)
+*.key
+*.pem
+*.p12
+*.pfx
+*.credential
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
 # Vercel
 .vercel
 
@@ -111,6 +122,9 @@ apps/worker/.mypy_cache/
 # Local backend data
 data/*
 !data/research/
+
+# Local runtime state (Prometheus, etc.)
+.state/
 
 # Package manager lock files (keep one, ignore others)
 # Uncomment the ones you want to ignore

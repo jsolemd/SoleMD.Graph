@@ -333,6 +333,25 @@ def _stream_bioconcepts(
     *,
     on_progress: Callable[[int], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
+    # PubTator3 ``bioconcepts2pubtator3.gz`` is the *aggregated* concept-per-paper
+    # TSV. Its schema is exactly five columns:
+    #   PMID \t Type \t ConceptID \t Mentions \t Resource
+    # (verified against live release files; see
+    # https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3/ for the public contract).
+    # There are no character offsets in this feed — unlike the BioCXML payload,
+    # which carries real ``<location offset="..." length="..."/>`` spans. Earlier
+    # versions of this ingester assigned ``start_offset = line_number`` as a fake
+    # unique key, but that silently (a) inflated duplicates across files with
+    # different line densities and (b) collided distinct annotations that
+    # happened to share a line index. The stage table's unique key
+    # ``(source_release_id, pmid, start_offset, end_offset, entity_type,
+    # concept_id_raw, resource)`` is the correct dedupe grain for this
+    # aggregated source when offsets are a constant sentinel: same paper +
+    # same entity type + same concept collapses to one row, which matches the
+    # live PubTator feed even when one raw identifier is reused across types
+    # (for example gene vs species taxonomy ids). Keep offsets at 0 so that
+    # the ``resource`` discriminator (bioconcepts vs biocxml) cleanly
+    # partitions the stage table without overlap in the unique index.
     with path.open("rb") as raw_handle:
         with gzip.GzipFile(fileobj=raw_handle, mode="rb") as compressed_handle:
             with io.TextIOWrapper(compressed_handle, encoding="utf-8") as handle:
@@ -349,8 +368,11 @@ def _stream_bioconcepts(
                         continue
                     yield {
                         "pmid": int(parts[0]),
-                        "start_offset": index,
-                        "end_offset": index + 1,
+                        # Sentinel span — this feed is document-level, not
+                        # mention-level. Do not use ``index``: line numbers are
+                        # not character offsets and make the unique key lie.
+                        "start_offset": 0,
+                        "end_offset": 0,
                         "entity_type": entity_type,
                         "mention_text": parts[3],
                         "concept_id_raw": parts[2],
@@ -366,6 +388,17 @@ def _stream_relations(
     *,
     on_progress: Callable[[int], None] | None = None,
 ) -> Iterator[dict[str, Any]]:
+    # PubTator3 ``relation2pubtator3.gz`` canonical schema is
+    #   PMID \t RelationType \t Entity1 \t Entity2
+    # where Entity1 is the SUBJECT ("role1") and Entity2 is the OBJECT
+    # ("role2") — matching the BioCXML ``<infon key="role1"/>`` /
+    # ``<infon key="role2"/>`` convention emitted by the same extractor. This
+    # is verified against the NCBI PubTator3 documentation at
+    # https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3/README.md. Both TSV and
+    # BioCXML paths must yield identical (subject, object) orientation for
+    # identical logical relations; see ``_relation_row_from_biocxml`` for the
+    # BioCXML half of the contract and ``tests/test_pubtator_parse.py`` for a
+    # cross-path parity test.
     with path.open("rb") as raw_handle:
         with gzip.GzipFile(fileobj=raw_handle, mode="rb") as compressed_handle:
             with io.TextIOWrapper(compressed_handle, encoding="utf-8") as handle:
@@ -496,6 +529,17 @@ def _relation_row_from_biocxml(
     pmid: int,
     annotation_index: dict[str, tuple[str, int]],
 ) -> dict[str, Any] | None:
+    # BioCXML relations in PubTator3 come in two shapes that we must resolve to
+    # the same (subject, object) orientation as the TSV feed — see
+    # ``_stream_relations`` for the canonical contract. Shape A (modern, common):
+    # ``<relation><infon key="role1">…</infon><infon key="role2">…</infon></relation>``
+    # where ``role1`` == subject and ``role2`` == object. Shape B (rare, legacy):
+    # ``<relation><node refid=… role="subject|subj|arg1|…"/><node refid=…
+    # role="object|obj|arg2|…"/></relation>`` — roles are explicit. When Shape B
+    # nodes lack role attributes we fall back to document order (first node =
+    # subject) which matches the PubTator3 upstream serializer. Either path must
+    # produce output identical to ``_stream_relations`` for the same logical
+    # relation; the cross-path parity test lives in ``tests/test_pubtator_parse.py``.
     infons = _extract_infons(relation)
     relation_type_name = _normalize_relation_type_name(
         infons.get("type")

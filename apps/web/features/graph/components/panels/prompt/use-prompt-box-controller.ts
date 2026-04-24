@@ -11,6 +11,7 @@ import {
 } from "react";
 import { type MotionValue } from "framer-motion";
 import { useViewportSize } from "@mantine/hooks";
+import { useShallow } from "zustand/react/shallow";
 import { useGraphInstance } from "@/features/graph/cosmograph";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import {
@@ -107,26 +108,61 @@ export function usePromptBoxController({
   queries,
 }: PromptBoxControllerProps): PromptBoxControllerState {
   const shellVariant = useShellVariantContext();
-  const mode = useGraphStore((s) => s.mode);
-  const selectedNode = useGraphStore((s) => s.selectedNode);
-  const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
-  const focusedPointRevision = useGraphStore((s) => s.focusedPointRevision);
-  const cameraSettledRevision = useGraphStore((s) => s.cameraSettledRevision);
-  const writeContent = useDashboardStore((s) => s.writeContent);
-  const setWriteContent = useDashboardStore((s) => s.setWriteContent);
-  const panelsVisible = useDashboardStore((s) => s.panelsVisible);
-  const promptMode = useDashboardStore((s) => s.promptMode);
-  const stepPromptDown = useDashboardStore((s) => s.stepPromptDown);
-  const stepPromptUp = useDashboardStore((s) => s.stepPromptUp);
-  const expandPrompt = useDashboardStore((s) => s.expandPrompt);
-  const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
-  const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
-  const activeSelectionSourceId = useDashboardStore((s) => s.activeSelectionSourceId);
-  const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
-  const openPanel = useDashboardStore((s) => s.openPanel);
-  const openOnlyPanel = useDashboardStore((s) => s.openOnlyPanel);
-  const setPanelsVisible = useDashboardStore((s) => s.setPanelsVisible);
-  const currentPointScopeSql = useDashboardStore((s) => s.currentPointScopeSql);
+  const {
+    mode,
+    selectedNode,
+    focusedPointIndex,
+    focusedPointRevision,
+    cameraSettledRevision,
+  } = useGraphStore(
+    useShallow((s) => ({
+      mode: s.mode,
+      selectedNode: s.selectedNode,
+      focusedPointIndex: s.focusedPointIndex,
+      focusedPointRevision: s.focusedPointRevision,
+      cameraSettledRevision: s.cameraSettledRevision,
+    })),
+  );
+  const {
+    writeContent,
+    panelsVisible,
+    promptMode,
+    selectedPointCount,
+    activeSelectionSourceId,
+    currentPointScopeSql,
+  } = useDashboardStore(
+    useShallow((s) => ({
+      writeContent: s.writeContent,
+      panelsVisible: s.panelsVisible,
+      promptMode: s.promptMode,
+      selectedPointCount: s.selectedPointCount,
+      activeSelectionSourceId: s.activeSelectionSourceId,
+      currentPointScopeSql: s.currentPointScopeSql,
+    })),
+  );
+  const {
+    setWriteContent,
+    stepPromptDown,
+    stepPromptUp,
+    expandPrompt,
+    setSelectedPointCount,
+    setActiveSelectionSourceId,
+    openPanel,
+    openOnlyPanel,
+    setPanelsVisible,
+  } = useDashboardStore(
+    useShallow((s) => ({
+      setWriteContent: s.setWriteContent,
+      stepPromptDown: s.stepPromptDown,
+      stepPromptUp: s.stepPromptUp,
+      expandPrompt: s.expandPrompt,
+      setSelectedPointCount: s.setSelectedPointCount,
+      setActiveSelectionSourceId: s.setActiveSelectionSourceId,
+      openPanel: s.openPanel,
+      openOnlyPanel: s.openOnlyPanel,
+      setPanelsVisible: s.setPanelsVisible,
+    })),
+  );
   const bottomObstacles = useDashboardStore(selectBottomObstacles);
   const desktopBottomClearance = useDashboardStore(selectBottomClearance);
   const activeMode = getModeConfig(mode);

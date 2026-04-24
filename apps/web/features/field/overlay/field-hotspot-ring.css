@@ -40,7 +40,7 @@
   left: 50%;
   margin: -0.25rem -0.1875rem;
   border-radius: 50%;
-  background: #02e8ff;
+  background: var(--afr-color, #02e8ff);
   scale: 0;
 }
 
@@ -48,7 +48,7 @@
   width: 1.875rem;
   height: 1.875rem;
   fill: transparent;
-  stroke: #02e8ff;
+  stroke: var(--afr-color, #02e8ff);
 }
 
 .afr-hotspot svg circle {
@@ -60,22 +60,18 @@
   opacity: 0.5;
 }
 
-.afr-hotspot.afr-hotspot--red svg {
-  stroke: #d409fe;
-}
-
-.afr-hotspot.afr-hotspot--red::before {
-  background: #d409fe;
-}
-
+/* Duration must stay paired with `BLOB_HOTSPOT_CYCLE_MS` in
+   apps/web/features/field/controller/blob-hotspot-runtime.ts — the JS
+   envelope on the parent node controls visibility and will clip the
+   animation if the two clocks drift apart. */
 .afr-hotspot.is-animating::before {
-  animation: afr-hotspot-inner var(--afr-duration, 2s) var(--afr-easing, ease-in-out)
+  animation: afr-hotspot-inner var(--afr-duration, 4s) var(--afr-easing, ease-in-out)
     var(--afr-delay, 0s);
   animation-fill-mode: forwards;
 }
 
 .afr-hotspot.is-animating svg circle {
-  animation: afr-hotspot-outer var(--afr-duration, 2s) var(--afr-easing, ease-in-out)
+  animation: afr-hotspot-outer var(--afr-duration, 4s) var(--afr-easing, ease-in-out)
     var(--afr-delay, 0s);
   animation-fill-mode: forwards;
 }
@@ -115,7 +111,7 @@
 }
 
 .afr-stage:not(.afr-has-only-reds).afr-has-only-single .afr-hotspot {
-  --afr-duration: 4s;
+  --afr-duration: 8s;
   opacity: 1 !important;
 }
 

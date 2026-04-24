@@ -246,7 +246,8 @@ export function useRagQuery({
             : null,
         );
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.error("[useRagQuery] syncRagGraphSignals failed", error);
         if (!cancelled) {
           setRagGraphAvailability(null);
           clearOwnedOverlay(producerId);

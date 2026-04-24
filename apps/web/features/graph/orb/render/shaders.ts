@@ -23,6 +23,7 @@
  */
 
 import * as THREE from "three";
+import { getFieldPointTexture } from "@/features/field/renderer/field-point-texture";
 
 const DISPLAY_VERTEX_SHADER = /* glsl */ `
   attribute vec3 aColor;
@@ -45,7 +46,9 @@ const DISPLAY_VERTEX_SHADER = /* glsl */ `
     float dist = max(-mvPosition.z, 1.0);
     float size = uPointSize * (300.0 / dist) * uPixelRatio;
     size *= (1.0 + aSelection * uSelectionBoost);
-    gl_PointSize = clamp(size, 1.5, 64.0);
+    // Larger upper bound so the feathered sprite halo has room to breathe —
+    // matches the field-landing particle aesthetic rather than hard dots.
+    gl_PointSize = clamp(size, 2.0, 96.0);
 
     gl_Position = projectionMatrix * mvPosition;
   }
@@ -55,24 +58,25 @@ const DISPLAY_FRAGMENT_SHADER = /* glsl */ `
   precision mediump float;
 
   uniform float uAlpha;
+  uniform sampler2D pointTexture;
 
   varying vec3 vColor;
   varying float vSelection;
 
   void main() {
-    // Round sprite: discard anything outside the unit disk in gl_PointCoord.
-    vec2 p = gl_PointCoord - vec2(0.5);
-    float r2 = dot(p, p);
-    if (r2 > 0.25) discard;
+    // Feathered sprite sampled from the shared field-landing particle
+    // texture — soft radial falloff, same aesthetic as the blob.
+    vec4 sprite = texture2D(pointTexture, gl_PointCoord);
 
-    // Smooth edge to avoid aliased squares.
-    float edge = smoothstep(0.25, 0.20, r2);
-
-    // Selected points get a soft halo + alpha boost.
+    // Selected points get a brightness + alpha boost stacked on top of the
+    // sprite, mirroring the field's survivor-boost idiom.
     vec3 color = vColor + vec3(vSelection * 0.25);
-    float alpha = (uAlpha + vSelection * 0.4) * edge;
+    float alpha = uAlpha + vSelection * 0.4;
+    vec4 outColor = vec4(color, alpha) * sprite;
 
-    gl_FragColor = vec4(color, alpha);
+    // Cut sub-threshold fragments to save fill-rate (matches field fragment).
+    if (outColor.a <= 0.01) discard;
+    gl_FragColor = outColor;
   }
 `;
 
@@ -125,6 +129,7 @@ export interface OrbShaderUniforms {
   uPixelRatio: { value: number };
   uAlpha: { value: number };
   uSelectionBoost: { value: number };
+  pointTexture: { value: THREE.Texture | null };
 }
 
 export interface OrbShaderHandles {
@@ -139,10 +144,13 @@ export function createOrbShaderMaterials(options: {
   alpha?: number;
 }): OrbShaderHandles {
   const uniforms: OrbShaderUniforms = {
-    uPointSize: { value: options.pointSize ?? 8.0 },
+    // Bumped from 8.0 → 14.0 so the feathered halo has visible breathing
+    // room at PoC camera distances; halo-core ratio matches the field.
+    uPointSize: { value: options.pointSize ?? 14.0 },
     uPixelRatio: { value: options.pixelRatio ?? 1.0 },
     uAlpha: { value: options.alpha ?? 0.85 },
     uSelectionBoost: { value: 0.6 },
+    pointTexture: { value: getFieldPointTexture() },
   };
 
   const displayMaterial = new THREE.ShaderMaterial({
@@ -153,6 +161,7 @@ export function createOrbShaderMaterials(options: {
       uPixelRatio: uniforms.uPixelRatio,
       uAlpha: uniforms.uAlpha,
       uSelectionBoost: uniforms.uSelectionBoost,
+      pointTexture: uniforms.pointTexture,
     },
     transparent: true,
     depthWrite: false,

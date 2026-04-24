@@ -42,6 +42,10 @@ function isAbortError(error: unknown): boolean {
  * Page renders as soon as it resolves; backlinks and context fill in independently.
  * Context is only fetched for entity pages (determined from slug prefix alone,
  * no need to wait for the page response).
+ *
+ * Every setState after an `await` is guarded by `signal?.aborted` to prevent a
+ * stale slug's late-arriving result from clobbering the current slug's state
+ * during fast slug navigation.
  */
 export function useWikiPageBundle(
   slug: string | null,
@@ -55,6 +59,7 @@ export function useWikiPageBundle(
       return
     }
 
+    // Pre-await state write is safe (synchronous with effect run).
     setState({ ...IDLE, loading: true, contextLoading: isEntityWikiSlug(slug) })
 
     // Fire all three concurrently from the start.
@@ -77,12 +82,13 @@ export function useWikiPageBundle(
         )
       : Promise.resolve(null)
 
-    // Resolve page first → render markdown immediately
+    // Resolve page first → render markdown immediately.
     try {
       const page = await pagePromise
+      if (signal?.aborted) return
       setState((s) => ({ ...s, page, loading: false, error: null }))
     } catch (err) {
-      if (isAbortError(err)) return
+      if (isAbortError(err) || signal?.aborted) return
       setState({
         ...IDLE,
         error: err instanceof Error ? err.message : 'Failed to load wiki page',
@@ -90,11 +96,12 @@ export function useWikiPageBundle(
       return
     }
 
-    // Backlinks + context are already in-flight — collect results
+    // Backlinks + context are already in-flight — collect results.
     const [backlinks, context] = await Promise.all([
       backlinksPromise,
       contextPromise,
     ])
+    if (signal?.aborted) return
     setState((s) => ({
       ...s,
       backlinks,

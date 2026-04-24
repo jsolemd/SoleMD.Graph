@@ -1,4 +1,5 @@
 import {
+  WIDGET_DATASET_CACHE_MAX,
   getCachedCategoricalDataset,
   getCachedNumericDataset,
   setCachedCategoricalDataset,
@@ -30,5 +31,40 @@ describe("dataset cache eviction", () => {
     setCachedNumericDataset(key, []);
 
     expect(getCachedNumericDataset(key)).toBeNull();
+  });
+});
+
+describe("dataset cache bounds", () => {
+  it("evicts the oldest categorical entry once the cache exceeds its bound", () => {
+    const overflow = WIDGET_DATASET_CACHE_MAX + 10;
+
+    for (let i = 0; i < overflow; i++) {
+      setCachedCategoricalDataset(`bound-cat:${i}`, [
+        { value: `v${i}`, scopedCount: 1, totalCount: 1 },
+      ]);
+    }
+
+    // Oldest entries should be evicted (FIFO by insertion order).
+    for (let i = 0; i < overflow - WIDGET_DATASET_CACHE_MAX; i++) {
+      expect(getCachedCategoricalDataset(`bound-cat:${i}`)).toBeNull();
+    }
+    // Most recent entries should survive.
+    for (let i = overflow - WIDGET_DATASET_CACHE_MAX; i < overflow; i++) {
+      expect(getCachedCategoricalDataset(`bound-cat:${i}`)).not.toBeNull();
+    }
+  });
+
+  it("evicts the oldest numeric entry once the cache exceeds its bound", () => {
+    const overflow = WIDGET_DATASET_CACHE_MAX + 5;
+
+    for (let i = 0; i < overflow; i++) {
+      setCachedNumericDataset(`bound-num:${i}`, [i]);
+    }
+
+    // Oldest evicted, newest retained — LRU by insertion.
+    expect(getCachedNumericDataset("bound-num:0")).toBeNull();
+    expect(getCachedNumericDataset(`bound-num:${overflow - 1}`)).toEqual([
+      overflow - 1,
+    ]);
   });
 });

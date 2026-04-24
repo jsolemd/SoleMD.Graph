@@ -8,6 +8,7 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -380,7 +381,14 @@ export function useCreateEditorController({
     }),
   }) ?? EMPTY_TOOLBAR_STATE;
 
-  editorRef.current = editor;
+  // Capture the Tiptap editor instance into a ref AFTER commit. Writing a ref
+  // during render is a React 19 hazard: concurrent render retries may discard
+  // the rendered output, silently losing the assignment. The synchronous
+  // `useLayoutEffect` runs before any child effects that consume
+  // `editorRef.current`, keeping timing identical to the previous behaviour.
+  useLayoutEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   useEffect(() => {
     if (!editor || editor.isDestroyed) {

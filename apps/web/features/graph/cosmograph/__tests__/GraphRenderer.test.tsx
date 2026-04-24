@@ -191,8 +191,8 @@ describe("GraphRenderer", () => {
 
     expect(clusterLabelClassName).toBeDefined();
     expect(clusterLabelClassName?.("Neuroinflammation", 0)).toBe("");
-    expect(clusterLabelClassName?.("", 0)).toBe("display: none;");
-    expect(clusterLabelClassName?.("null", 0)).toBe("display: none;");
+    expect(clusterLabelClassName?.("", 0)).toBe("sol-cluster-label-hidden");
+    expect(clusterLabelClassName?.("null", 0)).toBe("sol-cluster-label-hidden");
   });
 
   it("mounts one centralized native label theme bridge for point, hover, and cluster labels", () => {

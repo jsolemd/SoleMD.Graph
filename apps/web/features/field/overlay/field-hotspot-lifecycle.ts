@@ -38,7 +38,7 @@ export interface HotspotLifecycleController {
   onAnimationEnd(index: number): void;
 }
 
-const DEFAULT_DURATION_MS = 2000;
+const DEFAULT_DURATION_MS = 4000;
 const DEFAULT_MAX_RETRIES = 20;
 
 function defaultDelay(): number {

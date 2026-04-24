@@ -14,7 +14,8 @@ paper-text acquisition lanes now live here:
   `ingest.start_release`.
 - `app/ingest/` owns request validation, planning, runtime orchestration,
   source adapters, and bounded asyncpg COPY writers for Semantic Scholar
-  and PubTator.
+  and PubTator. It also owns source-retention planning for hot-storage
+  cleanup after family-level ingest checkpoints are durable.
 - `app/corpus_worker.py` is the dedicated Dramatiq worker root for the
   `corpus` queue and binds only the `ingest_write` pool.
 - `app/actors/corpus.py` owns the release-pair actor
@@ -37,13 +38,15 @@ uv sync --project apps/worker
 uv run --project apps/worker python -m app.main check
 uv run --project apps/worker python -m app.main enqueue-release s2 2026-03-10 --force-new-run
 uv run --project apps/worker python -m app.main dispatch-manifest pt3 2026-03-21
+uv run --project apps/worker python -m app.main source-retention s2 2026-03-10
+uv run --project apps/worker python -m app.main source-retention s2 2026-03-10 --execute --action delete --provenance-ok
 uv run --project apps/worker python -m app.main enqueue-corpus-selection 2026-03-10 2026-03-21 v1
 uv run --project apps/worker python -m app.main run-corpus-selection-now 2026-03-10 2026-03-21 v1
 uv run --project apps/worker python -m app.main enqueue-evidence-wave 2026-03-10 2026-03-21 v1 --max-papers 100
 uv run --project apps/worker python -m app.main run-evidence-wave-now 2026-03-10 2026-03-21 v1 --max-papers 100
 uv run --project apps/worker python -m app.main enqueue-evidence-text 123456 --requested-by operator
 uv run --project apps/worker python -m app.main run-evidence-text-now 123456 --force-refresh
-uv run --project apps/worker dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest
+dramatiq_queue_prefetch=1 uv run --project apps/worker dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest
 uv run --project apps/worker dramatiq app.corpus_worker --processes 1 --threads 1 --queues corpus
 uv run --project apps/worker dramatiq app.evidence_worker --processes 1 --threads 1 --queues evidence
 ```
@@ -51,6 +54,12 @@ uv run --project apps/worker dramatiq app.evidence_worker --processes 1 --thread
 The `check` command verifies the current env contract can reach the local
 compose dependencies. `enqueue-release` and `dispatch-manifest` validate the
 same `StartReleaseRequest` payload shape before enqueueing.
+`source-retention` is dry-run by default. It acquires the same release-level
+advisory lock as ingest, reads `source_releases` / `ingest_runs`, and prints
+which S2 source directories are `keep`, `archive_candidate`,
+`delete_candidate`, or `manual_review`. Mutation requires `--execute` plus an
+explicit action. `--action delete` also requires `--provenance-ok`; manifests
+and unregistered directories are never deleted automatically.
 `enqueue-corpus-selection` / `run-corpus-selection-now` and
 `enqueue-evidence-wave` / `run-evidence-wave-now` use the shared validated
 corpus request models before enqueueing or executing the selection/evidence

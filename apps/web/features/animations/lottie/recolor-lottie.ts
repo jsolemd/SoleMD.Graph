@@ -68,11 +68,61 @@ interface RecolorOptions {
   glowOpacity?: number;
 }
 
+/**
+ * Cache recolored Lottie clones keyed by source reference + options.
+ *
+ * `resolveCssColor` allocates a fresh `LottieRgba` tuple every call, which
+ * defeats `useMemo` / referential caches at the call-site. We key the clone
+ * cache by a stable string built from the numeric values + options so that
+ * identical inputs reuse the prior `structuredClone` result. The outer
+ * WeakMap keyed on the source `data` keeps imported Lottie JSONs eligible
+ * for GC and scopes the inner map per-asset.
+ *
+ * Inner map bound is small (4): each caller has a single source JSON and
+ * typically at most 2 active color tuples (light + dark mode).
+ */
+const RECOLOR_INNER_MAX = 4;
+
+interface RecolorCacheEntry {
+  order: string[];
+  byKey: Map<string, LottieData>;
+}
+
+const recolorCloneCache = new WeakMap<LottieData, RecolorCacheEntry>();
+
+function formatChannel(n: number): string {
+  // 4 decimal places is enough to distinguish any CSS-resolved channel
+  // (getComputedStyle returns integer 0-255 for RGB, float for alpha).
+  return Number.isFinite(n) ? n.toFixed(4) : "na";
+}
+
+function buildRecolorCacheKey(
+  rgba: LottieRgba,
+  opts: RecolorOptions,
+): string {
+  const darkOnly = opts.darkOnly ?? true;
+  const matte = opts.matte ? 1 : 0;
+  const glowOpacity = opts.glowOpacity ?? -1;
+  return `${formatChannel(rgba[0])}|${formatChannel(rgba[1])}|${formatChannel(
+    rgba[2],
+  )}|${formatChannel(rgba[3])}|${darkOnly ? 1 : 0}|${matte}|${glowOpacity}`;
+}
+
 export function recolorLottie(
   data: LottieData,
   rgba: LottieRgba,
   opts: RecolorOptions = {},
 ): LottieData {
+  const cacheKey = buildRecolorCacheKey(rgba, opts);
+  let entry = recolorCloneCache.get(data);
+  if (entry) {
+    const cached = entry.byKey.get(cacheKey);
+    if (cached) return cached;
+  } else {
+    entry = { order: [], byKey: new Map() };
+    recolorCloneCache.set(data, entry);
+  }
+
   const darkOnly = opts.darkOnly ?? true;
   const clone = structuredClone(data) as LottieData;
   for (const asset of (clone.assets ?? []) as LottieAsset[]) {
@@ -89,6 +139,13 @@ export function recolorLottie(
     if (glowLayer.ks?.o) {
       glowLayer.ks.o.k = opts.glowOpacity ?? 0;
     }
+  }
+
+  entry.byKey.set(cacheKey, clone);
+  entry.order.push(cacheKey);
+  if (entry.order.length > RECOLOR_INNER_MAX) {
+    const evicted = entry.order.shift();
+    if (evicted !== undefined) entry.byKey.delete(evicted);
   }
 
   return clone;

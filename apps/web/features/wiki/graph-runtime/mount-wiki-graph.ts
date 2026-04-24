@@ -151,8 +151,18 @@ export async function mountWikiGraph(
 
   // rAF animation loop (Quartz pattern — needed for tweens to update every frame)
   let destroyed = false
+  // Tracks the pending rAF handle so destroy can cancel the queued frame
+  // before it runs. Without this, an in-flight frame can touch a destroyed
+  // Pixi graphics tree after destroy() returns, throwing inside Pixi.
+  let animateRaf = 0
+  // Theme change observer can request a render-data rebuild. Doing that
+  // rebuild mid-frame tears down Graphics objects the frame is still
+  // using. Instead we set this flag and process it at the end of the
+  // frame, after render, while the rAF loop is quiescent.
+  let pendingThemeRebuild = false
   const LABEL_LAYOUT_FRAME_MS = 90
   function animate(time: number) {
+    animateRaf = 0
     if (destroyed) return
     updatePositions(scene)
     if (scene.labelsDirty || simulation.alpha() > 0.08) {
@@ -169,9 +179,20 @@ export async function mountWikiGraph(
       destroyed = true
       return
     }
-    requestAnimationFrame(animate)
+    // Process a deferred theme rebuild AFTER render so we never tear down
+    // Graphics the same frame is reading from.
+    if (pendingThemeRebuild && !destroyed) {
+      pendingThemeRebuild = false
+      invalidatePalette()
+      const newPalette = resolvePalette(container)
+      buildRenderData(scene, nodes, links, newPalette)
+      applyHighlight(currentHighlightIds)
+      scene.labelsDirty = true
+    }
+    if (destroyed) return
+    animateRaf = requestAnimationFrame(animate)
   }
-  requestAnimationFrame(animate)
+  animateRaf = requestAnimationFrame(animate)
 
   // Resize observer — rAF-throttled to avoid flashing during panel drag.
   // On commit (after RESIZE_SETTLE_MS), refit the viewport so the graph
@@ -191,13 +212,19 @@ export async function mountWikiGraph(
   })
   resizeObserver.observe(container)
 
-  // Theme change observer — re-apply highlight after rebuilding render data
+  // Theme change observer — defer the render-data rebuild into the rAF
+  // tail so we never destroy Graphics mid-frame. The rebuild runs after
+  // the next render completes, immediately before the following frame is
+  // requested.
   const themeObserver = new MutationObserver(() => {
-    invalidatePalette()
-    const newPalette = resolvePalette(container)
-    buildRenderData(scene, nodes, links, newPalette)
-    applyHighlight(currentHighlightIds)
-    scene.labelsDirty = true
+    if (destroyed) return
+    pendingThemeRebuild = true
+    // Ensure a frame is queued so the rebuild is actually drained. If a
+    // frame is already queued (animateRaf !== 0) the pending flag will be
+    // picked up at its tail.
+    if (animateRaf === 0) {
+      animateRaf = requestAnimationFrame(animate)
+    }
   })
   themeObserver.observe(document.documentElement, {
     attributes: true,
@@ -209,6 +236,15 @@ export async function mountWikiGraph(
     destroy() {
       if (destroyed) return
       destroyed = true
+      // Cancel the pending animation frame BEFORE tearing down Pixi so a
+      // scheduled frame can never touch a destroyed scene. destroyed=true
+      // is also checked at frame start as a belt-and-suspenders guard in
+      // case a frame fires between cancel and the rest of teardown.
+      if (animateRaf !== 0) {
+        cancelAnimationFrame(animateRaf)
+        animateRaf = 0
+      }
+      pendingThemeRebuild = false
       simulation.stop()
       cleanupInteractions()
       cancelAnimationFrame(resizeRaf)

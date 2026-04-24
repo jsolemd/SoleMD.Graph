@@ -61,6 +61,33 @@ describe("usePointsFiltered", () => {
     expect(deps.setSelectedPointCount).toHaveBeenCalledWith(3);
     expect(deps.setActiveSelectionSourceId).toHaveBeenCalledWith("lasso:selection");
   });
+
+  it("logs DuckDB write failures via console.error instead of swallowing them", async () => {
+    const deps = createDeps("lasso:selection");
+    const failure = new Error("duckdb write rejected");
+    deps.queries.setSelectedPointIndices.mockReset();
+    deps.queries.setSelectedPointIndices.mockRejectedValueOnce(failure);
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const { result } = renderHook(() => usePointsFiltered(deps));
+
+      await act(async () => {
+        result.current({} as never, [1, 2]);
+        // Flush promise microtasks so the rejected write surfaces.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[usePointsFiltered] setSelectedPointIndices failed",
+        failure,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
 
 function createDeps(sourceId: string | null) {

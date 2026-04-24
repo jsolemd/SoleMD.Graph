@@ -249,6 +249,19 @@ CREATE TABLE IF NOT EXISTS solemd.s2_paper_reference_metrics_raw (
 );
 ALTER TABLE solemd.s2_paper_reference_metrics_raw SET (fillfactor = 100);
 
+CREATE UNLOGGED TABLE IF NOT EXISTS solemd.s2_paper_reference_metrics_stage (
+    ingest_run_id UUID NOT NULL,
+    source_release_id INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    batch_ordinal INTEGER NOT NULL,
+    citing_paper_id TEXT NOT NULL,
+    reference_out_count INTEGER NOT NULL DEFAULT 0,
+    influential_reference_count INTEGER NOT NULL DEFAULT 0,
+    linked_reference_count INTEGER NOT NULL DEFAULT 0,
+    orphan_reference_count INTEGER NOT NULL DEFAULT 0
+);
+ALTER TABLE solemd.s2_paper_reference_metrics_stage SET (fillfactor = 100);
+
 CREATE TABLE IF NOT EXISTS solemd.s2_paper_references_raw (
     source_release_id INTEGER NOT NULL
         REFERENCES solemd.source_releases (source_release_id)
@@ -314,6 +327,7 @@ CREATE TABLE IF NOT EXISTS pubtator.entity_annotations_stage (
         pmid,
         start_offset,
         end_offset,
+        entity_type,
         concept_id_raw,
         resource
     ),
@@ -341,7 +355,14 @@ CREATE TABLE IF NOT EXISTS pubtator.entity_annotations (
     mention_text TEXT NOT NULL,
     concept_id_raw TEXT NOT NULL,
     resource SMALLINT NOT NULL,
-    PRIMARY KEY (corpus_id, start_offset, end_offset, concept_id_raw),
+    PRIMARY KEY (
+        corpus_id,
+        start_offset,
+        end_offset,
+        entity_type,
+        concept_id_raw,
+        resource
+    ),
     CONSTRAINT ck_pubtator_entity_annotations_entity_type
         CHECK (entity_type BETWEEN 1 AND 6),
     CONSTRAINT ck_pubtator_entity_annotations_resource

@@ -1,0 +1,51 @@
+# Intended to be a required status check on `main` —
+# configure via GitHub branch protection after two successful runs.
+name: Web tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      # Lint + typecheck for apps/web are intentionally owned here, not in
+      # quality.yml. quality.yml is a composite wrapper (build + lint +
+      # typecheck + test on @solemd/web); this job is the narrower gate that
+      # GitHub branch protection points at. Duplication is cheap; quality.yml
+      # may be retired once these workflows prove stable.
+      - name: Lint (@solemd/web)
+        run: npm run lint --workspace @solemd/web
+
+      - name: Typecheck (@solemd/web)
+        run: npm run typecheck --workspace @solemd/web
+
+      - name: Jest (@solemd/web)
+        run: npm test --workspace @solemd/web -- --runInBand --ci
+
+      - name: Jest (@solemd/api-client)
+        run: npm test --workspace @solemd/api-client -- --runInBand --ci
+
+      - name: Jest (@solemd/graph)
+        run: npm test --workspace @solemd/graph -- --runInBand --ci

@@ -184,6 +184,16 @@ function createProps(
   };
 }
 
+beforeAll(() => {
+  class ResizeObserverMock {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  }
+
+  global.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
+});
+
 describe("PromptBoxSurface", () => {
   beforeEach(() => {
     mockedCreateEditor.mockClear();

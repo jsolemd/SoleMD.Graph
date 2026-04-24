@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 import json
 import logging
@@ -9,6 +10,7 @@ from uuid import UUID
 import asyncpg
 
 from app.config import Settings, settings
+from app.db import open_named_connection
 from app.document_schema import (
     DOCUMENT_SOURCE_KIND_PMC_BIOC,
     TEXT_AVAILABILITY_FULLTEXT,
@@ -40,6 +42,7 @@ PAPER_TEXT_RUN_STATUS_STARTED = 1
 PAPER_TEXT_RUN_STATUS_PUBLISHED = 2
 PAPER_TEXT_RUN_STATUS_UNAVAILABLE = 3
 PAPER_TEXT_RUN_STATUS_FAILED = 4
+PAPER_TEXT_RUN_STATUS_ABORTED = 5
 _PAPER_TEXT_PROGRESS_TOTAL_UNITS = 5.0
 
 
@@ -50,8 +53,9 @@ async def acquire_paper_text(
     runtime_settings: Settings = settings,
 ) -> str:
     started = perf_counter()
-    async with ingest_pool.acquire() as connection:
-        lock_key = await _acquire_paper_lock(connection, request.corpus_id)
+    run_id: UUID | None = None
+    async with open_named_connection(runtime_settings, name="ingest_write") as control_connection:
+        lock_key = await _acquire_paper_lock(control_connection, request.corpus_id)
         try:
             async with track_evidence_text_inprogress():
                 async with track_active_worker_run(
@@ -65,13 +69,14 @@ async def acquire_paper_text(
                         completed_units=0,
                         total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
                     )
-                    paper = await _load_paper_metadata(connection, request.corpus_id)
-                    active_run.set_progress(
-                        progress_kind="overall",
-                        completed_units=1,
-                        total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
-                    )
-                    existing_run = await _load_existing_current_run(connection, paper.corpus_id)
+                    async with ingest_pool.acquire() as connection:
+                        paper = await _load_paper_metadata(connection, request.corpus_id)
+                        active_run.set_progress(
+                            progress_kind="overall",
+                            completed_units=1,
+                            total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
+                        )
+                        existing_run = await _load_existing_current_run(connection, paper.corpus_id)
                     if existing_run is not None and not request.force_refresh:
                         record_evidence_text_run(
                             outcome="already_current",
@@ -91,7 +96,8 @@ async def acquire_paper_text(
                         )
                         return str(existing_run.paper_text_run_id)
 
-                    run_id = await _insert_started_run(connection, request)
+                    async with ingest_pool.acquire() as connection:
+                        run_id = await _insert_started_run(connection, request)
                     try:
                         active_run.set_state(phase="resolve_locators")
                         locators = await resolve_locators(runtime_settings, paper)
@@ -119,43 +125,44 @@ async def acquire_paper_text(
                         )
                         active_run.set_state(phase="publish_document")
 
-                        async with connection.transaction():
-                            await replace_document_spines(
-                                connection,
-                                (document,),
-                                source_revision=manifest.resolved_pmc_id or manifest.locator_value,
-                            )
-                            await connection.execute(
-                                """
-                                UPDATE solemd.paper_text
-                                SET text_availability = $2::smallint
-                                WHERE corpus_id = $1
-                                """,
-                                paper.corpus_id,
-                                TEXT_AVAILABILITY_FULLTEXT,
-                            )
-                            if manifest.resolved_pmc_id:
+                        async with ingest_pool.acquire() as connection:
+                            async with connection.transaction():
+                                await replace_document_spines(
+                                    connection,
+                                    (document,),
+                                    source_revision=manifest.resolved_pmc_id or manifest.locator_value,
+                                )
                                 await connection.execute(
                                     """
-                                    UPDATE solemd.papers
-                                    SET pmc_id = $2
+                                    UPDATE solemd.paper_text
+                                    SET text_availability = $2::smallint
                                     WHERE corpus_id = $1
-                                      AND pmc_id IS DISTINCT FROM $2
                                     """,
                                     paper.corpus_id,
-                                    manifest.resolved_pmc_id,
+                                    TEXT_AVAILABILITY_FULLTEXT,
                                 )
-                            await _finalize_run(
-                                connection,
-                                run_id,
-                                status=PAPER_TEXT_RUN_STATUS_PUBLISHED,
-                                locator_kind=manifest.locator_kind,
-                                locator_value=manifest.locator_value,
-                                resolver_kind=manifest.resolver_kind,
-                                resolved_pmc_id=manifest.resolved_pmc_id,
-                                manifest_uri=manifest.manifest_uri,
-                                response_checksum=manifest.response_checksum,
-                            )
+                                if manifest.resolved_pmc_id:
+                                    await connection.execute(
+                                        """
+                                        UPDATE solemd.papers
+                                        SET pmc_id = $2
+                                        WHERE corpus_id = $1
+                                          AND pmc_id IS DISTINCT FROM $2
+                                        """,
+                                        paper.corpus_id,
+                                        manifest.resolved_pmc_id,
+                                    )
+                                await _finalize_run(
+                                    connection,
+                                    run_id,
+                                    status=PAPER_TEXT_RUN_STATUS_PUBLISHED,
+                                    locator_kind=manifest.locator_kind,
+                                    locator_value=manifest.locator_value,
+                                    resolver_kind=manifest.resolver_kind,
+                                    resolved_pmc_id=manifest.resolved_pmc_id,
+                                    manifest_uri=manifest.manifest_uri,
+                                    response_checksum=manifest.response_checksum,
+                                )
 
                         active_run.set_progress(
                             progress_kind="overall",
@@ -192,72 +199,110 @@ async def acquire_paper_text(
                         return str(run_id)
                     except PaperTextUnavailable as exc:
                         failed_locator = exc.locator
-                        await _finalize_run(
-                            connection,
-                            run_id,
+                        if await _record_terminal_run_state(
+                            runtime_settings,
+                            run_id=run_id,
                             status=PAPER_TEXT_RUN_STATUS_UNAVAILABLE,
                             locator_kind=getattr(failed_locator, "locator_kind", None),
                             locator_value=getattr(failed_locator, "locator_value", None),
                             resolver_kind=getattr(failed_locator, "resolver_kind", None),
                             resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
                             error_message=str(exc),
-                        )
-                        record_evidence_text_run(
-                            outcome="unavailable",
-                            locator_kind=getattr(failed_locator, "locator_kind", None),
-                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                        )
-                        observe_evidence_text_acquisition(
-                            outcome="unavailable",
-                            locator_kind=getattr(failed_locator, "locator_kind", None),
-                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                            duration_seconds=perf_counter() - started,
-                        )
-                        _emit_event(
-                            "evidence.paper_text.unavailable",
-                            corpus_id=request.corpus_id,
-                            paper_text_run_id=run_id,
-                            reason=str(exc),
-                        )
+                        ):
+                            record_evidence_text_run(
+                                outcome="unavailable",
+                                locator_kind=getattr(failed_locator, "locator_kind", None),
+                                resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                            )
+                            observe_evidence_text_acquisition(
+                                outcome="unavailable",
+                                locator_kind=getattr(failed_locator, "locator_kind", None),
+                                resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                                duration_seconds=perf_counter() - started,
+                            )
+                            _emit_event(
+                                "evidence.paper_text.unavailable",
+                                corpus_id=request.corpus_id,
+                                paper_text_run_id=run_id,
+                                reason=str(exc),
+                            )
+                        raise
+                    except asyncio.CancelledError:
+                        if run_id is not None:
+                            try:
+                                recorded = await asyncio.shield(
+                                    _record_terminal_run_state(
+                                        runtime_settings,
+                                        run_id=run_id,
+                                        status=PAPER_TEXT_RUN_STATUS_ABORTED,
+                                        error_message="run cancelled (time_limit or worker shutdown)",
+                                    )
+                                )
+                                if recorded:
+                                    record_evidence_text_run(
+                                        outcome="aborted",
+                                        locator_kind=None,
+                                        resolver_kind=None,
+                                    )
+                                    observe_evidence_text_acquisition(
+                                        outcome="aborted",
+                                        locator_kind=None,
+                                        resolver_kind=None,
+                                        duration_seconds=perf_counter() - started,
+                                    )
+                                    _emit_event(
+                                        "evidence.paper_text.aborted",
+                                        corpus_id=request.corpus_id,
+                                        paper_text_run_id=run_id,
+                                        reason="cancelled",
+                                    )
+                            except BaseException:
+                                LOGGER.exception(
+                                    "failed to mark evidence text run aborted during cancellation",
+                                )
                         raise
                     except Exception as exc:
                         failed_locator = exc.locator if isinstance(exc, PaperTextFetchFailed) else None
-                        await _finalize_run(
-                            connection,
-                            run_id,
+                        if await _record_terminal_run_state(
+                            runtime_settings,
+                            run_id=run_id,
                             status=PAPER_TEXT_RUN_STATUS_FAILED,
                             locator_kind=getattr(failed_locator, "locator_kind", None),
                             locator_value=getattr(failed_locator, "locator_value", None),
                             resolver_kind=getattr(failed_locator, "resolver_kind", None),
                             resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
                             error_message=str(exc),
-                        )
-                        record_evidence_text_run(
-                            outcome="failed",
-                            locator_kind=getattr(failed_locator, "locator_kind", None),
-                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                        )
-                        record_evidence_text_failure(failure_class=type(exc).__name__)
-                        observe_evidence_text_acquisition(
-                            outcome="failed",
-                            locator_kind=getattr(failed_locator, "locator_kind", None),
-                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                            duration_seconds=perf_counter() - started,
-                        )
-                        _emit_event(
-                            "evidence.paper_text.failed",
-                            corpus_id=request.corpus_id,
-                            paper_text_run_id=run_id,
-                            locator_kind=getattr(failed_locator, "locator_kind", None),
-                            locator_value=getattr(failed_locator, "locator_value", None),
-                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                            resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
-                            error_class=type(exc).__name__,
-                            error_message=str(exc),
-                        )
+                        ):
+                            record_evidence_text_run(
+                                outcome="failed",
+                                locator_kind=getattr(failed_locator, "locator_kind", None),
+                                resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                            )
+                            record_evidence_text_failure(failure_class=type(exc).__name__)
+                            observe_evidence_text_acquisition(
+                                outcome="failed",
+                                locator_kind=getattr(failed_locator, "locator_kind", None),
+                                resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                                duration_seconds=perf_counter() - started,
+                            )
+                            _emit_event(
+                                "evidence.paper_text.failed",
+                                corpus_id=request.corpus_id,
+                                paper_text_run_id=run_id,
+                                locator_kind=getattr(failed_locator, "locator_kind", None),
+                                locator_value=getattr(failed_locator, "locator_value", None),
+                                resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                                resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
+                                error_class=type(exc).__name__,
+                                error_message=str(exc),
+                            )
                         raise
         finally:
-            await connection.execute("SELECT pg_advisory_unlock($1)", lock_key)
+            await _unlock_advisory_lock_best_effort(
+                control_connection,
+                lock_key,
+                scope=f"evidence:{request.corpus_id}",
+            )
 
 
 async def _acquire_paper_lock(connection: asyncpg.Connection, corpus_id: int) -> int:
@@ -378,6 +423,57 @@ async def _finalize_run(
         response_checksum,
         error_message,
     )
+
+
+async def _record_terminal_run_state(
+    runtime_settings: Settings,
+    *,
+    run_id: UUID,
+    status: int,
+    locator_kind: str | None = None,
+    locator_value: str | None = None,
+    resolver_kind: str | None = None,
+    resolved_pmc_id: str | None = None,
+    manifest_uri: str | None = None,
+    response_checksum: str | None = None,
+    error_message: str | None = None,
+) -> bool:
+    try:
+        async with open_named_connection(runtime_settings, name="ingest_write") as connection:
+            await _finalize_run(
+                connection,
+                run_id,
+                status=status,
+                locator_kind=locator_kind,
+                locator_value=locator_value,
+                resolver_kind=resolver_kind,
+                resolved_pmc_id=resolved_pmc_id,
+                manifest_uri=manifest_uri,
+                response_checksum=response_checksum,
+                error_message=error_message,
+            )
+        return True
+    except Exception:
+        LOGGER.exception(
+            "failed to persist terminal paper-text run state",
+            extra={
+                "paper_text_run_id": str(run_id),
+                "status": status,
+            },
+        )
+        return False
+
+
+async def _unlock_advisory_lock_best_effort(
+    connection: asyncpg.Connection,
+    lock_key: int,
+    *,
+    scope: str,
+) -> None:
+    try:
+        await asyncio.shield(connection.execute("SELECT pg_advisory_unlock($1)", lock_key))
+    except BaseException:
+        LOGGER.exception("failed to release advisory lock for %s", scope)
 
 
 def _emit_event(event_name: str, **payload: object) -> None:

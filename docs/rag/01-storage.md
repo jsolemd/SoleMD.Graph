@@ -189,8 +189,10 @@ warehouse is fully loaded:
 
 - Warehouse `pg-data/` grows ~1–2 TB with citations + pubtator + grounding
   + chunk lineage loaded.
-- `data/` holds rolling raw releases; a retention policy that prunes
-  prior releases after new-release ingest + verification is required.
+- `data/` holds rolling raw releases; source-family retention must prune or
+  archive hot raw directories after `ingest_runs.families_loaded` proves the
+  family checkpoint is durable. The worker CLI command
+  `app.main source-retention` is the guardrail for that cleanup.
 - `archives/` grows per `serving_run_id`; the retention policy pruning
   old runs must run regularly.
 - `pgbackrest-repo/` will carry ~100–200 GB of rolling full + incr + WAL.
@@ -244,6 +246,7 @@ larger-disk hardware plan.
 | Serve PG / OpenSearch / observability on NVMe named volumes   | Fast random I/O at steady state; Docker-managed lifecycle; crash-resume is cleanest.     |
 | Warehouse PG data on E-drive bind (`/mnt/solemd-graph/pg-data`) | Bulk storage; co-located with raw release files; independent from serve lifecycle.     |
 | Raw release files under `data/<source>/releases/<release_id>/` | Stable ingest contract already in use; ingest treats them read-only.                    |
+| S2 source-retention cleanup via `app.main source-retention`     | Hot raw files leave the VHD only after advisory-lock, manifest-checksum, and `families_loaded` validation. |
 | Published bundles under `bundles/<graph_run_id>/` with `by-checksum/` symlinks | Asset-serving relies on checksum symlinks; contract already exercised.   |
 | Plain-filesystem archive under `/mnt/solemd-graph/archives/` with the §4 layout | No hosting requirement that needs S3 API today.                         |
 | No MinIO / S3 gateway day one                                 | Nothing in the serving path needs signed URLs or multi-tenant access yet.                |
@@ -270,7 +273,7 @@ larger-disk hardware plan.
 | Off-box backup mirror (Backblaze B2)                          | Serve PG holds irreplaceable data (auth, user notes).                              |
 | Separate NVMe for OpenSearch indexes                          | OpenSearch I/O contends with serve PG or observability on the same NVMe.          |
 | ZFS or Btrfs snapshots on named volumes                       | Needed for point-in-time rollback without full pgBackRest restore.                |
-| Raw-release retention policy beyond latest + latest-1         | Disk pressure or regulatory / reproducibility requirement.                         |
+| Raw-release retention policy beyond family-level S2 cleanup   | Disk pressure remains after `source-retention` removes committed/default-deferred families. |
 
 ## Open items before `02-warehouse-schema.md`
 

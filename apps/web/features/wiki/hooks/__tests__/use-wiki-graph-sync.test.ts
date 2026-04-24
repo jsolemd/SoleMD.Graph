@@ -195,6 +195,91 @@ describe("useWikiGraphSync", () => {
     expect(mockFitViewByIndices).not.toHaveBeenCalled();
   });
 
+  it("rolls back committed overlay when aborted mid-flight", async () => {
+    const queries = createMockQueries();
+
+    // Gate the node-cache step so we can abort between commitWikiOverlay and
+    // cacheWikiGraphNodes (i.e., after overlay has been committed).
+    let releaseNodes: (value: Record<string, { index: number; id: string }>) => void;
+    const nodesPromise = new Promise<
+      Record<string, { index: number; id: string }>
+    >((resolve) => {
+      releaseNodes = resolve;
+    });
+    mockCacheWikiGraphNodes.mockReturnValueOnce(nodesPromise);
+
+    const { result, rerender } = renderHook(
+      ({ refs }: { refs: string[] }) =>
+        useWikiGraphSync({
+          queries,
+          pageGraphRefs: refs,
+          currentSlug: "entities/test",
+        }),
+      { initialProps: { refs: ["ref-1"] } },
+    );
+
+    // Kick off page A.
+    let firstCall: Promise<void>;
+    await act(async () => {
+      firstCall = result.current.showPageOnGraph();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockCommitWikiOverlay).toHaveBeenCalledTimes(1);
+
+    // Simulate user switching to page B — abort mid-flight.
+    rerender({ refs: ["ref-2"] });
+    mockCacheWikiGraphNodes.mockResolvedValue({
+      "ref-2": { index: 99, id: "ref-2-node" },
+    });
+
+    let secondCall: Promise<void>;
+    await act(async () => {
+      secondCall = result.current.showPageOnGraph();
+      // Release the gated first call so it observes the abort signal.
+      releaseNodes({ "ref-1": { index: 42, id: "ref-1-node" } });
+      await firstCall;
+      await secondCall;
+    });
+
+    // Rollback for page A's overlay should have fired.
+    expect(mockClearWikiGraphOverlay).toHaveBeenCalledWith({
+      producerId: "wiki:page",
+      queries,
+    });
+
+    // Page B should have committed cleanly on top.
+    expect(mockCommitWikiOverlay).toHaveBeenLastCalledWith({
+      producerId: "wiki:page",
+      queries,
+      pointIds: ["point-1"],
+    });
+    expect(mockSelectPointsByIndices).toHaveBeenLastCalledWith({
+      sourceId: "wiki:page",
+      pointIndices: [99],
+    });
+  });
+
+  it("does not roll back when showPageOnGraph completes without aborting", async () => {
+    const queries = createMockQueries();
+
+    const { result } = renderHook(() =>
+      useWikiGraphSync({
+        queries,
+        pageGraphRefs: ["ref-1"],
+        currentSlug: "entities/test",
+      }),
+    );
+
+    await act(async () => {
+      await result.current.showPageOnGraph();
+    });
+
+    // Happy path: no rollback-driven clears beyond what the caller triggers.
+    expect(mockClearWikiGraphOverlay).not.toHaveBeenCalled();
+  });
+
   it("clears owned overlay and selection state explicitly", async () => {
     const queries = createMockQueries();
     dashboardState.activeSelectionSourceId = "wiki:page";

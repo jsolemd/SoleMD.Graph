@@ -99,6 +99,22 @@ describe("useGraphBundle", () => {
     expect(invalidateGraphBundleSessionCache).not.toHaveBeenCalled();
   });
 
+  it("pins session bundle identity across same-checksum rerenders (no render-time ref mutation)", () => {
+    // Regression guard: previously this hook mutated a ref during render to
+    // pin the session bundle identity. React 19 may discard render output
+    // during concurrent retries, silently losing ref writes. The fix moves
+    // the pinned identity into useState with a safe in-render setState.
+    const { rerender } = renderHook(({ bundle }) => useGraphBundle(bundle), {
+      initialProps: { bundle: BASE_BUNDLE },
+    });
+
+    // Same checksum, new object identity — should NOT trigger a reload.
+    rerender({ bundle: { ...BASE_BUNDLE } });
+    rerender({ bundle: { ...BASE_BUNDLE } });
+
+    expect(loadGraphBundle).toHaveBeenCalledTimes(1);
+  });
+
   it("invalidates the previous session only when switching bundle checksums", () => {
     const { rerender } = renderHook(({ bundle }) => useGraphBundle(bundle), {
       initialProps: { bundle: BASE_BUNDLE },

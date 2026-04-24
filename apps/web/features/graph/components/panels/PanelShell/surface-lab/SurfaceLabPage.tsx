@@ -92,14 +92,12 @@ function getPromptBackground(tone: PromptTone, accentRef: string, panelBackgroun
 
 function buildPreviewVars({
   accent,
-  colorScheme,
   density,
   panelScale,
   panelTone,
   promptTone,
 }: {
   accent: string;
-  colorScheme: "light" | "dark";
   density: number;
   panelScale: number;
   panelTone: PanelTone;
@@ -109,19 +107,12 @@ function buildPreviewVars({
   const panelBackground = getPanelBackground(panelTone, accentRef);
   const panelInputBackground = getPanelInputBackground(panelTone, accentRef);
   const promptBackground = getPromptBackground(promptTone, accentRef, panelBackground);
-  const isDark = colorScheme === "dark";
 
   return {
     "--app-density": String(density),
     "--graph-panel-scale": String(panelScale),
     "--graph-panel-reading-scale": "calc(var(--app-density) * var(--graph-panel-scale))",
     "--mode-accent": accentRef,
-    "--mode-accent-subtle": isDark
-      ? `color-mix(in oklch, ${accentRef} 55%, transparent)`
-      : `color-mix(in oklch, ${accentRef} 55%, white)`,
-    "--mode-accent-hover": isDark
-      ? `color-mix(in oklch, ${accentRef} 78%, transparent)`
-      : `color-mix(in oklch, ${accentRef} 72%, white)`,
     "--brand-accent": accentRef,
     "--brand-accent-alt": `color-mix(in srgb, ${accentRef} 68%, white)`,
     "--graph-panel-bg": panelBackground,
@@ -433,13 +424,12 @@ export function SurfaceLabPage({ inventoryRows }: { inventoryRows: SurfaceInvent
   const previewVars = useMemo(
     () => buildPreviewVars({
       accent,
-      colorScheme: previewColorScheme,
       density,
       panelScale,
       panelTone,
       promptTone,
     }),
-    [accent, density, panelScale, panelTone, previewColorScheme, promptTone],
+    [accent, density, panelScale, panelTone, promptTone],
   );
 
   const accentRef = getAccentRef(accent);

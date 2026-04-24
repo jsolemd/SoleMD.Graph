@@ -27,7 +27,7 @@ export function buildWikiPageEnginePath(
     graphReleaseId?: string
   } = {},
 ): string {
-  return `${WIKI_ENGINE_PREFIX}/pages/${slug}${buildWikiEngineQuery(options)}`
+  return `${WIKI_ENGINE_PREFIX}/pages/${encodeWikiSlug(slug)}${buildWikiEngineQuery(options)}`
 }
 
 export function buildWikiPageBundleEnginePath(
@@ -36,7 +36,7 @@ export function buildWikiPageBundleEnginePath(
     graphReleaseId?: string
   } = {},
 ): string {
-  return `${WIKI_ENGINE_PREFIX}/page-bundle/${slug}${buildWikiEngineQuery(options)}`
+  return `${WIKI_ENGINE_PREFIX}/page-bundle/${encodeWikiSlug(slug)}${buildWikiEngineQuery(options)}`
 }
 
 export function buildWikiPageContextEnginePath(
@@ -45,7 +45,7 @@ export function buildWikiPageContextEnginePath(
     graphReleaseId?: string
   } = {},
 ): string {
-  return `${WIKI_ENGINE_PREFIX}/page-context/${slug}${buildWikiEngineQuery(options)}`
+  return `${WIKI_ENGINE_PREFIX}/page-context/${encodeWikiSlug(slug)}${buildWikiEngineQuery(options)}`
 }
 
 export function buildWikiPagesEnginePath(): string {
@@ -61,7 +61,7 @@ export function buildWikiSearchEnginePath(query: string, limit: number): string 
 }
 
 export function buildWikiBacklinksEnginePath(slug: string): string {
-  return `${WIKI_ENGINE_PREFIX}/backlinks/${slug}`
+  return `${WIKI_ENGINE_PREFIX}/backlinks/${encodeWikiSlug(slug)}`
 }
 
 export function buildWikiGraphEnginePath(graphReleaseId: string): string {

@@ -141,7 +141,17 @@ export function usePointsFiltered(deps: {
           if (args.clearNode) {
             deps.selectNode(null);
           }
-        }).catch(() => {});
+        }).catch((error: unknown) => {
+          // Superseded writes (requestId mismatch) resolve on the then()
+          // branch, so any rejection here is a real DuckDB write failure
+          // (data-layer error, bundle teardown, etc.). Surface it loudly —
+          // silent swallowing hid selection/store desync bugs for weeks.
+          // TODO: route through central logger once plan 01 C1 lands.
+          console.error(
+            "[usePointsFiltered] setSelectedPointIndices failed",
+            error,
+          );
+        });
       });
     };
 

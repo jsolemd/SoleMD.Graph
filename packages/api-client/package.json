@@ -2,5 +2,9 @@
   "name": "@solemd/api-client",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "jest",
+    "test:ci": "jest --ci --runInBand"
+  }
 }

@@ -23,7 +23,7 @@ interface FieldStoryChapterProps {
 // framer-motion's MotionConfig at the app root honors the OS
 // reduced-motion preference, so no extra guard here.
 const REVEAL_EASE: Transition["ease"] = [0.16, 1, 0.3, 1];
-const BEAT_VIEWPORT = { once: false, margin: "-12% 0px -8% 0px" } as const;
+const BEAT_VIEWPORT = { once: false, amount: 0.2 } as const;
 
 const titleReveal: Variants = {
   hidden: { opacity: 0, y: 22 },

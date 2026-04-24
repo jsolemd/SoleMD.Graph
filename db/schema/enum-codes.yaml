@@ -110,6 +110,7 @@ paper_text_acquisition_run_status:
   published: 2
   unavailable: 3
   failed: 4
+  aborted: 5
 
 corpus_selection_run_status:
   started: 1

@@ -159,7 +159,7 @@ once.
 | `graph-opensearch` (current serving line per `16-version-inventory.md`, NVMe named volume `graph_opensearch_data`) | index | build time (2–6 h re-index) | Daily `fs`-repo snapshot of `paper_index_live` + `evidence_index_live`; canonical recovery is full re-index from serve via `07 §7` | §5 |
 | `graph-redis` (current Redis line per `16-version-inventory.md`, no volume today; planned NVMe target if persistence stays on) | cache | ∞ | RDB-only, `save 900 1 300 10 60 10000`, no AOF | §6 |
 | Langfuse (Cloud Hobby today, self-host deferred per `10 §7`) | telemetry — sliding window | n/a | **none** — 30-day Cloud window IS the retention; no backup even if self-host lands | §7 |
-| `/mnt/solemd-graph/data/{semantic-scholar,pubtator}/releases/` (raw release files) | raw-release | ∞ | **none** — re-downloadable from upstream; backup cost > rebuild cost | §2.1 |
+| `/mnt/solemd-graph/data/{semantic-scholar,pubtator}/releases/` (raw release files) | raw-release | ∞ while active; family-level hot retention after checkpoint | **none** — re-downloadable from upstream; backup cost > rebuild cost | §2.1 |
 | `/mnt/solemd-graph/bundles/` (published Parquet, `01 §3`) | archive | build time | filesystem-as-is; covered by future off-box mirror; rebuildable from `graph_runs` ledger | §10 |
 | `/mnt/solemd-graph/archives/serving-packages/<serving_run_id>/` (`04 §7.4`) | archive | build time | filesystem-as-is; if lost, re-run projection per `04 §7.4` | §10 |
 | `/mnt/solemd-graph/archives/chunk-versions/`, `archives/cold-text/`, `archives/projection-manifests/` (`01 §4`) | archive | build time | filesystem-as-is; rebuildable from warehouse + raw releases | §10 |
@@ -181,7 +181,11 @@ Six surfaces are explicitly **not** backed up:
 - **Raw release files** under `/mnt/solemd-graph/data/`: freely
   re-downloadable from S2 + PubTator3 upstream. At ~850 GB combined,
   local backup cost dominates re-download cost on a residential
-  gigabit link.
+  gigabit link. Hot-storage deletion is still gated by `05 §6.1`:
+  the worker `source-retention` command must verify the release advisory
+  lock, manifest checksum, and `families_loaded` before pruning a family
+  directory. `s2orc_v2` remains downstream-gated enrichment and does not
+  need a hot local copy for default S2 completion.
 - **Langfuse (Cloud Hobby, or self-host if it ever lands)**: telemetry
   is observability, not record-of-truth. The 30-day Cloud window IS
   the retention; we act on insights inside that window. If self-host

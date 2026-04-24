@@ -5,12 +5,19 @@ import asyncio
 import json
 from collections.abc import Sequence
 import os
+from pathlib import Path
 
 import dramatiq
 
 from app.broker import configure_broker
 from app.config import settings
-from app.db import build_pool_specs, open_pools, probe_postgres_target, probe_redis_target
+from app.db import (
+    build_pool_specs,
+    open_named_connection,
+    open_pools,
+    probe_postgres_target,
+    probe_redis_target,
+)
 from app.telemetry.bootstrap import prepare_worker_metrics_environment
 
 
@@ -22,6 +29,14 @@ from app.ingest.cli import (
     enqueue_release_request,
     parse_dispatch_manifest_request,
     parse_manual_release_request,
+)
+from app.ingest.source_retention import (
+    SourceRetentionBlocked,
+    SourceRetentionError,
+    apply_source_retention_report,
+    build_source_retention_report,
+    hold_source_retention_lock,
+    load_source_retention_run_state,
 )
 from app.corpus.cli import (
     enqueue_corpus_selection_request,
@@ -127,6 +142,35 @@ def build_parser() -> argparse.ArgumentParser:
     manifest_parser.add_argument("--max-files-per-family", type=int, default=None)
     manifest_parser.add_argument("--max-records-per-file", type=int, default=None)
     manifest_parser.add_argument("--family", action="append", dest="families", default=None)
+
+    source_retention_parser = subparsers.add_parser(
+        "source-retention",
+        help="Plan or apply hot-storage cleanup for a source release.",
+    )
+    source_retention_parser.add_argument("source_code", choices=("s2",))
+    source_retention_parser.add_argument("release_tag")
+    source_retention_parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="Apply the reported safe retention candidates.",
+    )
+    source_retention_parser.add_argument(
+        "--action",
+        choices=("archive", "delete"),
+        default=None,
+        help="Mutation to apply when --execute is set.",
+    )
+    source_retention_parser.add_argument(
+        "--archive-root",
+        type=Path,
+        default=None,
+        help="Same-filesystem archive root for --action archive.",
+    )
+    source_retention_parser.add_argument(
+        "--provenance-ok",
+        action="store_true",
+        help="Confirm source provenance/re-downloadability before --action delete.",
+    )
 
     enqueue_evidence_text_parser = subparsers.add_parser(
         "enqueue-evidence-text",
@@ -277,6 +321,69 @@ def main(argv: Sequence[str] | None = None) -> int:
         dispatch_manifest_requests((request,))
         broker.close()
         return 0
+    if args.command == "source-retention":
+        if args.execute and args.action is None:
+            parser.error("--execute requires --action archive or --action delete")
+        if args.action is not None and not args.execute:
+            parser.error("--action requires --execute")
+
+        async def _run() -> tuple[int, str]:
+            try:
+                async with open_named_connection(settings, name="ingest_write") as connection:
+                    async with hold_source_retention_lock(
+                        connection,
+                        source_code=args.source_code,
+                        release_tag=args.release_tag,
+                    ):
+                        run_state = await load_source_retention_run_state(
+                            connection,
+                            source_code=args.source_code,
+                            release_tag=args.release_tag,
+                        )
+                        report = build_source_retention_report(
+                            settings,
+                            source_code=args.source_code,
+                            release_tag=args.release_tag,
+                            run_state=run_state,
+                            dry_run=not args.execute,
+                        )
+                        changed: tuple[str, ...] = ()
+                        if args.execute:
+                            changed = apply_source_retention_report(
+                                report,
+                                action=args.action,
+                                archive_root=args.archive_root,
+                                provenance_ok=args.provenance_ok,
+                            )
+                        return (
+                            0,
+                            json.dumps(
+                                {
+                                    "changed": changed,
+                                    "report": json.loads(report.to_json()),
+                                },
+                                indent=2,
+                                sort_keys=True,
+                            ),
+                        )
+            except (SourceRetentionBlocked, SourceRetentionError) as exc:
+                payload = {
+                    "changed": (),
+                    "error": str(exc),
+                    "report": {
+                        "source_code": args.source_code,
+                        "release_tag": args.release_tag,
+                        "dry_run": not args.execute,
+                        "execution_blocked": True,
+                        "blockers": (str(exc),),
+                        "items": (),
+                    },
+                }
+                return (1 if args.execute else 0, json.dumps(payload, indent=2, sort_keys=True))
+
+        exit_code, payload = asyncio.run(_run())
+        print(payload)
+        return exit_code
     if args.command == "enqueue-evidence-text":
         request = parse_paper_text_request(
             corpus_id=args.corpus_id,

@@ -1,13 +1,32 @@
 "use client";
 
 import type { GraphInfoFacetRow, GraphInfoHistogramResult } from "@solemd/graph";
+import { createBoundedCache } from "../../duckdb/utils";
 
 /** Shared retry delays for widget dataset loading (retry on empty result). */
 export const WIDGET_DATASET_RETRY_DELAYS = [0, 150, 450] as const;
 
-const categoricalDatasetCache = new Map<string, GraphInfoFacetRow[]>();
-const numericDatasetCache = new Map<string, number[]>();
-const histogramDatasetCache = new Map<string, GraphInfoHistogramResult>();
+/**
+ * Per-widget dataset cache bound.
+ *
+ * Keys are `bundleChecksum:layer:column:overlayRevision:scope`. A normal
+ * session touches a few dozen unique keys as the user filters, switches
+ * layers, and the overlay ticks; 64 gives generous headroom without
+ * letting long-running tabs grow memory unboundedly.
+ * Uses `createBoundedCache` (LRU by insertion order) from duckdb/utils so
+ * the widget layer shares eviction semantics with the query layer.
+ */
+export const WIDGET_DATASET_CACHE_MAX = 64;
+
+const categoricalDatasetCache = createBoundedCache<string, GraphInfoFacetRow[]>(
+  WIDGET_DATASET_CACHE_MAX,
+);
+const numericDatasetCache = createBoundedCache<string, number[]>(
+  WIDGET_DATASET_CACHE_MAX,
+);
+const histogramDatasetCache = createBoundedCache<string, GraphInfoHistogramResult>(
+  WIDGET_DATASET_CACHE_MAX,
+);
 
 export function getWidgetDatasetCacheKeyWithRevision(
   bundleChecksum: string,

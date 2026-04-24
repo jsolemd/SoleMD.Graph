@@ -255,7 +255,8 @@ function FiltersPanelComponent({
         }));
         setLoadingColumns({});
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        console.error("[FiltersPanel] column batch hydration failed", error);
         if (nextRequestId !== requestIdRef.current) {
           return;
         }

@@ -9,6 +9,7 @@ import type { ComponentType, LazyExoticComponent } from "react";
 import "@/features/wiki/modules/register-all";
 
 import { getModuleByWikiPageSlug } from "@/features/wiki/module-runtime/registry";
+import { WikiModuleErrorBoundary } from "@/features/wiki/components/WikiModuleErrorBoundary";
 
 interface WikiModuleContentProps {
   /** Canonical wiki page slug (e.g. "modules/ai-for-mds") */
@@ -66,10 +67,12 @@ export function WikiModuleContent({ slug, withShell = false }: WikiModuleContent
   const moduleContent = React.createElement(getLazyModuleComponent(loader));
 
   return (
-    <Suspense fallback={<ModuleLoadingSkeleton />}>
-      <EntityHighlightZone>
-        <div className={withShell ? "wiki-module-panel" : undefined}>{moduleContent}</div>
-      </EntityHighlightZone>
-    </Suspense>
+    <WikiModuleErrorBoundary resetKey={slug}>
+      <Suspense fallback={<ModuleLoadingSkeleton />}>
+        <EntityHighlightZone>
+          <div className={withShell ? "wiki-module-panel" : undefined}>{moduleContent}</div>
+        </EntityHighlightZone>
+      </Suspense>
+    </WikiModuleErrorBoundary>
   );
 }

@@ -15,15 +15,27 @@ const mockCosmograph = {
   linksSelection: mockLinksSelection,
 };
 
+// Module-level flag lets specific tests disable the synchronous id on the
+// mocked native buttons, forcing the MutationObserver discovery path.
+const nativeButtonIdState = { emitId: true };
+
 jest.mock("@cosmograph/react", () => ({
   useCosmograph: () => ({ cosmograph: mockCosmograph }),
   CosmographButtonRectangularSelection: (props: Record<string, unknown>) => (
-    <button data-testid="rect-btn" id="cosmo-rect" style={props.style as React.CSSProperties}>
+    <button
+      data-testid="rect-btn"
+      id={nativeButtonIdState.emitId ? "cosmo-rect" : undefined}
+      style={props.style as React.CSSProperties}
+    >
       rect
     </button>
   ),
   CosmographButtonPolygonalSelection: (props: Record<string, unknown>) => (
-    <button data-testid="poly-btn" id="cosmo-poly" style={props.style as React.CSSProperties}>
+    <button
+      data-testid="poly-btn"
+      id={nativeButtonIdState.emitId ? "cosmo-poly" : undefined}
+      style={props.style as React.CSSProperties}
+    >
       poly
     </button>
   ),
@@ -51,6 +63,7 @@ import {
 beforeEach(() => {
   jest.clearAllMocks();
   storeListener = null;
+  nativeButtonIdState.emitId = true;
 });
 
 /* ── Helpers ──────────────────────────────────────────────────── */
@@ -178,6 +191,110 @@ describe("SelectionToolbar", () => {
     });
 
     expect(rectWrapper).toHaveAttribute("aria-pressed", "false");
+  });
+
+  describe("MutationObserver lifecycle", () => {
+    const originalMutationObserver = global.MutationObserver;
+    let observeCalls = 0;
+    let disconnectCalls = 0;
+    let lastObserverInstance: { disconnect: jest.Mock } | null = null;
+
+    beforeEach(() => {
+      observeCalls = 0;
+      disconnectCalls = 0;
+      lastObserverInstance = null;
+
+      class TrackingObserver {
+        disconnect = jest.fn(() => {
+          disconnectCalls += 1;
+        });
+        observe = jest.fn(() => {
+          observeCalls += 1;
+        });
+        takeRecords = jest.fn(() => []);
+        constructor(_cb: MutationCallback) {
+          lastObserverInstance = this;
+        }
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      global.MutationObserver = TrackingObserver as any;
+    });
+
+    afterEach(() => {
+      global.MutationObserver = originalMutationObserver;
+    });
+
+    it("disconnects the observer on unmount even when the button id never appears", () => {
+      // Force the observer path: native mock buttons render without ids,
+      // so discover() can't hit the synchronous querySelector fast-path.
+      nativeButtonIdState.emitId = false;
+      const { unmount } = render(
+        <SelectionToolbar
+          isLocked={false}
+          activeSourceId={null}
+          hasSelection={false}
+          onActivate={jest.fn()}
+          onClear={jest.fn()}
+        />,
+      );
+
+      // Two observers should be created (rect + poly), both observing.
+      expect(observeCalls).toBe(2);
+      expect(disconnectCalls).toBe(0);
+
+      unmount();
+
+      // Both observers disconnected on cleanup — no leak.
+      expect(disconnectCalls).toBe(2);
+    });
+
+    it("does not create observers when button ids resolve synchronously", () => {
+      // Default mock emits ids, so the discover() fast-path returns without
+      // instantiating an observer.
+      render(
+        <SelectionToolbar
+          isLocked={false}
+          activeSourceId={null}
+          hasSelection={false}
+          onActivate={jest.fn()}
+          onClear={jest.fn()}
+        />,
+      );
+      expect(observeCalls).toBe(0);
+      expect(lastObserverInstance).toBeNull();
+    });
+
+    it("auto-disconnects and warns if the button id never appears within the timeout", () => {
+      jest.useFakeTimers();
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+      nativeButtonIdState.emitId = false;
+
+      try {
+        render(
+          <SelectionToolbar
+            isLocked={false}
+            activeSourceId={null}
+            hasSelection={false}
+            onActivate={jest.fn()}
+            onClear={jest.fn()}
+          />,
+        );
+
+        expect(observeCalls).toBe(2);
+        expect(disconnectCalls).toBe(0);
+
+        act(() => {
+          jest.advanceTimersByTime(5000);
+        });
+
+        expect(disconnectCalls).toBe(2);
+        expect(warnSpy).toHaveBeenCalledTimes(2);
+        expect(warnSpy.mock.calls[0][0]).toMatch(/button id never appeared/);
+      } finally {
+        warnSpy.mockRestore();
+        jest.useRealTimers();
+      }
+    });
   });
 
   it("clears activatedToolId when selection becomes locked", () => {

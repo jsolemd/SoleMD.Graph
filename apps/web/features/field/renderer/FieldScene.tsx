@@ -223,24 +223,51 @@ export function FieldScene({
     objectFormationUniformsRef,
   );
 
-  const blobHandles: StageLayerHandle = {
-    material: useRef<ShaderMaterial | null>(null),
-    model: useRef<Group | null>(null),
-    mouseWrapper: useRef<Group | null>(null),
-    wrapper: useRef<Group | null>(null),
-  };
-  const streamHandles: StageLayerHandle = {
-    material: useRef<ShaderMaterial | null>(null),
-    model: useRef<Group | null>(null),
-    mouseWrapper: useRef<Group | null>(null),
-    wrapper: useRef<Group | null>(null),
-  };
-  const objectFormationHandles: StageLayerHandle = {
-    material: useRef<ShaderMaterial | null>(null),
-    model: useRef<Group | null>(null),
-    mouseWrapper: useRef<Group | null>(null),
-    wrapper: useRef<Group | null>(null),
-  };
+  // Hoist the per-layer ref bundles into useMemo so the handle OBJECT
+  // itself is referentially stable across renders (the individual refs
+  // already are). This lets downstream useEffects list handles in their
+  // dep arrays without re-running every commit, which was the original
+  // audit finding C2.
+  const blobMaterialRef = useRef<ShaderMaterial | null>(null);
+  const blobModelRef = useRef<Group | null>(null);
+  const blobMouseWrapperRef = useRef<Group | null>(null);
+  const blobWrapperRef = useRef<Group | null>(null);
+  const streamMaterialRef = useRef<ShaderMaterial | null>(null);
+  const streamModelRef = useRef<Group | null>(null);
+  const streamMouseWrapperRef = useRef<Group | null>(null);
+  const streamWrapperRef = useRef<Group | null>(null);
+  const objectFormationMaterialRef = useRef<ShaderMaterial | null>(null);
+  const objectFormationModelRef = useRef<Group | null>(null);
+  const objectFormationMouseWrapperRef = useRef<Group | null>(null);
+  const objectFormationWrapperRef = useRef<Group | null>(null);
+
+  const blobHandles = useMemo<StageLayerHandle>(
+    () => ({
+      material: blobMaterialRef,
+      model: blobModelRef,
+      mouseWrapper: blobMouseWrapperRef,
+      wrapper: blobWrapperRef,
+    }),
+    [],
+  );
+  const streamHandles = useMemo<StageLayerHandle>(
+    () => ({
+      material: streamMaterialRef,
+      model: streamModelRef,
+      mouseWrapper: streamMouseWrapperRef,
+      wrapper: streamWrapperRef,
+    }),
+    [],
+  );
+  const objectFormationHandles = useMemo<StageLayerHandle>(
+    () => ({
+      material: objectFormationMaterialRef,
+      model: objectFormationModelRef,
+      mouseWrapper: objectFormationMouseWrapperRef,
+      wrapper: objectFormationWrapperRef,
+    }),
+    [],
+  );
 
   useEffect(() => {
     if (activeIdSet.has("blob") && pointSources.blob) {
@@ -256,25 +283,62 @@ export function FieldScene({
     objectFormationUniformsRef.current.uLightMode.value = lightModeValue;
   }, [lightModeValue]);
 
+  // Unmount-only GPU cleanup. Controller.destroy() kills GSAP tweens but
+  // does not dispose the ShaderMaterial refs owned by this component. R3F
+  // auto-disposes geometries/attributes declared as JSX children, but the
+  // material refs we hold explicitly must be disposed here. The
+  // pointTexture is module-cached (shared across instances) and must NOT
+  // be disposed. dispose() is idempotent so double-calls under StrictMode
+  // are safe.
   useEffect(() => {
+    // Capture refs at effect time so cleanup closure doesn't chase stale
+    // values if the parent remounts.
+    const materialRefs = [
+      blobHandles.material,
+      streamHandles.material,
+      objectFormationHandles.material,
+    ];
     return () => {
       blobController.destroy();
       streamController.destroy();
       objectFormationController.destroy();
+      for (const ref of materialRefs) {
+        ref.current?.dispose();
+        ref.current = null;
+      }
     };
-  }, [blobController, objectFormationController, streamController]);
+  }, [
+    blobController,
+    blobHandles,
+    objectFormationController,
+    objectFormationHandles,
+    streamController,
+    streamHandles,
+  ]);
 
+  // Attach controllers whenever their layer becomes visible. The attach
+  // call is idempotent in practice (it writes handle refs into the
+  // controller), but gating on activeIdSet avoids running during renders
+  // where the refs aren't populated yet because the JSX is unmounted.
   useEffect(() => {
-    attachController(blobController, blobHandles);
-  });
-
-  useEffect(() => {
-    attachController(streamController, streamHandles);
-  });
-
-  useEffect(() => {
-    attachController(objectFormationController, objectFormationHandles);
-  });
+    if (activeIdSet.has("blob")) {
+      attachController(blobController, blobHandles);
+    }
+    if (activeIdSet.has("stream")) {
+      attachController(streamController, streamHandles);
+    }
+    if (activeIdSet.has("objectFormation")) {
+      attachController(objectFormationController, objectFormationHandles);
+    }
+  }, [
+    activeIdSet,
+    blobController,
+    blobHandles,
+    objectFormationController,
+    objectFormationHandles,
+    streamController,
+    streamHandles,
+  ]);
 
   useEffect(() => {
     const registrations: Array<[FieldStageItemId, FieldController, StageLayerHandle]> = [
@@ -301,7 +365,16 @@ export function FieldScene({
       readyIdsRef.current.add(id);
       onControllerReady?.(id, controller);
     });
-  });
+  }, [
+    activeIdSet,
+    blobController,
+    blobHandles,
+    objectFormationController,
+    objectFormationHandles,
+    onControllerReady,
+    streamController,
+    streamHandles,
+  ]);
 
   useFrame((state, delta) => {
     const sceneState = sceneStateRef.current ?? DEFAULT_FIELD_SCENE;

@@ -36,12 +36,13 @@ export function bindShellStateClasses({
   let lastScrollY = window.scrollY;
   let resizeTimer: ReturnType<typeof setTimeout> | null = null;
   let chromePillRafId: number | null = null;
+  let scrollStateRafId: number | null = null;
 
   const markLoaded = () => {
     toggleClass(target, "is-loaded", true);
   };
 
-  const syncScrollState = () => {
+  const runSyncScrollState = () => {
     const nextScrollY = window.scrollY;
     const viewportHeight = Math.max(window.innerHeight, 1);
     toggleClass(target, "is-scrolled", nextScrollY > 0);
@@ -60,6 +61,14 @@ export function bindShellStateClasses({
     lastScrollY = nextScrollY;
   };
 
+  const syncScrollState = () => {
+    if (scrollStateRafId !== null) return;
+    scrollStateRafId = requestAnimationFrame(() => {
+      scrollStateRafId = null;
+      runSyncScrollState();
+    });
+  };
+
   const syncChromePill = () => {
     if (chromePillRafId !== null) return;
     chromePillRafId = requestAnimationFrame(() => {
@@ -74,7 +83,7 @@ export function bindShellStateClasses({
 
   const handleResize = () => {
     toggleClass(target, "is-resizing", true);
-    syncScrollState();
+    runSyncScrollState();
     if (resizeTimer != null) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       toggleClass(target, "is-resizing", false);
@@ -95,7 +104,7 @@ export function bindShellStateClasses({
     }
   };
 
-  syncScrollState();
+  runSyncScrollState();
   toggleClass(
     target,
     "is-chrome-pill",
@@ -114,6 +123,10 @@ export function bindShellStateClasses({
     if (chromePillRafId != null) {
       cancelAnimationFrame(chromePillRafId);
       chromePillRafId = null;
+    }
+    if (scrollStateRafId != null) {
+      cancelAnimationFrame(scrollStateRafId);
+      scrollStateRafId = null;
     }
   };
 }

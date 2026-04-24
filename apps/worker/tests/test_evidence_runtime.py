@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, datetime
 from urllib.error import HTTPError
 from uuid import UUID
 
@@ -13,6 +15,7 @@ from app.evidence.errors import PaperTextFetchFailed, PaperTextUnavailable
 from app.evidence.models import AcquirePaperTextRequest, FetchManifest, PaperMetadata, ResolvedLocator
 from app.evidence.ncbi import fetch_pmc_biocxml, resolve_locator
 from app.evidence.runtime import (
+    PAPER_TEXT_RUN_STATUS_ABORTED,
     PAPER_TEXT_RUN_STATUS_FAILED,
     PAPER_TEXT_RUN_STATUS_PUBLISHED,
     acquire_paper_text,
@@ -482,6 +485,156 @@ async def test_evidence_runtime_records_failed_locator_on_unavailable(
         assert run_row["locator_value"] == "20466091"
         assert run_row["resolver_kind"] == "pmid_direct"
         assert run_row["resolved_pmc_id"] is None
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_evidence_runtime_releases_pool_slot_during_remote_fetch(
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+    monkeypatch,
+) -> None:
+    runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"]).model_copy(
+        update={
+            "pool_ingest_min": 1,
+            "pool_ingest_max": 1,
+        }
+    )
+    await _seed_evidence_text_paper(warehouse_dsns["admin"], corpus_id=505, pmid=30112764)
+
+    fetch_started = asyncio.Event()
+    allow_fetch_to_finish = asyncio.Event()
+
+    async def fake_resolve_locators(*_args, **_kwargs) -> tuple[ResolvedLocator, ...]:
+        return (
+            ResolvedLocator(
+                locator_kind="pmcid",
+                locator_value="PMC6220770",
+                resolver_kind="paper_row_pmcid",
+                resolved_pmc_id="PMC6220770",
+            ),
+        )
+
+    async def fake_fetch_first_available_payload(*_args, **_kwargs) -> tuple[bytes, FetchManifest]:
+        fetch_started.set()
+        await allow_fetch_to_finish.wait()
+        return (
+            SAMPLE_PMC_BIOC_XML,
+            FetchManifest(
+                locator_kind="pmcid",
+                locator_value="PMC6220770",
+                resolver_kind="paper_row_pmcid",
+                resolved_pmc_id="PMC6220770",
+                manifest_uri="https://example.test/pmc/PMC6220770/unicode",
+                response_checksum="checksum-505",
+                fetched_at=datetime.now(UTC),
+            ),
+        )
+
+    monkeypatch.setattr("app.evidence.runtime.resolve_locators", fake_resolve_locators)
+    monkeypatch.setattr(
+        "app.evidence.runtime._fetch_first_available_payload",
+        fake_fetch_first_available_payload,
+    )
+
+    request = AcquirePaperTextRequest(
+        corpus_id=505,
+        force_refresh=False,
+        requested_by="tester",
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        acquisition_task = asyncio.create_task(
+            acquire_paper_text(
+                request,
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+        )
+        await asyncio.wait_for(fetch_started.wait(), timeout=1.0)
+
+        async with asyncio.timeout(0.25):
+            async with pools.get("ingest_write").acquire():
+                pass
+
+        allow_fetch_to_finish.set()
+        await acquisition_task
+    finally:
+        await pools.close()
+
+
+@pytest.mark.asyncio
+async def test_evidence_runtime_cancellation_marks_run_aborted_and_releases_lock(
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+    monkeypatch,
+) -> None:
+    runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
+    await _seed_evidence_text_paper(warehouse_dsns["admin"], corpus_id=606, pmid=30112764)
+
+    async def fake_resolve_locators(*_args, **_kwargs) -> tuple[ResolvedLocator, ...]:
+        return (
+            ResolvedLocator(
+                locator_kind="pmcid",
+                locator_value="PMC6220770",
+                resolver_kind="paper_row_pmcid",
+                resolved_pmc_id="PMC6220770",
+            ),
+        )
+
+    async def cancelling_fetch(*_args, **_kwargs) -> tuple[bytes, FetchManifest]:
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr("app.evidence.runtime.resolve_locators", fake_resolve_locators)
+    monkeypatch.setattr(
+        "app.evidence.runtime._fetch_first_available_payload",
+        cancelling_fetch,
+    )
+
+    request = AcquirePaperTextRequest(
+        corpus_id=606,
+        force_refresh=False,
+        requested_by="tester",
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await acquire_paper_text(
+                request,
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        run_row = await admin_connection.fetchrow(
+            """
+            SELECT status, completed_at, error_message
+            FROM solemd.paper_text_acquisition_runs
+            WHERE corpus_id = 606
+            ORDER BY started_at DESC
+            LIMIT 1
+            """
+        )
+        assert run_row is not None
+        assert run_row["status"] == PAPER_TEXT_RUN_STATUS_ABORTED
+        assert run_row["completed_at"] is not None
+        assert "cancel" in (run_row["error_message"] or "").lower()
+
+        lock_key = await admin_connection.fetchval(
+            "SELECT hashtextextended($1, 0)::bigint",
+            "evidence:606",
+        )
+        assert await admin_connection.fetchval(
+            "SELECT pg_try_advisory_lock($1)",
+            lock_key,
+        )
+        await admin_connection.execute("SELECT pg_advisory_unlock($1)", lock_key)
     finally:
         await admin_connection.close()
 

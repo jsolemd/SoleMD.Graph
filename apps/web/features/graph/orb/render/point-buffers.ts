@@ -217,30 +217,81 @@ function mulberry32(seed: number): () => number {
 }
 
 /**
- * Uniform unit-sphere sampling via Marsaglia polar method. Seed-keyed so
- * the layout is stable across mounts and across users — spatial memory
- * survives reloads.
+ * Cluster-ball sampler. Given a seed and number of visible centroids K,
+ * produces deterministic centroids distributed in the interior of the unit
+ * sphere (radius up to 0.6 so Gaussian tails stay inside the visible
+ * volume). `sample(clusterId)` returns a Gaussian-offset position around
+ * `centroids[|clusterId| % K]`.
+ *
+ * Used by both the fully-synthetic branch and the sampled-base-points
+ * branch so the orb presents visible 3D cluster structure with real depth
+ * variation — not a flat unit-sphere-surface distribution.
  */
-function unitSphereSampler(seed: number): () => [number, number, number] {
-  const rng = mulberry32(seed);
-  return () => {
-    // Two pairs → one (x,y,z) on the unit sphere via the polar method.
+const CLUSTER_CENTROID_RADIUS = 0.6; // inner radius for centroids
+const CLUSTER_BALL_STDDEV = 0.11;    // Gaussian spread around each centroid
+
+interface ClusterBallSampler {
+  sample: (clusterId: number) => [number, number, number];
+  numCentroids: number;
+}
+
+function clusterBallSampler(
+  seed: number,
+  numCentroids: number,
+): ClusterBallSampler {
+  const centroidRng = mulberry32(seed);
+  const centroids: Array<[number, number, number]> = [];
+  for (let i = 0; i < numCentroids; i += 1) {
+    // Uniform interior-sphere sample (rejection) for each centroid.
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    let r2 = 2;
+    while (r2 > 1 || r2 === 0) {
+      cx = centroidRng() * 2 - 1;
+      cy = centroidRng() * 2 - 1;
+      cz = centroidRng() * 2 - 1;
+      r2 = cx * cx + cy * cy + cz * cz;
+    }
+    centroids.push([
+      cx * CLUSTER_CENTROID_RADIUS,
+      cy * CLUSTER_CENTROID_RADIUS,
+      cz * CLUSTER_CENTROID_RADIUS,
+    ]);
+  }
+
+  // Separate stream for per-point Gaussian offsets so centroid and point
+  // generation don't consume each other's entropy.
+  const offsetRng = mulberry32(seed ^ 0x13579bdf);
+  const gaussian = (): number => {
+    // Box-Muller pair — two uniforms into one standard normal.
     let u = 0;
-    let v = 0;
-    let s = 0;
-    do {
-      u = rng() * 2 - 1;
-      v = rng() * 2 - 1;
-      s = u * u + v * v;
-    } while (s >= 1 || s === 0);
-    const factor = Math.sqrt(-2 * Math.log(s) / s);
-    const x = u * factor;
-    const y = v * factor;
-    const z = (rng() * 2 - 1) * factor;
-    const len = Math.sqrt(x * x + y * y + z * z) || 1;
-    return [x / len, y / len, z / len];
+    while (u === 0) u = offsetRng();
+    const v = offsetRng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+
+  return {
+    sample: (clusterId: number): [number, number, number] => {
+      const idx = Math.abs(clusterId | 0) % numCentroids;
+      const c = centroids[idx] ?? [0, 0, 0];
+      return [
+        c[0] + gaussian() * CLUSTER_BALL_STDDEV,
+        c[1] + gaussian() * CLUSTER_BALL_STDDEV,
+        c[2] + gaussian() * CLUSTER_BALL_STDDEV,
+      ];
+    },
+    numCentroids,
   };
 }
+
+/**
+ * Visible mock centroid count. Real fixtures (Lane A) have their own
+ * position data and don't use this. For synthetic/real-id branches the
+ * 831 base_clusters are bucketed into 36 visible clumps so the orb reads
+ * as a structured volumetric cloud instead of a uniform shell.
+ */
+const MOCK_VISIBLE_CENTROIDS = 36;
 
 /* ------------------------------------------------------------------ */
 /* Branch 3 — fully synthetic (last-resort, no session)               */
@@ -253,20 +304,23 @@ function packFullySynthetic(count: number): OrbPointBuffers {
   const indices = new Float32Array(count);
   const clusterIds = new Uint32Array(count);
   const indexToPaperId = new Map<number, string>();
-  const MOCK_CLUSTERS = 12;
+  const MOCK_CLUSTERS = MOCK_VISIBLE_CENTROIDS;
 
-  const sample = unitSphereSampler(SAMPLE_SEED);
+  // Cluster-ball sampler — points distribute as Gaussian balls around
+  // K centroids inside the unit sphere. Real depth, visible cluster
+  // structure. See ClusterBallSampler comment for the full rationale.
+  const sampler = clusterBallSampler(SAMPLE_SEED, MOCK_CLUSTERS);
   const colorScratch: [number, number, number] = [0, 0, 0];
   const clusterRng = mulberry32(SAMPLE_SEED ^ 0xabcdef);
 
   for (let i = 0; i < count; i += 1) {
-    const [x, y, z] = sample();
+    const clusterId = Math.floor(clusterRng() * MOCK_CLUSTERS);
+    clusterIds[i] = clusterId;
+    const [x, y, z] = sampler.sample(clusterId);
     positions[i * 3 + 0] = x;
     positions[i * 3 + 1] = y;
     positions[i * 3 + 2] = z;
 
-    const clusterId = Math.floor(clusterRng() * MOCK_CLUSTERS);
-    clusterIds[i] = clusterId;
     orbClusterColor(clusterId, colorScratch);
     colors[i * 3 + 0] = colorScratch[0];
     colors[i * 3 + 1] = colorScratch[1];
@@ -336,20 +390,24 @@ async function packFromSampledBasePoints(
   const clusterIds = new Uint32Array(actualCount);
   const indexToPaperId = new Map<number, string>();
 
-  const sample = unitSphereSampler(SAMPLE_SEED);
+  // Cluster-ball sampler — real cluster_ids hash into MOCK_VISIBLE_CENTROIDS
+  // visible clumps. Same cluster_id always lands at the same centroid, so
+  // colors and 3D position correlate even though base_points has 831
+  // clusters (vs the 36 visible balls).
+  const sampler = clusterBallSampler(SAMPLE_SEED, MOCK_VISIBLE_CENTROIDS);
   const fallbackColor: [number, number, number] = [0, 0, 0];
 
   for (let i = 0; i < actualCount; i += 1) {
     const raw = rows[i]!;
     const row = typeof raw.toJSON === "function" ? raw.toJSON() : raw;
 
-    const [x, y, z] = sample();
+    const clusterId = Number(row.cluster_id ?? 0) | 0;
+    clusterIds[i] = clusterId;
+
+    const [x, y, z] = sampler.sample(clusterId);
     positions[i * 3 + 0] = x;
     positions[i * 3 + 1] = y;
     positions[i * 3 + 2] = z;
-
-    const clusterId = Number(row.cluster_id ?? 0) | 0;
-    clusterIds[i] = clusterId;
 
     // Prefer the bundle's authoritative cluster color if present; fall
     // back to the procedural palette so orphan clusters still render.

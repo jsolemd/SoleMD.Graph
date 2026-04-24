@@ -437,6 +437,7 @@ async def _merge_entity_stage_batch(
             pmid,
             start_offset,
             end_offset,
+            entity_type,
             concept_id_raw,
             resource
         )
@@ -456,15 +457,16 @@ async def _merge_entity_stage_batch(
             pmid,
             start_offset,
             end_offset,
+            entity_type,
             concept_id_raw,
             resource,
-            entity_type,
             mention_text
         ON CONFLICT (
             source_release_id,
             pmid,
             start_offset,
             end_offset,
+            entity_type,
             concept_id_raw,
             resource
         )

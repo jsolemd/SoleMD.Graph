@@ -5,6 +5,7 @@ import dramatiq
 from app.config import settings
 from app.db import ensure_worker_pools_open
 from app.ingest.errors import (
+    IngestAborted,
     IngestAlreadyInProgress,
     IngestAlreadyPublished,
     PlanDrift,
@@ -22,6 +23,7 @@ from app.ingest.runtime import run_release_ingest
     max_backoff=600_000,
     time_limit=24 * 60 * 60 * 1000,
     throws=(
+        IngestAborted,
         IngestAlreadyPublished,
         IngestAlreadyInProgress,
         PlanDrift,

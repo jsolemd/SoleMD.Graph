@@ -15,6 +15,9 @@ export function buildSelectedViewPredicate(): string {
 export function buildCurrentViewPredicate(args: {
   currentPointScopeSql: string | null
 }): string {
+  // INVARIANT: currentPointScopeSql must be produced by
+  // buildCurrentPointScopeSql (Mosaic duckDBCodeGenerator output over
+  // configured columns + literal()-wrapped values), never raw user input.
   const { currentPointScopeSql } = args
   if (hasCurrentPointScopeSql(currentPointScopeSql)) {
     return normalizeCurrentPointScopeSql(currentPointScopeSql) ?? 'TRUE'
@@ -60,6 +63,8 @@ export function buildScopedLayerPredicate(
   scope: GraphInfoScope,
   currentPointScopeSql: string | null
 ): string {
+  // INVARIANT: currentPointScopeSql must be a Mosaic-rendered SQL fragment
+  // (see buildCurrentPointScopeSql). Never pass raw user input.
   void layer
   if (scope === 'selected') {
     return buildSelectedViewPredicate()

@@ -232,11 +232,13 @@ describe("wireNodeInteractions", () => {
     wireNodeInteractions(scene, SIMULATION, intents, PALETTE);
 
     // Node center is at canvas (400, 300). 18px away is outside the mouse
-    // radius (12) but inside the touch radius (24).
+    // radius (12) but inside the touch radius (24). On touch the tap
+    // selects (lights up the node via hover) and long-press commits
+    // navigation; the hit-radius observable is the post-release hover.
     dispatch("pointerdown", pointerEvent(418, 300, { pointerType: "touch" }));
     dispatch("pointerup", pointerEvent(418, 300, { pointerType: "touch" }));
 
-    expect(intents.onOpenPage).toHaveBeenCalledWith("page-a");
+    expect(scene.hoveredNodeId).toBe("page-a");
   });
 
   it("keeps mouse hits tight (no over-pick at touch radius)", () => {

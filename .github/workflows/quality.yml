@@ -21,17 +21,8 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
       - name: Install frontend dependencies
         run: npm ci
-
-      - name: Install engine dependencies
-        working-directory: engine
-        run: uv sync --extra dev
 
       - name: Run repo quality gate
         run: npm run quality

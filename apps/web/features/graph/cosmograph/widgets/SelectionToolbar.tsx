@@ -78,7 +78,16 @@ export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionTool
     const [polyButtonId, setPolyButtonId] = useState<string | null>(null);
 
     useEffect(() => {
-      const discover = (container: HTMLElement | null, setter: (id: string) => void) => {
+      // Safety timeout — native Cosmograph buttons assign their id
+      // synchronously or within one frame. If nothing appears after
+      // DISCOVER_TIMEOUT_MS the contract is broken; disconnect the
+      // observer and warn so the leak is visible instead of silent.
+      const DISCOVER_TIMEOUT_MS = 5000;
+      const discover = (
+        container: HTMLElement | null,
+        setter: (id: string) => void,
+        label: string,
+      ) => {
         if (!container) return () => {};
         const found = container.querySelector<HTMLElement>("[id]");
         if (found?.id) { setter(found.id); return () => {}; }
@@ -87,10 +96,21 @@ export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionTool
           if (el?.id) { setter(el.id); obs.disconnect(); }
         });
         obs.observe(container, { childList: true, subtree: true });
-        return () => obs.disconnect();
+        const timeoutId = window.setTimeout(() => {
+          obs.disconnect();
+          console.warn(
+            `[SelectionToolbar] ${label} button id never appeared within ${DISCOVER_TIMEOUT_MS}ms — observer disconnected`,
+          );
+        }, DISCOVER_TIMEOUT_MS);
+        // Cleanup unconditionally disconnects the observer and clears the
+        // timeout, even if the button id never resolves.
+        return () => {
+          window.clearTimeout(timeoutId);
+          obs.disconnect();
+        };
       };
-      const cleanupRect = discover(rectRef.current, setRectButtonId);
-      const cleanupPoly = discover(polyRef.current, setPolyButtonId);
+      const cleanupRect = discover(rectRef.current, setRectButtonId, "rect");
+      const cleanupPoly = discover(polyRef.current, setPolyButtonId, "poly");
       return () => { cleanupRect(); cleanupPoly(); };
     }, []);
 

@@ -21,10 +21,17 @@ function createBundle() {
     bundleChecksum: 'bundle-checksum',
     bundleManifest: {
       bundleVersion: '4',
+      tables: {
+        base_points: { columns: ['id', 'x', 'y', 'clusterIndex'] },
+        base_clusters: { columns: ['index', 'label'] },
+      },
     },
     bundleVersion: '4',
   }
 }
+
+const EXPECTED_COLUMN_SET_HASH =
+  'base_points:clusterIndex,id,x,y|base_clusters:index,label'
 
 describe('persistent graph cache', () => {
   beforeEach(() => {
@@ -38,6 +45,7 @@ describe('persistent graph cache', () => {
           bundle_checksum: 'bundle-checksum',
           bundle_version: '4',
           cache_schema_version: 1,
+          column_set_hash: EXPECTED_COLUMN_SET_HASH,
         },
       ])
       .mockResolvedValueOnce([
@@ -62,6 +70,7 @@ describe('persistent graph cache', () => {
           bundle_checksum: 'old-checksum',
           bundle_version: '4',
           cache_schema_version: 1,
+          column_set_hash: EXPECTED_COLUMN_SET_HASH,
         },
       ])
       .mockResolvedValueOnce([
@@ -80,6 +89,29 @@ describe('persistent graph cache', () => {
     )
   })
 
+  it('drops the cache when bundleChecksum matches but the column set has drifted', async () => {
+    queryRowsMock
+      .mockResolvedValueOnce([
+        {
+          bundle_checksum: 'bundle-checksum',
+          bundle_version: '4',
+          cache_schema_version: 1,
+          column_set_hash: 'base_points:id|base_clusters:index',
+        },
+      ])
+      .mockResolvedValueOnce([
+        { table_name: 'base_points' },
+        { table_name: 'base_clusters' },
+      ])
+
+    const conn = { query: jest.fn(async () => undefined) }
+    const result = await prepareHotBundleCache(conn as never, createBundle() as never)
+
+    expect(result).toEqual({ reused: false })
+    expect(conn.query).toHaveBeenCalledWith('DROP TABLE IF EXISTS base_points')
+    expect(conn.query).toHaveBeenCalledWith('DROP TABLE IF EXISTS base_clusters')
+  })
+
   it('marks the hot cache ready with the active checksum metadata', async () => {
     const conn = {}
 
@@ -88,7 +120,7 @@ describe('persistent graph cache', () => {
     expect(executeStatementMock).toHaveBeenCalledWith(
       conn,
       expect.stringContaining('INSERT OR REPLACE INTO __graph_runtime_cache_meta'),
-      ['hot_bundle', 'bundle-checksum', '4', 1]
+      ['hot_bundle', 'bundle-checksum', '4', 1, EXPECTED_COLUMN_SET_HASH]
     )
   })
 

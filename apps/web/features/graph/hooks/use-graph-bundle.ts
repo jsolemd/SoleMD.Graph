@@ -34,14 +34,21 @@ interface GraphBundleState {
 
 export function useGraphBundle(bundle: GraphBundle | null): GraphBundleState {
   const activeBundleChecksumRef = useRef<string | null>(null)
-  const sessionBundleRef = useRef<GraphBundle | null>(bundle)
+  // Pin the bundle identity across same-checksum rerenders using useState
+  // instead of mutating a ref during render (React 19 may discard render
+  // output in concurrent retries, silently losing ref writes).
+  const [sessionBundle, setSessionBundle] = useState<GraphBundle | null>(bundle)
   if (
     bundle != null &&
-    sessionBundleRef.current?.bundleChecksum !== bundle.bundleChecksum
+    sessionBundle?.bundleChecksum !== bundle.bundleChecksum
   ) {
-    sessionBundleRef.current = bundle
+    // Safe in-render setState: React restarts the render with the updated
+    // value. This is the recommended pattern for "derive state from props
+    // while preserving previous identity across same-key rerenders."
+    setSessionBundle(bundle)
+  } else if (bundle == null && sessionBundle != null) {
+    setSessionBundle(null)
   }
-  const sessionBundle = sessionBundleRef.current
   const [state, setState] = useState<ResolvedGraphBundleState>({
       bundleChecksum: null,
       canvas: null,

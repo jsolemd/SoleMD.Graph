@@ -160,6 +160,23 @@ export function useWikiGraphSync({
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Rollbacks stack up as side effects commit. If any await returns to an
+    // aborted signal (another page took over mid-flight), we pop them in
+    // reverse order to restore the prior state instead of leaking a half-
+    // applied overlay or selection.
+    const rollbacks: Array<() => void | Promise<void>> = [];
+    const runRollbacks = async () => {
+      while (rollbacks.length > 0) {
+        const undo = rollbacks.pop();
+        if (!undo) continue;
+        try {
+          await undo();
+        } catch {
+          // Best-effort rollback; swallow so later steps still run.
+        }
+      }
+    };
+
     try {
       const resolution = await resolveWikiOverlay({
         queries,
@@ -174,7 +191,14 @@ export function useWikiGraphSync({
         queries,
         pointIds: resolution.pointIds,
       });
+      rollbacks.push(() =>
+        clearWikiGraphOverlay({
+          producerId: WIKI_PAGE_OVERLAY_PRODUCER,
+          queries,
+        }),
+      );
       if (controller.signal.aborted) {
+        await runRollbacks();
         return;
       }
 
@@ -183,10 +207,16 @@ export function useWikiGraphSync({
         graphPaperRefs: [...pageGraphRefs],
       });
       if (controller.signal.aborted) {
+        await runRollbacks();
         return;
       }
 
+      const previousNodeCache = nodeCacheRef.current;
       nodeCacheRef.current = nodesByRef;
+      rollbacks.push(() => {
+        nodeCacheRef.current = previousNodeCache;
+      });
+
       const pointIndices = Object.values(nodesByRef)
         .map((node) => node.index)
         .filter((index): index is number => Number.isFinite(index));
@@ -210,7 +240,17 @@ export function useWikiGraphSync({
         setSelectedPointCount,
         setActiveSelectionSourceId,
       });
+      rollbacks.push(() =>
+        clearOwnedSelectionState({
+          sourceId: WIKI_PAGE_SELECTION_SOURCE_ID,
+          activeSelectionSourceId: activeSelectionSourceIdRef.current,
+          queries,
+          setSelectedPointCount,
+          setActiveSelectionSourceId,
+        }),
+      );
       if (controller.signal.aborted) {
+        await runRollbacks();
         return;
       }
 
@@ -218,10 +258,22 @@ export function useWikiGraphSync({
         sourceId: WIKI_PAGE_SELECTION_SOURCE_ID,
         pointIndices,
       });
+      rollbacks.push(() => {
+        clearSelectionBySource(WIKI_PAGE_SELECTION_SOURCE_ID);
+      });
+      if (controller.signal.aborted) {
+        await runRollbacks();
+        return;
+      }
+
       focusPointIndices(pointIndices);
+      // Completed cleanly — discard rollbacks.
+      rollbacks.length = 0;
     } catch {
       if (!controller.signal.aborted) {
         clearPageGraph();
+      } else {
+        await runRollbacks();
       }
     }
   }, [

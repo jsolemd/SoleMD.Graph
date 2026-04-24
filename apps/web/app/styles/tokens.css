@@ -376,13 +376,8 @@ html:root {
   --filter-bar-active: color-mix(in oklch, var(--mode-accent) 70%, white);
   --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 55%, black);
 
-  /* ── Mode accent — *opaque* mix with the surface (Material Design reference
-     at #332940 / 13.7:1 contrast). On AMOLED canvas a 55% transparent wash
-     reads as near-black with a hint of hue; an opaque tint creates a real
-     elevated "selected" quality. Mixes with surface-alt so the result is
-     perceptually 1 panel-step above surface. ── */
-  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 22%, var(--surface-alt));
-  --mode-accent-hover:  color-mix(in srgb, var(--mode-accent) 38%, var(--surface-alt));
+  --mode-accent-subtle: color-mix(in oklch, var(--mode-accent) 55%, transparent);
+  --mode-accent-hover:  color-mix(in oklch, var(--mode-accent) 78%, transparent);
   --graph-icon-color: rgba(237, 237, 240, 0.82);
   --module-accent-default: var(--color-soft-blue);
 

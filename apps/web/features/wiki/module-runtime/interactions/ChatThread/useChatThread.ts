@@ -1,12 +1,23 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, type RefObject } from "react";
 import { usePrefersReducedMotion } from "@/features/wiki/module-runtime/motion";
 
 export interface UseChatThreadConfig {
   messageCount: number;
   autoAdvance?: boolean;
   autoAdvanceDelay?: number;
+  /**
+   * Optional ref to the chat-thread root element. When provided, Enter/Space
+   * keyboard advancement is scoped to this subtree — only triggers when the
+   * focused element is inside (or IS) the referenced element. When omitted,
+   * no keyboard listener is installed (callers can use the returned `advance`
+   * callback directly or let users click the "Next" button).
+   *
+   * Scoping prevents the site-wide Space/Enter hijack that occurs when a
+   * module is mounted but the user is interacting elsewhere on the page.
+   */
+  rootRef?: RefObject<HTMLElement | null>;
 }
 
 export interface ChatThreadState {
@@ -25,6 +36,7 @@ export function useChatThread({
   messageCount,
   autoAdvance = false,
   autoAdvanceDelay = DEFAULT_AUTO_ADVANCE_DELAY_MS,
+  rootRef,
 }: UseChatThreadConfig): ChatThreadState {
   const reduced = usePrefersReducedMotion();
   const [visibleCount, setVisibleCount] = useState(1);
@@ -95,21 +107,35 @@ export function useChatThread({
     };
   }, [autoAdvance, autoAdvanceDelay, isComplete, isTyping, visibleCount, advance]);
 
-  // Keyboard handler
+  // Scoped keyboard handler: only attaches when a rootRef is provided, and
+  // only advances when the event originates inside that subtree. This
+  // prevents hijacking Space/Enter site-wide whenever a ChatThread is
+  // mounted somewhere on the page.
   useEffect(() => {
+    if (!rootRef) return;
+    const root = rootRef.current;
+    if (!root) return;
+
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Enter" || e.key === " ") {
-        // Only advance if the focus is not on an interactive element
-        const tag = (e.target as HTMLElement)?.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON" || tag === "SELECT") return;
-        e.preventDefault();
-        advance();
-      }
+      if (e.key !== "Enter" && e.key !== " ") return;
+
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+
+      // Skip native interactive elements — they handle Enter/Space themselves
+      // (buttons activate, inputs insert a space/newline, etc.).
+      const tag = target.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "BUTTON" || tag === "SELECT") return;
+
+      e.preventDefault();
+      advance();
     }
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [advance]);
+    // Attach to the root element, not window. Events from outside the
+    // subtree never reach this listener.
+    root.addEventListener("keydown", handleKeyDown);
+    return () => root.removeEventListener("keydown", handleKeyDown);
+  }, [advance, rootRef]);
 
   // Cleanup on unmount
   useEffect(() => clearTimers, [clearTimers]);

@@ -34,11 +34,14 @@ duplicate of the full runtime manual.
 - Text reveal motion (standard):
   - every beat's title + body enters with a bidirectional fade + rise
     keyed off its own viewport crossing (framer-motion `whileInView`,
-    `once: false`). Title leads, body staggers in ~80ms behind. Uses
-    ease `[0.16, 1, 0.3, 1]` over 600ms. Margins `-12% 0px -8% 0px` so
-    reveals trigger slightly before the element is centered.
-  - OS reduced-motion disables the transforms via the app's
-    framer-motion `MotionConfig` so the text reads as static copy
+    `once: false`, `amount: 0.2` — trigger fires once ~20% of the beat
+    is visible). Title leads, body staggers in ~80ms behind. Uses
+    ease `[0.16, 1, 0.3, 1]` over 600ms. Surface Rail uses the same
+    grammar plus a `staggerChildren: 0.06` cascade across its
+    Papers / Entities / Connections / Synthesis grid items.
+  - OS reduced-motion is honored by `MotionConfig reducedMotion="user"`
+    at the landing shell root (`FieldLandingShell`) — every descendant
+    framer-motion element drops its transforms and reads as static copy
     without losing the hero's `TextReveal` on mount.
 
 ## Narrative Thesis
@@ -300,6 +303,14 @@ Not shipped in Phase 1. Tracked as module-level deferred work.
   for future module pages and authored-shape endings.
 - The Phase 2 visx graph overlays read chapter progress from the same
   shared scene state — no second scroll observer.
+- `FieldHotspotPool` pulse duration runs on two paired clocks:
+  `BLOB_HOTSPOT_CYCLE_MS` (`controller/blob-hotspot-runtime.ts`, JS
+  envelope that writes parent scale + opacity each frame) and
+  `--afr-duration` (`overlay/field-hotspot-ring.css`, CSS keyframes on
+  the `::before` dot and ring stroke-draw). They must match, and the
+  `has-only-single` override must match `BLOB_HOTSPOT_CYCLE_SINGLE_MS`
+  — a drift clips the CSS animation mid-hold and pulses read as
+  shorter, not longer.
 
 ## Naming Rule
 

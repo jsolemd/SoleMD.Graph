@@ -13,7 +13,7 @@ interface FieldSurfaceRailSectionProps {
 }
 
 const REVEAL_EASE: Transition["ease"] = [0.16, 1, 0.3, 1];
-const REVEAL_VIEWPORT = { once: false, margin: "-12% 0px -8% 0px" } as const;
+const REVEAL_VIEWPORT = { once: false, amount: 0.2 } as const;
 
 const titleReveal: Variants = {
   hidden: { opacity: 0, y: 22 },

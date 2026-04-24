@@ -46,6 +46,14 @@ export const BLOB_HOTSPOT_IDS = Array.from(
   (_, index) => `blob-hotspot-${index}`,
 );
 
+// Keep paired with `--afr-duration` default in
+// `apps/web/features/field/overlay/field-hotspot-ring.css`. The JS envelope
+// (scale + opacity on the parent node) and the CSS keyframes (::before
+// scale, ring stroke-draw) must run on the same clock or the parent kills
+// visibility before the CSS animation completes.
+export const BLOB_HOTSPOT_CYCLE_MS = 4000;
+export const BLOB_HOTSPOT_CYCLE_SINGLE_MS = 8000;
+
 function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
@@ -67,7 +75,9 @@ export function getBlobHotspotCycleDurationMs({
   isSingleVisible: boolean;
   phaseKey: BlobHotspotRuntime["phaseKey"];
 }) {
-  return isSingleVisible ? 4000 : 2000;
+  return isSingleVisible
+    ? BLOB_HOTSPOT_CYCLE_SINGLE_MS
+    : BLOB_HOTSPOT_CYCLE_MS;
 }
 
 export function hotspotPhaseUsesCycle(

@@ -744,6 +744,76 @@ derivation into ingest (today owned by a separate post-ingest worker).
 **Locked** for the math shape; **provisional** for absolute numbers
 until first sample build.
 
+### §6.1 Storage footprint and tiered-retention contract
+
+The ingest design is tiered. Local hot storage is not meant to hold the
+entire upstream source archive, every broad raw warehouse surface, every
+mapped/canonical projection, and every browser bundle indefinitely.
+
+Retention tiers:
+
+| Tier | Purpose | Local hot-storage rule |
+|---|---|---|
+| Source archive | Compressed upstream S2 / PubTator release files and manifests. | Required while a family is active or resumable. After `families_loaded` records that family and source checksum/provenance is durable, archive off the hot VHD or delete from hot storage. |
+| Warehouse raw / stage | Typed, queryable raw tables used for refresh-safe promotion and audit. | Keep only families that are part of the published raw-release contract. Do not materialize broad edge/text expansions unless a downstream tier requires them. |
+| Canonical selected corpus | Mapped `papers`, `paper_text`, citations, concepts, relations, chunks, and evidence units. | Keep selected/mapped subsets and durable provenance. This tier is the product substrate; it is not a second copy of the full upstream release. |
+| Serve / graph bundles | Checksum-addressed browser and retrieval artifacts. | First-paint bundles stay slim; large relation/detail assets are lazy or downstream artifacts. |
+
+Default footprint rules:
+
+- S2 citation ingest defaults to aggregate paper-level metrics in
+  `solemd.s2_paper_reference_metrics_raw`. Full citation-edge promotion is a
+  downstream mapped-corpus choice, not part of the broad raw default.
+- S2ORC / full-text shard ingest is optional and downstream-gated. It should
+  not be pulled into the default raw release just because the files exist.
+  Treat it like graph embeddings: load or generate it only for the active
+  mapped / evidence wave that needs the richer surface.
+- PubTator BioCXML is needed for high-fidelity text/entity extraction, but the
+  compressed tarballs do not need to remain on local hot storage after the
+  corresponding release family is committed and recoverable from an external
+  archive.
+- `families_loaded` is the deletion boundary for hot raw files, not
+  `current_work_item` progress. Never delete raw files for the active family
+  or a family not present in `families_loaded`.
+- Deleting files inside a WSL-mounted VHD frees ext4 blocks only. Windows does
+  not recover host disk space until WSL is stopped and the VHD is compacted
+  offline; operator runbooks must account for that before treating deletion as
+  recovered host capacity.
+- A local workstation ingest must preserve host-volume headroom for Postgres
+  table growth, indexes, WAL/checkpoints, and temporary files. Keeping raw
+  source archives plus loaded warehouse rows on the same nearly-full host
+  volume is an operational failure mode, not the steady-state contract.
+
+Operational guardrail:
+
+```bash
+uv run --project apps/worker python -m app.main source-retention s2 2026-03-10
+```
+
+This command is the source-retention authority for S2 hot-storage cleanup. It
+acquires the same `ingest:{source}:{release}` advisory lock used by the ingest
+runtime, compares the current manifest checksum with `source_releases`, reads
+the latest `ingest_runs.families_loaded`, and emits a dry-run JSON report. It
+never mutates files unless called with `--execute --action archive|delete`.
+`delete` additionally requires `--provenance-ok` because raw release files are
+recoverable only through upstream re-download or an external archive.
+
+For `s2:2026-03-10`, the intended policy is:
+
+- Keep `citations/` until the citation aggregate family commits, then remove
+  the hot source directory after provenance is durable.
+- Keep `papers/` and `abstracts/` until their family appears in
+  `families_loaded`; before the full S2 release publishes they are archive
+  candidates, not automatic delete candidates.
+- Treat `s2orc_v2/` and `tldrs/` as downstream-gated delete candidates because
+  they are not part of default raw ingest.
+- Keep `manifests/` on hot storage for checksum/provenance validation.
+- Treat unregistered directories such as `paper-ids/` as manual-review items,
+  not automatic deletion targets.
+
+**locked** for tier boundaries; **provisional** for exact per-family
+retention timing until the backup/archive lane is repaired.
+
 ## §7 Idempotency & resume
 
 `ingest_runs` is the resume key. `families_loaded text[]` (§3.1) is
@@ -757,6 +827,12 @@ monotone within one `ingest_run_id`.
 | `aborted` | Same as `failed`; operator must re-trigger. |
 
 Per-family resume in two stages:
+
+Source-retention cleanup must follow the same boundary. A family recorded in
+`families_loaded` will be skipped on resume and can leave hot source storage
+once manifest provenance is durable. A family missing from `families_loaded`
+is still replay material even when live metrics showed partial progress, and
+its source files must remain available.
 
 1. **Mid-COPY crash on F.** F is in `loading`; F not in `families_loaded`.
    UNLOGGED partitions of F may be partially populated. §9.1 recovery
@@ -1116,11 +1192,11 @@ Source-specific notes that should stay explicit:
   COPY coroutines, not the Dramatiq thread count.
 - Start the raw ingest worker with low thread count and, for the current mixed
   S2 + PT3 operator topology, two ingest processes
-  (`dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest` or the
-  equivalent wrapper). Dramatiq's AsyncIO middleware still schedules async
-  actors on each process event-loop thread; keep thread count low and scale
-  message concurrency with worker processes only when the release-level locks
-  and warehouse pressure are understood.
+  (`dramatiq_queue_prefetch=1 dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest`
+  or the equivalent wrapper). Dramatiq's AsyncIO middleware still schedules
+  async actors on each process event-loop thread; keep thread count low, keep
+  queue prefetch at 1, and scale message concurrency with worker processes only
+  when the release-level locks and warehouse pressure are understood.
 - Deterministic bad-input failures such as `IngestAlreadyPublished`,
   `IngestAlreadyInProgress`, `PlanDrift`, or `SourceSchemaDrift` should be
   typed exceptions surfaced through actor `throws=` or explicit early exits so

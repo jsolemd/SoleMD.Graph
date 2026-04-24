@@ -1,0 +1,78 @@
+# Intended to be a required status check on `main` —
+# configure via GitHub branch protection after two successful runs.
+#
+# `smoke` runs on every push/PR and covers the pytest suites that do NOT
+# require a live Postgres via testcontainers (config, CLI payload shape,
+# telemetry, writer base, etc.).
+#
+# `full` is gated on workflow_dispatch. It spins up Postgres via
+# testcontainers (the worker's conftest.py creates its own container and
+# applies the warehouse migrations) so all it needs is a working Docker
+# daemon on the runner.
+name: Worker tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: worker-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Sync worker dependencies
+        working-directory: apps/worker
+        run: uv sync --dev
+
+      # Runtime suites use testcontainers.PostgresContainer in conftest.py and
+      # apply the full warehouse schema — too heavy for every push. They run
+      # in the `full` job instead.
+      - name: pytest (smoke — no container tests)
+        working-directory: apps/worker
+        run: |
+          uv run pytest -q \
+            tests/test_config.py \
+            tests/test_ingest_cli.py \
+            tests/test_ingest_writer_base.py \
+            tests/test_telemetry_bootstrap.py \
+            tests/test_telemetry_metrics.py \
+            tests/test_evidence_cli.py \
+            tests/test_corpus_cli.py
+
+  full:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Sync worker dependencies
+        working-directory: apps/worker
+        run: uv sync --dev
+
+      # The ubuntu-latest runner ships with Docker — testcontainers will
+      # start its own Postgres via the default socket.
+      - name: pytest (full — includes testcontainers runtime suites)
+        working-directory: apps/worker
+        run: uv run pytest -q

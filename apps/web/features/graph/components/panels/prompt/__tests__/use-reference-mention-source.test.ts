@@ -47,6 +47,7 @@ describe("useReferenceMentionSource", () => {
           $from: {
             parent: { textContent: paragraphText },
             parentOffset: paragraphText.length,
+            start: () => 1,
           },
         },
       },

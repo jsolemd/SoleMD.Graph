@@ -13,6 +13,7 @@ interface GraphRuntimeCacheMetaRow {
   bundle_checksum: string
   bundle_version: string
   cache_schema_version: number
+  column_set_hash: string | null
 }
 
 interface GraphRuntimeTablePresenceRow {
@@ -21,6 +22,20 @@ interface GraphRuntimeTablePresenceRow {
 
 function normalizeBundleVersion(bundle: GraphBundle) {
   return bundle.bundleManifest.bundleVersion ?? bundle.bundleVersion
+}
+
+// Hash the column sets of the hot tables so projection drift against an
+// unchanged bundleChecksum (or a mispublished bundle that reuses a checksum)
+// invalidates the OPFS cache instead of silently serving stale schemas.
+function computeHotBundleColumnSetHash(bundle: GraphBundle): string {
+  const parts: string[] = []
+  for (const tableName of HOT_BUNDLE_TABLES) {
+    const manifest = bundle.bundleManifest.tables[tableName]
+    const columns = manifest?.columns ?? []
+    const sorted = [...columns].sort()
+    parts.push(`${tableName}:${sorted.join(',')}`)
+  }
+  return parts.join('|')
 }
 
 export function getPersistentGraphDatabasePath() {
@@ -45,13 +60,19 @@ export async function prepareHotBundleCache(
        bundle_checksum VARCHAR NOT NULL,
        bundle_version VARCHAR NOT NULL,
        cache_schema_version INTEGER NOT NULL,
+       column_set_hash VARCHAR,
        updated_at TIMESTAMP NOT NULL DEFAULT now()
      )`
+  )
+  // Additive migration for pre-existing caches that predate column_set_hash.
+  await conn.query(
+    `ALTER TABLE ${GRAPH_RUNTIME_CACHE_META_TABLE}
+     ADD COLUMN IF NOT EXISTS column_set_hash VARCHAR`
   )
 
   const [metaRow] = await queryRows<GraphRuntimeCacheMetaRow>(
     conn,
-    `SELECT bundle_checksum, bundle_version, cache_schema_version
+    `SELECT bundle_checksum, bundle_version, cache_schema_version, column_set_hash
      FROM ${GRAPH_RUNTIME_CACHE_META_TABLE}
      WHERE cache_slot = ?`,
     [GRAPH_RUNTIME_CACHE_SLOT]
@@ -66,10 +87,12 @@ export async function prepareHotBundleCache(
     [...HOT_BUNDLE_TABLES]
   )
   const presentTables = new Set(presentTableRows.map((row) => row.table_name))
+  const columnSetHash = computeHotBundleColumnSetHash(bundle)
   const cacheMatches =
     metaRow?.bundle_checksum === bundle.bundleChecksum &&
     metaRow?.bundle_version === normalizeBundleVersion(bundle) &&
     Number(metaRow?.cache_schema_version) === GRAPH_RUNTIME_CACHE_SCHEMA_VERSION &&
+    metaRow?.column_set_hash === columnSetHash &&
     HOT_BUNDLE_TABLES.every((tableName) => presentTables.has(tableName))
 
   if (cacheMatches) {
@@ -104,14 +127,16 @@ export async function markHotBundleCacheReady(
        bundle_checksum,
        bundle_version,
        cache_schema_version,
+       column_set_hash,
        updated_at
      )
-     VALUES (?, ?, ?, ?, now())`,
+     VALUES (?, ?, ?, ?, ?, now())`,
     [
       GRAPH_RUNTIME_CACHE_SLOT,
       bundle.bundleChecksum,
       normalizeBundleVersion(bundle),
       GRAPH_RUNTIME_CACHE_SCHEMA_VERSION,
+      computeHotBundleColumnSetHash(bundle),
     ]
   )
 }

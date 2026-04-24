@@ -473,11 +473,17 @@ async def _replace_entity_annotations(
         JOIN mapped_scope
           ON mapped_scope.corpus_id = stage.corpus_id
         WHERE stage.source_release_id = $1
-        ON CONFLICT (corpus_id, start_offset, end_offset, concept_id_raw)
+        ON CONFLICT (
+            corpus_id,
+            start_offset,
+            end_offset,
+            entity_type,
+            concept_id_raw,
+            resource
+        )
         DO UPDATE SET
             source_release_id = EXCLUDED.source_release_id,
             pmid = EXCLUDED.pmid,
-            entity_type = EXCLUDED.entity_type,
             mention_text = EXCLUDED.mention_text,
             resource = EXCLUDED.resource
         """,

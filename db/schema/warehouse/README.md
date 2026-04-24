@@ -25,6 +25,7 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
   - `solemd.s2_authors_raw`
   - `solemd.s2orc_documents_raw`
   - `solemd.s2_paper_reference_metrics_raw`
+  - `solemd.s2_paper_reference_metrics_stage`
   - `solemd.s2_paper_assets_raw`
   - `solemd.s2_paper_references_raw` as an optional legacy/raw-edge surface, not the default
     corpus-gating contract

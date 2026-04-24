@@ -9,8 +9,8 @@ import pytest
 from prometheus_client.parser import text_string_to_metric_families
 
 from app.db import init_connection, open_pools
-from app.ingest.errors import IngestAlreadyInProgress, IngestAlreadyPublished
-from app.ingest.models import IngestPlan, StartReleaseRequest
+from app.ingest.errors import IngestAborted, IngestAlreadyInProgress, IngestAlreadyPublished
+from app.ingest.models import CopyStats, FamilyPlan, FilePlan, IngestPlan, StartReleaseRequest
 from app.ingest.runtime import (
     INGEST_STATUS_ABORTED,
     _open_or_resume_run,
@@ -967,6 +967,301 @@ async def test_open_or_resume_run_reopens_terminal_row_for_resume(
 
 
 @pytest.mark.asyncio
+async def test_open_or_resume_run_ignores_deferred_family_drift(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+) -> None:
+    release_tag = "2026-05-02"
+    request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+    )
+    stored_plan = IngestPlan(
+        source_code="s2",
+        release_tag=release_tag,
+        release_dir=tmp_path,
+        manifest_uri=f"{tmp_path}/manifests",
+        release_checksum="checksum-v1",
+        families=(),
+        deferred_families=(),
+    )
+    resumed_plan = IngestPlan(
+        source_code="s2",
+        release_tag=release_tag,
+        release_dir=tmp_path,
+        manifest_uri=f"{tmp_path}/manifests",
+        release_checksum="checksum-v1",
+        families=(),
+        deferred_families=("tldrs", "s2orc_v2"),
+    )
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        await init_connection(admin_connection)
+        source_release_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.source_releases (
+                source_published_at,
+                manifest_checksum,
+                manifest_uri,
+                source_name,
+                source_release_key,
+                release_status
+            )
+            VALUES (NULL, $1, $2, 's2', $3, 'ingesting')
+            RETURNING source_release_id
+            """,
+            stored_plan.release_checksum,
+            stored_plan.manifest_uri,
+            release_tag,
+        )
+        ingest_run_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.ingest_runs (
+                advisory_lock_key,
+                source_release_id,
+                status,
+                manifest_uri,
+                plan_manifest,
+                phase_started_at
+            )
+            VALUES ($1, $2, 2, $3, $4, $5)
+            RETURNING ingest_run_id
+            """,
+            111,
+            source_release_id,
+            stored_plan.manifest_uri,
+            stored_plan.model_dump(mode="json"),
+            {"started": "2026-05-02T00:00:00+00:00"},
+        )
+
+        resumed = await _open_or_resume_run(
+            admin_connection,
+            request=request,
+            plan=resumed_plan,
+            source_release_id=source_release_id,
+            lock_key=222,
+        )
+
+        row = await admin_connection.fetchrow(
+            """
+            SELECT advisory_lock_key, plan_manifest
+            FROM solemd.ingest_runs
+            WHERE ingest_run_id = $1
+            """,
+            ingest_run_id,
+        )
+    finally:
+        await admin_connection.close()
+
+    assert resumed.ingest_run_id == ingest_run_id
+    assert row is not None
+    assert row["advisory_lock_key"] == 222
+    assert row["plan_manifest"]["deferred_families"] == ["tldrs", "s2orc_v2"]
+
+
+@pytest.mark.asyncio
+async def test_open_or_resume_run_ignores_loaded_family_plan_drift(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+) -> None:
+    release_tag = "2026-05-03"
+    request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+    )
+    authors_family = FamilyPlan(
+        family="authors",
+        source_datasets=("authors",),
+        target_tables=("solemd.s2_authors_raw",),
+        files=(
+            FilePlan(
+                dataset="authors",
+                path=tmp_path / "authors-0000.jsonl.gz",
+                byte_count=10,
+                content_kind="jsonl_gz",
+            ),
+        ),
+    )
+    citations_family = FamilyPlan(
+        family="citations",
+        source_datasets=("citations",),
+        target_tables=("solemd.s2_paper_reference_metrics_raw",),
+        files=(
+            FilePlan(
+                dataset="citations",
+                path=tmp_path / "citations-0000.jsonl.gz",
+                byte_count=20,
+                content_kind="jsonl_gz",
+            ),
+        ),
+    )
+    stored_plan = IngestPlan(
+        source_code="s2",
+        release_tag=release_tag,
+        release_dir=tmp_path / "old-root",
+        manifest_uri=f"{tmp_path}/old-root/manifests",
+        release_checksum="checksum-v1",
+        families=(authors_family, citations_family),
+    )
+    resumed_plan = IngestPlan(
+        source_code="s2",
+        release_tag=release_tag,
+        release_dir=tmp_path / "new-root",
+        manifest_uri=f"{tmp_path}/new-root/manifests",
+        release_checksum="checksum-v1",
+        families=(citations_family,),
+        deferred_families=("authors", "tldrs", "s2orc_v2"),
+    )
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        await init_connection(admin_connection)
+        source_release_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.source_releases (
+                source_published_at,
+                manifest_checksum,
+                manifest_uri,
+                source_name,
+                source_release_key,
+                release_status
+            )
+            VALUES (NULL, $1, $2, 's2', $3, 'ingesting')
+            RETURNING source_release_id
+            """,
+            stored_plan.release_checksum,
+            stored_plan.manifest_uri,
+            release_tag,
+        )
+        ingest_run_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.ingest_runs (
+                advisory_lock_key,
+                source_release_id,
+                status,
+                families_loaded,
+                last_loaded_family,
+                manifest_uri,
+                plan_manifest,
+                phase_started_at
+            )
+            VALUES ($1, $2, 2, $3, 'authors', $4, $5, $6)
+            RETURNING ingest_run_id
+            """,
+            111,
+            source_release_id,
+            ["authors"],
+            stored_plan.manifest_uri,
+            stored_plan.model_dump(mode="json"),
+            {"started": "2026-05-03T00:00:00+00:00"},
+        )
+
+        resumed = await _open_or_resume_run(
+            admin_connection,
+            request=request,
+            plan=resumed_plan,
+            source_release_id=source_release_id,
+            lock_key=222,
+        )
+    finally:
+        await admin_connection.close()
+
+    assert resumed.ingest_run_id == ingest_run_id
+    assert resumed.families_loaded == ("authors",)
+
+
+@pytest.mark.asyncio
+async def test_open_or_resume_run_honors_pending_operator_abort(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+) -> None:
+    release_tag = "2026-05-04"
+    request = StartReleaseRequest(
+        source_code="pt3",
+        release_tag=release_tag,
+        requested_by="tester",
+    )
+    plan = IngestPlan(
+        source_code="pt3",
+        release_tag=release_tag,
+        release_dir=tmp_path,
+        manifest_uri=f"{tmp_path}/manifests",
+        release_checksum="checksum-v1",
+        families=(),
+    )
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        await init_connection(admin_connection)
+        source_release_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.source_releases (
+                source_published_at,
+                manifest_checksum,
+                manifest_uri,
+                source_name,
+                source_release_key,
+                release_status
+            )
+            VALUES (NULL, $1, $2, 'pt3', $3, 'ingesting')
+            RETURNING source_release_id
+            """,
+            plan.release_checksum,
+            plan.manifest_uri,
+            release_tag,
+        )
+        ingest_run_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.ingest_runs (
+                advisory_lock_key,
+                source_release_id,
+                status,
+                requested_status,
+                manifest_uri,
+                plan_manifest,
+                phase_started_at
+            )
+            VALUES ($1, $2, 2, 2, $3, $4, $5)
+            RETURNING ingest_run_id
+            """,
+            111,
+            source_release_id,
+            plan.manifest_uri,
+            plan.model_dump(mode="json"),
+            {"started": "2026-05-04T00:00:00+00:00"},
+        )
+
+        with pytest.raises(IngestAborted):
+            await _open_or_resume_run(
+                admin_connection,
+                request=request,
+                plan=plan,
+                source_release_id=source_release_id,
+                lock_key=222,
+            )
+
+        row = await admin_connection.fetchrow(
+            """
+            SELECT status, requested_status, completed_at, error_message
+            FROM solemd.ingest_runs
+            WHERE ingest_run_id = $1
+            """,
+            ingest_run_id,
+        )
+    finally:
+        await admin_connection.close()
+
+    assert row is not None
+    assert row["status"] == INGEST_STATUS_ABORTED
+    assert row["requested_status"] is None
+    assert row["completed_at"] is not None
+    assert "abort" in row["error_message"].lower()
+
+
+@pytest.mark.asyncio
 async def test_s2_citations_resume_is_deterministic(
     tmp_path: Path,
     warehouse_dsns: dict[str, str],
@@ -1045,6 +1340,10 @@ async def test_s2_citations_resume_is_deterministic(
             ("101", 1, 0, 1, 0),
             ("303", 1, 1, 0, 1),
         ]
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM solemd.s2_paper_reference_metrics_stage WHERE ingest_run_id = $1",
+            first_run_id,
+        ) == 0
         await admin_connection.execute(
             """
             UPDATE solemd.ingest_runs
@@ -1091,6 +1390,265 @@ async def test_s2_citations_resume_is_deterministic(
             "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
             first_run_id,
         ) == 5
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_citations_stage_merges_overlapping_file_batches(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-01-02"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path_0 = citations_dir / "citations-0000.jsonl.gz"
+    citations_path_1 = citations_dir / "citations-0001.jsonl.gz"
+    write_jsonl_gz(
+        citations_path_0,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 201,
+                "isinfluential": True,
+                "intents": None,
+            },
+            {
+                "citationid": 2,
+                "citingcorpusid": 202,
+                "citedcorpusid": None,
+                "isinfluential": False,
+                "intents": None,
+            },
+            {
+                "citationid": 3,
+                "citingcorpusid": 101,
+                "citedcorpusid": 203,
+                "isinfluential": False,
+                "intents": ["background"],
+            },
+        ],
+    )
+    write_jsonl_gz(
+        citations_path_1,
+        [
+            {
+                "citationid": 4,
+                "citingcorpusid": 101,
+                "citedcorpusid": None,
+                "isinfluential": True,
+                "intents": None,
+            },
+            {
+                "citationid": 5,
+                "citingcorpusid": 303,
+                "citedcorpusid": 404,
+                "isinfluential": False,
+                "intents": None,
+            },
+            {
+                "citationid": 6,
+                "citingcorpusid": 202,
+                "citedcorpusid": 205,
+                "isinfluential": True,
+                "intents": ["methodology"],
+            },
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path_0.name, citations_path_1.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    ).model_copy(update={"ingest_copy_batch_rows": 1, "ingest_max_concurrent_files": 2})
+    request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("citations",),
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        ingest_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        metric_rows = await admin_connection.fetch(
+            """
+            SELECT
+                citing_paper_id,
+                reference_out_count,
+                influential_reference_count,
+                linked_reference_count,
+                orphan_reference_count
+            FROM solemd.s2_paper_reference_metrics_raw
+            ORDER BY citing_paper_id
+            """
+        )
+        assert [tuple(row.values()) for row in metric_rows] == [
+            ("101", 3, 2, 2, 1),
+            ("202", 2, 1, 1, 1),
+            ("303", 1, 0, 1, 0),
+        ]
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM solemd.s2_paper_reference_metrics_stage WHERE ingest_run_id = $1",
+            ingest_run_id,
+        ) == 0
+        assert await admin_connection.fetchval(
+            "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
+            ingest_run_id,
+        ) == 5
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_citations_failed_stage_does_not_replace_final_metrics(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-01-03"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+    broken_citations_path = citations_dir / "citations-0001.jsonl.gz"
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+    request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("citations",),
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        first_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    write_jsonl_gz(
+        broken_citations_path,
+        [
+            {
+                "citationid": 2,
+                "citingcorpusid": 101,
+                "isinfluential": True,
+                "intents": None,
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name, broken_citations_path.name],
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        with pytest.raises(ExceptionGroup):
+            await run_release_ingest(
+                StartReleaseRequest(
+                    source_code="s2",
+                    release_tag=release_tag,
+                    requested_by="tester",
+                    family_allowlist=("citations",),
+                    force_new_run=True,
+                ),
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        metric_rows = await admin_connection.fetch(
+            """
+            SELECT
+                citing_paper_id,
+                reference_out_count,
+                influential_reference_count,
+                linked_reference_count,
+                orphan_reference_count,
+                last_seen_run_id
+            FROM solemd.s2_paper_reference_metrics_raw
+            ORDER BY citing_paper_id
+            """
+        )
+        assert [
+            (
+                row["citing_paper_id"],
+                row["reference_out_count"],
+                row["influential_reference_count"],
+                row["linked_reference_count"],
+                row["orphan_reference_count"],
+                str(row["last_seen_run_id"]),
+            )
+            for row in metric_rows
+        ] == [("101", 1, 0, 1, 0, first_run_id)]
+        failed_run_id = await admin_connection.fetchval(
+            """
+            SELECT ingest_run_id
+            FROM solemd.ingest_runs
+            WHERE ingest_run_id <> $1
+              AND status = 6
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            first_run_id,
+        )
+        assert failed_run_id is not None
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM solemd.s2_paper_reference_metrics_stage WHERE ingest_run_id = $1",
+            failed_run_id,
+        ) == 0
     finally:
         await admin_connection.close()
 
@@ -1639,6 +2197,75 @@ async def test_pubtator_biocxml_duplicate_annotations_within_document_are_dedupe
 
 
 @pytest.mark.asyncio
+async def test_pubtator_bioconcepts_cross_type_identifiers_remain_distinct_in_stage(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-02-06"
+    pt_root = tmp_path / "pubtator"
+    release_dir = pt_root / "releases" / release_tag
+    bioconcepts_path = release_dir / "bioconcepts2pubtator3.gz"
+
+    write_tsv_gz(
+        bioconcepts_path,
+        [
+            "41457071\tGene\t3906\talpha-lactalbumin\tPubTator3",
+            "41457071\tSpecies\t3906\tFaba bean|faba beans|Vicia faba L.|faba bean\tPubTator3",
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "bioconcepts2pubtator3.gz.manifest.json",
+        dataset="bioconcepts2pubtator3.gz",
+        release_tag=release_tag,
+        output_dir=release_dir,
+        file_names=[bioconcepts_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        pubtator_dir=pt_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+    request = StartReleaseRequest(
+        source_code="pt3",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("bioconcepts",),
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        ingest_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        rows = await admin_connection.fetch(
+            """
+            SELECT pmid, entity_type, concept_id_raw, start_offset, end_offset
+            FROM pubtator.entity_annotations_stage
+            ORDER BY entity_type
+            """
+        )
+        assert [(row["pmid"], row["entity_type"], row["concept_id_raw"]) for row in rows] == [
+            (41457071, 1, "3906"),
+            (41457071, 4, "3906"),
+        ]
+        assert all((row["start_offset"], row["end_offset"]) == (0, 0) for row in rows)
+        assert await admin_connection.fetchval(
+            "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
+            ingest_run_id,
+        ) == 5
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
 async def test_pubtator_relations_duplicate_rows_merge_cleanly(
     tmp_path: Path,
     warehouse_dsns: dict[str, str],
@@ -1975,4 +2602,166 @@ async def test_cancellation_marks_run_aborted_and_releases_lock(
                         "SELECT pg_advisory_unlock($1)", lock_key
                     )
     finally:
+        await pools.close()
+
+
+@pytest.mark.asyncio
+async def test_operator_abort_during_family_load_aborts_before_family_commit(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+    monkeypatch,
+) -> None:
+    release_tag = "2026-04-23"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    ).model_copy(
+        update={
+            "ingest_abort_poll_interval_seconds": 0.05,
+        }
+    )
+
+    async def slow_load_family(
+        _pool,
+        _settings,
+        _request,
+        plan,
+        family_name,
+        _source_release_id,
+        _ingest_run_id,
+        on_file_completed=None,
+        on_rows_written=None,
+        on_input_progress=None,
+        on_batch_processed=None,
+    ):
+        file_paths = [file_plan.path for file_plan in next(item for item in plan.families if item.family == family_name).files]
+
+        async def worker(file_path: Path) -> None:
+            while True:
+                if on_input_progress is not None:
+                    on_input_progress(file_path, 1)
+                if on_batch_processed is not None:
+                    await on_batch_processed(file_path, 0)
+                await asyncio.sleep(0.01)
+
+        await asyncio.gather(*(worker(path) for path in file_paths))
+        if on_file_completed is not None:
+            for path in file_paths:
+                on_file_completed(path, 0)
+        if on_rows_written is not None:
+            for path in file_paths:
+                on_rows_written(path, 0)
+        return CopyStats(family=family_name, row_count=0, file_count=len(file_paths))
+
+    from app.ingest.runtime import SOURCE_WRITERS, SourceWriter
+
+    monkeypatch.setitem(
+        SOURCE_WRITERS,
+        "s2",
+        SourceWriter(load_family=slow_load_family),
+    )
+
+    async def request_abort() -> None:
+        connection = await asyncpg.connect(warehouse_dsns["admin"])
+        try:
+            while True:
+                row = await connection.fetchrow(
+                    """
+                    SELECT ir.ingest_run_id
+                    FROM solemd.ingest_runs ir
+                    JOIN solemd.source_releases sr USING (source_release_id)
+                    WHERE sr.source_name = 's2'
+                      AND sr.source_release_key = $1
+                    ORDER BY ir.started_at DESC
+                    LIMIT 1
+                    """,
+                    release_tag,
+                )
+                if row is not None:
+                    await connection.execute(
+                        """
+                        UPDATE solemd.ingest_runs
+                        SET requested_status = 2
+                        WHERE ingest_run_id = $1
+                        """,
+                        row["ingest_run_id"],
+                    )
+                    return
+                await asyncio.sleep(0.01)
+        finally:
+            await connection.close()
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    abort_task = asyncio.create_task(request_abort())
+    try:
+        with pytest.raises(IngestAborted):
+            await run_release_ingest(
+                StartReleaseRequest(
+                    source_code="s2",
+                    release_tag=release_tag,
+                    requested_by="tester",
+                    family_allowlist=("citations",),
+                ),
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+        await abort_task
+
+        async with pools.get("ingest_write").acquire() as connection:
+            row = await connection.fetchrow(
+                """
+                SELECT ir.status, ir.completed_at, ir.error_message, ir.families_loaded
+                FROM solemd.ingest_runs ir
+                JOIN solemd.source_releases sr USING (source_release_id)
+                WHERE sr.source_name = 's2'
+                  AND sr.source_release_key = $1
+                ORDER BY ir.started_at DESC
+                LIMIT 1
+                """,
+                release_tag,
+            )
+            assert row is not None
+            assert row["status"] == INGEST_STATUS_ABORTED
+            assert row["completed_at"] is not None
+            assert row["families_loaded"] == []
+            assert "abort" in (row["error_message"] or "").lower()
+
+            lock_key = await connection.fetchval(
+                "SELECT hashtextextended($1, 0)::bigint",
+                f"ingest:s2:{release_tag}",
+            )
+            assert await connection.fetchval(
+                "SELECT pg_try_advisory_lock($1)",
+                lock_key,
+            )
+            await connection.execute("SELECT pg_advisory_unlock($1)", lock_key)
+    finally:
+        abort_task.cancel()
+        await asyncio.gather(abort_task, return_exceptions=True)
         await pools.close()
