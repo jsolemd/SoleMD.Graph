@@ -121,6 +121,20 @@ export function DashboardClientShell({
       <FieldModeProvider mode={fieldMode}>
         <FieldSceneStoreProvider store={sceneStore}>
           <FieldRuntimeContext.Provider value={bridge}>
+            {/* Dashboard backdrop. Body bg is clobbered by Mantine's
+                default `--mantine-color-body` (#242424) regardless of
+                our `body { background-color: var(--background) }` in
+                styles/base.css — an upstream specificity issue this
+                route group can't solve globally. Paint `--graph-bg`
+                behind the canvas via a z:-1 backdrop so (a) particles
+                render above it and (b) the dashboard retains its
+                intended near-black surface even in surfaces that
+                don't wrap their own opaque shell. */}
+            <div
+              aria-hidden
+              className="pointer-events-none fixed inset-0 -z-10"
+              style={{ backgroundColor: "var(--graph-bg)" }}
+            />
             <FieldCanvas
               activeIds={FIELD_STAGE_ITEM_IDS}
               blobGeometrySubscriber={blobGeometrySubscriber}

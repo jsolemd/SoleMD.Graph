@@ -53,8 +53,13 @@ import {
 } from "./field-landing-content";
 import { useFieldSceneStore } from "../../scroll/field-scene-store";
 
+// Panel-shell MUST be transparent: the FieldCanvas is hoisted to the
+// (dashboard) layout (step 5a) and lives as a body-level sibling of
+// this shell. An opaque background here paints over the canvas in tree
+// order. Body already carries `background-color: var(--background)`
+// via app/styles/base.css, so dropping the redundant bg lets the
+// layout-owned particles show through.
 const rootShellStyle: CSSProperties = {
-  backgroundColor: "var(--graph-bg)",
   color: "var(--graph-panel-text)",
 };
 
