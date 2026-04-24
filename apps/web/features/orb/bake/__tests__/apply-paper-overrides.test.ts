@@ -162,4 +162,49 @@ describe("applyPaperAttributeOverrides", () => {
       applyPaperAttributeOverrides(bare, paperAttributes),
     ).toThrow(/missing field-shader attributes/);
   });
+
+  it("addUpdateRange marks the contiguous slice, not the whole buffer", () => {
+    const pointCount = 128;
+    const geometry = makeBakedGeometry(pointCount);
+    const paperAttributes: PaperAttributesMap = new Map();
+    // Chunk covers particles 10..19 — contiguous range of 10.
+    for (let i = 10; i < 20; i += 1) {
+      paperAttributes.set(i, {
+        paperId: `p-${i}`,
+        clusterId: 0,
+        refCount: i,
+        entityCount: 1,
+        relationCount: 0,
+        year: null,
+      });
+    }
+    applyPaperAttributeOverrides(geometry, paperAttributes);
+
+    // aBucket (itemSize=1): offset=10, count=10
+    const aBucket = geometry.getAttribute("aBucket")!;
+    expect(aBucket.updateRanges).toEqual([{ start: 10, count: 10 }]);
+    // aSpeed (itemSize=3): offset=30, count=30
+    const aSpeed = geometry.getAttribute("aSpeed")!;
+    expect(aSpeed.updateRanges).toEqual([{ start: 30, count: 30 }]);
+    // aClickPack (itemSize=4): offset=40, count=40
+    const aClickPack = geometry.getAttribute("aClickPack")!;
+    expect(aClickPack.updateRanges).toEqual([{ start: 40, count: 40 }]);
+  });
+
+  it("calls the invalidate callback when provided", () => {
+    const geometry = makeBakedGeometry(16);
+    const paperAttributes: PaperAttributesMap = new Map([
+      [0, { paperId: "x", clusterId: 0, refCount: 1, entityCount: 1, relationCount: 0, year: null }],
+    ]);
+    const invalidate = jest.fn();
+    applyPaperAttributeOverrides(geometry, paperAttributes, { invalidate });
+    expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not invalidate when the map is empty", () => {
+    const geometry = makeBakedGeometry(16);
+    const invalidate = jest.fn();
+    applyPaperAttributeOverrides(geometry, new Map(), { invalidate });
+    expect(invalidate).not.toHaveBeenCalled();
+  });
 });

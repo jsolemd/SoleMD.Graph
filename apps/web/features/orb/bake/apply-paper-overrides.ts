@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 import {
+  ORB_PAPER_OVERRIDE_ATTRIBUTES,
   SOLEMD_DEFAULT_BUCKETS,
   type FieldSemanticBucket,
 } from "@/features/field/asset/field-attribute-baker";
@@ -30,9 +31,28 @@ import type { PaperAttributesMap } from "./use-paper-attributes-baker";
  * this supports progressive/partial loads where sampled rows arrive in
  * chunks during landing scroll (step 5 ambition).
  *
+ * Under `frameloop="demand"`, the caller MUST invoke R3F's `invalidate()`
+ * after this returns (or pass it via `options.invalidate`) — bumping
+ * `needsUpdate` alone does not schedule a frame. The orb blob-geometry
+ * subscriber batches chunks per subscription fire and invalidates once.
+ *
  * Boundary rationale: the field baker is paper-unaware; paper semantics
  * live here so the substrate stays decoupled from orb product concerns.
- * Marks all mutated attributes `needsUpdate = true` so the GPU resyncs.
+ *
+ * ### Partial upload (addUpdateRange)
+ *
+ * The target attributes are flipped to `DynamicDrawUsage` when orb
+ * activates (see `install-blob-mutation-subscriber`). Combined with
+ * `addUpdateRange(offsetInArrayElements, countInArrayElements)` this
+ * drives `gl.bufferSubData` for only the touched slice rather than a
+ * full `gl.bufferData` realloc per frame. For 16384 particles × 8
+ * chunks this is a meaningful bandwidth win during the landing→orb
+ * streaming window.
+ *
+ * The applier computes a single contiguous range [minIdx..maxIdx]
+ * from the chunk's index set. Chunks driven by LIMIT/OFFSET are
+ * contiguous so this is tight; scattered chunks (non-contiguous) would
+ * over-upload the gap, still cheaper than StaticDraw's full realloc.
  */
 
 const PAPER_SIZE_FACTOR_MIN = 0.5;
@@ -53,6 +73,13 @@ export interface ApplyPaperOverridesOptions {
    * them (e.g. from `usePaperAttributesBaker.maxima`).
    */
   maxima?: { refCount: number; entityCount: number };
+  /**
+   * R3F `invalidate()` for on-demand rendering. Optional because the
+   * orb subscriber prefers to batch multiple chunks under one invalidate;
+   * callers that apply a single chunk should pass this so the next frame
+   * reflects the write.
+   */
+  invalidate?: () => void;
 }
 
 export function applyPaperAttributeOverrides(
@@ -109,8 +136,15 @@ export function applyPaperAttributeOverrides(
   const refDenom = Math.log(1 + Math.max(maxRef, 1));
   const entityDenom = Math.max(maxEntity, 1);
 
+  const particleCount = Math.floor(speedArr.length / 3);
+  let minIdx = Number.POSITIVE_INFINITY;
+  let maxIdx = Number.NEGATIVE_INFINITY;
+
   for (const [i, attrs] of paperAttributes) {
-    if (i < 0 || i >= speedArr.length / 3) continue;
+    if (i < 0 || i >= particleCount) continue;
+
+    if (i < minIdx) minIdx = i;
+    if (i > maxIdx) maxIdx = i;
 
     const refNorm = Math.log(1 + attrs.refCount) / refDenom;
     const speedFactor = (1 - refNorm) * PAPER_SPEED_SCALE;
@@ -133,12 +167,33 @@ export function applyPaperAttributeOverrides(
     funnelEndArr[i] = paperBucket.aFunnelEndShift;
   }
 
-  aSpeed.needsUpdate = true;
-  aClickPack.needsUpdate = true;
-  aBucket.needsUpdate = true;
-  aStreamFreq.needsUpdate = true;
-  aFunnelThickness.needsUpdate = true;
-  aFunnelNarrow.needsUpdate = true;
-  aFunnelStartShift.needsUpdate = true;
-  aFunnelEndShift.needsUpdate = true;
+  if (!Number.isFinite(minIdx) || !Number.isFinite(maxIdx)) return;
+
+  const particleSpan = maxIdx - minIdx + 1;
+
+  // aClickPack is vec4 (itemSize=4). Everything else itemSize=1 except
+  // aSpeed (itemSize=3). addUpdateRange takes (offset, count) in ARRAY
+  // ELEMENTS, not particle indices — so multiply by itemSize.
+  markRange(aSpeed, minIdx * 3, particleSpan * 3);
+  markRange(aClickPack, minIdx * 4, particleSpan * 4);
+  markRange(aBucket, minIdx, particleSpan);
+  markRange(aStreamFreq, minIdx, particleSpan);
+  markRange(aFunnelThickness, minIdx, particleSpan);
+  markRange(aFunnelNarrow, minIdx, particleSpan);
+  markRange(aFunnelStartShift, minIdx, particleSpan);
+  markRange(aFunnelEndShift, minIdx, particleSpan);
+
+  options.invalidate?.();
 }
+
+function markRange(
+  attr: THREE.BufferAttribute,
+  offset: number,
+  count: number,
+): void {
+  attr.clearUpdateRanges();
+  attr.addUpdateRange(offset, count);
+  attr.needsUpdate = true;
+}
+
+export { ORB_PAPER_OVERRIDE_ATTRIBUTES };

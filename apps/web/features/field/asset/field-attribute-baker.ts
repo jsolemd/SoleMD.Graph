@@ -90,6 +90,27 @@ export interface FieldAttributeBakeOptions {
   randomnessScale?: { x: number; y: number; z: number };
 }
 
+/**
+ * Attribute names that orb's `applyPaperAttributeOverrides` mutates per
+ * chunk. The orb blob-geometry subscriber flips these to
+ * DynamicDrawUsage at activation time so partial updates via
+ * `addUpdateRange` land through `gl.bufferSubData` instead of forcing a
+ * full `gl.bufferData` realloc every time `needsUpdate` fires.
+ *
+ * Exported from the baker (not from apply-paper-overrides) because the
+ * baker owns the attribute layout contract; any future baker change
+ * that drops or renames one of these ripples here first.
+ */
+export const ORB_PAPER_OVERRIDE_ATTRIBUTES = [
+  "aSpeed",
+  "aBucket",
+  "aStreamFreq",
+  "aFunnelThickness",
+  "aFunnelNarrow",
+  "aFunnelStartShift",
+  "aFunnelEndShift",
+] as const;
+
 const DEFAULT_MOVE_RANGE = 30;
 const DEFAULT_ALPHA_RANGE = [0.2, 1] as const;
 const DEFAULT_RANDOMNESS_SCALE = { x: 0, y: 1, z: 0.5 };

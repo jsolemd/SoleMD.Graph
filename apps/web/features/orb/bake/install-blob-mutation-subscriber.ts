@@ -1,4 +1,7 @@
+import * as THREE from "three";
+
 import type { BlobGeometrySubscriber } from "@/features/field/renderer/FieldScene";
+import { ORB_PAPER_OVERRIDE_ATTRIBUTES } from "@/features/field/asset/field-attribute-baker";
 import { useOrbGeometryMutationStore } from "../stores/geometry-mutation-store";
 import { applyPaperAttributeOverrides } from "./apply-paper-overrides";
 
@@ -16,11 +19,32 @@ import { applyPaperAttributeOverrides } from "./apply-paper-overrides";
  * have been applied. If FieldScene reinstalls (e.g. blob geometry
  * rebuilds), the cursor resets and the whole accumulated history
  * re-applies onto the new geometry — correct for the remount case.
+ *
+ * ### Usage hints
+ *
+ * On install, the subscriber flips every orb-override attribute to
+ * `DynamicDrawUsage`. The runtime BufferAttributes are constructed by
+ * R3F's `<bufferAttribute args=[…]>` in FieldScene and default to
+ * StaticDraw — which forces a full `gl.bufferData()` realloc per
+ * `needsUpdate`. DynamicDraw lets `addUpdateRange` hit
+ * `gl.bufferSubData` and upload only the touched slice.
+ *
+ * Flipping lives here (not in the baker) because the baker can't reach
+ * the R3F-owned BufferAttribute instances — it only produces the raw
+ * Float32Array buffers that R3F re-wraps. Doing it on orb activation
+ * is the earliest point where the runtime attributes exist.
  */
 export const installBlobMutationSubscriber: BlobGeometrySubscriber = ({
   geometry,
   invalidate,
 }) => {
+  for (const name of ORB_PAPER_OVERRIDE_ATTRIBUTES) {
+    const attr = geometry.getAttribute(name) as
+      | THREE.BufferAttribute
+      | undefined;
+    attr?.setUsage(THREE.DynamicDrawUsage);
+  }
+
   let lastApplied = 0;
 
   const applyPending = () => {
