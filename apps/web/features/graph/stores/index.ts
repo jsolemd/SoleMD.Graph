@@ -5,6 +5,8 @@ export {
   useDashboardStore,
 } from './dashboard-store'
 export type { ActivePanel, PanelId, PromptMode, TableView } from './dashboard-store'
+export { useShellStore } from './shell-store'
+export type { LowPowerProfile, ShellState } from './shell-store'
 
 // Side-effect: seed and keep dashboard.wikiRouteIsGraph in sync with the
 // wiki store so the dock layout reads it from a single source on frame 1.
