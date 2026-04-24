@@ -1,10 +1,7 @@
 import { BufferAttribute, BufferGeometry } from "three";
 
 import { bakeFieldAttributes } from "@/features/field/asset/field-attribute-baker";
-import {
-  applyPaperAttributeOverrides,
-  hashPaperIdToFloat24,
-} from "../apply-paper-overrides";
+import { applyPaperAttributeOverrides } from "../apply-paper-overrides";
 import type { PaperAttributesMap } from "../use-paper-attributes-baker";
 
 function seededRandom(seed: number) {
@@ -41,7 +38,7 @@ describe("applyPaperAttributeOverrides", () => {
     }
   });
 
-  it("overrides aBucket=0 and rewrites aSpeed/aSizeFactor/aLogicalPaperId where paper data is present", () => {
+  it("overrides aBucket=0 and rewrites aSpeed/aClickPack.w where paper data is present", () => {
     const pointCount = 256;
     const geometry = makeBakedGeometry(pointCount);
     const paperAttributes: PaperAttributesMap = new Map();
@@ -58,27 +55,24 @@ describe("applyPaperAttributeOverrides", () => {
     applyPaperAttributeOverrides(geometry, paperAttributes);
 
     const aBucket = geometry.getAttribute("aBucket")!.array as Float32Array;
-    const aSizeFactor = geometry.getAttribute("aSizeFactor")!.array as Float32Array;
-    const aLogicalPaperId = geometry.getAttribute("aLogicalPaperId")!.array as Float32Array;
+    const aClickPack = geometry.getAttribute("aClickPack")!.array as Float32Array;
     const aSpeed = geometry.getAttribute("aSpeed")!.array as Float32Array;
 
     for (let i = 0; i < pointCount / 2; i += 1) {
       expect(aBucket[i]).toBe(0);
-      expect(aSizeFactor[i]!).toBeGreaterThanOrEqual(0.5);
-      expect(aSizeFactor[i]!).toBeLessThanOrEqual(2.0);
-      expect(aLogicalPaperId[i]!).toBeGreaterThanOrEqual(0);
+      // aClickPack.w (every 4th float) holds sizeFactor, clamped [0.5, 2.0].
+      expect(aClickPack[i * 4 + 3]!).toBeGreaterThanOrEqual(0.5);
+      expect(aClickPack[i * 4 + 3]!).toBeLessThanOrEqual(2.0);
       // All three axes share the same citation-derived speed.
       expect(aSpeed[i * 3]).toBe(aSpeed[i * 3 + 1]);
       expect(aSpeed[i * 3 + 1]).toBe(aSpeed[i * 3 + 2]);
       expect(aSpeed[i * 3]!).toBeGreaterThanOrEqual(0);
       expect(aSpeed[i * 3]!).toBeLessThanOrEqual(3);
     }
-    // Particles without paper data keep lands-mode defaults for the three
-    // paper-specific attributes. aBucket retains whatever lands-mode picked
-    // (one of 0..3).
+    // Particles without paper data keep lands-mode defaults. aBucket
+    // retains whatever lands-mode picked (one of 0..3).
     for (let i = pointCount / 2; i < pointCount; i += 1) {
-      expect(aSizeFactor[i]).toBe(1);
-      expect(aLogicalPaperId[i]).toBe(-1);
+      expect(aClickPack[i * 4 + 3]).toBe(1); // sizeFactor lands-mode default
       expect([0, 1, 2, 3]).toContain(aBucket[i]);
     }
   });
@@ -140,8 +134,7 @@ describe("applyPaperAttributeOverrides", () => {
     ]);
     const namesToCheck = [
       "aSpeed",
-      "aSizeFactor",
-      "aLogicalPaperId",
+      "aClickPack",
       "aBucket",
       "aStreamFreq",
       "aFunnelThickness",
@@ -168,22 +161,5 @@ describe("applyPaperAttributeOverrides", () => {
     expect(() =>
       applyPaperAttributeOverrides(bare, paperAttributes),
     ).toThrow(/missing field-shader attributes/);
-  });
-});
-
-describe("hashPaperIdToFloat24", () => {
-  it("is deterministic", () => {
-    expect(hashPaperIdToFloat24("paper-xyz")).toBe(hashPaperIdToFloat24("paper-xyz"));
-  });
-
-  it("differs for different inputs (high probability)", () => {
-    expect(hashPaperIdToFloat24("paper-a")).not.toBe(hashPaperIdToFloat24("paper-b"));
-  });
-
-  it("fits in 24 bits so Float32 representation is exact", () => {
-    const h = hashPaperIdToFloat24("some-paper");
-    expect(h).toBeGreaterThanOrEqual(0);
-    expect(h).toBeLessThan(1 << 24);
-    expect(Math.trunc(h)).toBe(h); // integer
   });
 });

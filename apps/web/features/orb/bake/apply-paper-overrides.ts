@@ -9,18 +9,22 @@ import type { PaperAttributesMap } from "./use-paper-attributes-baker";
 /**
  * Paper-mode attribute override for the shared field geometry.
  *
- * Contract: call after `bakeFieldAttributes` has produced a geometry with
- * the lands-mode defaults (aSizeFactor=1, aLogicalPaperId=-1,
- * aClickAttraction=0, bucket-assigned aBucket/aSpeed/aStreamFreq/…).
- * This function rewrites a subset of those in place for every particle
- * index present in `paperAttributes`:
+ * Contract: call after `bakeFieldAttributes` has produced a geometry
+ * with the lands-mode defaults (aClickPack.w=1, aClickPack.xyz=0,
+ * bucket-assigned aBucket/aSpeed/aStreamFreq/…). This function rewrites
+ * a subset of those in place for every particle index present in
+ * `paperAttributes`:
  *
  *   - aSpeed         → log-normalized citation proxy (high refs → slow)
- *   - aSizeFactor    → entity-count-normalized, clamped [0.5, 2.0]
- *   - aLogicalPaperId → truncated FNV-1a hash of paperId
+ *   - aClickPack.w   → sizeFactor, entity-count-normalized, clamped [0.5, 2.0]
  *   - aBucket        → 0 (paper bucket)
  *   - aStreamFreq / aFunnelThickness / aFunnelNarrow /
  *     aFunnelStartShift / aFunnelEndShift → buckets[0] (paper) values
+ *
+ * Paper identity (paperId ↔ particleIndex) is NOT written to a GPU
+ * attribute — the mapping lives on the JS side in the `PaperAttributesMap`
+ * emitted by `usePaperAttributesBaker`. This keeps the shader under the
+ * WebGL 16-attribute floor and avoids duplicating identity at two layers.
  *
  * Particles NOT in `paperAttributes` retain their lands-mode defaults —
  * this supports progressive/partial loads where sampled rows arrive in
@@ -39,18 +43,6 @@ const PAPER_SIZE_FACTOR_MAX = 2.0;
 // uncited → 1; scaled by PAPER_SPEED_SCALE to match the effective range
 // of lands-mode `random() * 1.0` aSpeed under typical aMove magnitudes.
 const PAPER_SPEED_SCALE = 3.0;
-
-// FNV-1a 32-bit hash of a paper id, truncated to 24 bits so the result
-// fits in Float32 without precision loss. Used for aLogicalPaperId so
-// the shader (and JS) can identify particles by paper id if needed.
-export function hashPaperIdToFloat24(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i += 1) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0) % (1 << 24);
-}
 
 export interface ApplyPaperOverridesOptions {
   /** Override bucket set. Defaults to SOLEMD_DEFAULT_BUCKETS. */
@@ -79,8 +71,7 @@ export function applyPaperAttributeOverrides(
   }
 
   const aSpeed = geometry.getAttribute("aSpeed") as THREE.BufferAttribute | undefined;
-  const aSizeFactor = geometry.getAttribute("aSizeFactor") as THREE.BufferAttribute | undefined;
-  const aLogicalPaperId = geometry.getAttribute("aLogicalPaperId") as THREE.BufferAttribute | undefined;
+  const aClickPack = geometry.getAttribute("aClickPack") as THREE.BufferAttribute | undefined;
   const aBucket = geometry.getAttribute("aBucket") as THREE.BufferAttribute | undefined;
   const aStreamFreq = geometry.getAttribute("aStreamFreq") as THREE.BufferAttribute | undefined;
   const aFunnelThickness = geometry.getAttribute("aFunnelThickness") as THREE.BufferAttribute | undefined;
@@ -89,7 +80,7 @@ export function applyPaperAttributeOverrides(
   const aFunnelEndShift = geometry.getAttribute("aFunnelEndShift") as THREE.BufferAttribute | undefined;
 
   if (
-    !aSpeed || !aSizeFactor || !aLogicalPaperId || !aBucket ||
+    !aSpeed || !aClickPack || !aBucket ||
     !aStreamFreq || !aFunnelThickness || !aFunnelNarrow ||
     !aFunnelStartShift || !aFunnelEndShift
   ) {
@@ -99,8 +90,7 @@ export function applyPaperAttributeOverrides(
   }
 
   const speedArr = aSpeed.array as Float32Array;
-  const sizeArr = aSizeFactor.array as Float32Array;
-  const hashArr = aLogicalPaperId.array as Float32Array;
+  const clickPackArr = aClickPack.array as Float32Array;
   const bucketArr = aBucket.array as Float32Array;
   const streamArr = aStreamFreq.array as Float32Array;
   const funnelThickArr = aFunnelThickness.array as Float32Array;
@@ -129,12 +119,11 @@ export function applyPaperAttributeOverrides(
     speedArr[i * 3 + 2] = speedFactor;
 
     const rawSize = attrs.entityCount / entityDenom;
-    sizeArr[i] = Math.max(
+    // aClickPack.w lane holds sizeFactor; .xyz is written by orb physics.
+    clickPackArr[i * 4 + 3] = Math.max(
       PAPER_SIZE_FACTOR_MIN,
       Math.min(PAPER_SIZE_FACTOR_MAX, rawSize * PAPER_SIZE_FACTOR_MAX),
     );
-
-    hashArr[i] = hashPaperIdToFloat24(attrs.paperId);
 
     bucketArr[i] = 0;
     streamArr[i] = paperBucket.aStreamFreq;
@@ -145,8 +134,7 @@ export function applyPaperAttributeOverrides(
   }
 
   aSpeed.needsUpdate = true;
-  aSizeFactor.needsUpdate = true;
-  aLogicalPaperId.needsUpdate = true;
+  aClickPack.needsUpdate = true;
   aBucket.needsUpdate = true;
   aStreamFreq.needsUpdate = true;
   aFunnelThickness.needsUpdate = true;

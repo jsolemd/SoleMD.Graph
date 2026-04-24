@@ -142,38 +142,43 @@ describe("bakeFieldAttributes", () => {
     expect(index.evidence).toBe(3);
   });
 
-  /* ---- Shared-shader contract: paper-mode attribute defaults ---- */
+  /* ---- Shared-shader contract: packed paper-mode attribute ---- */
 
-  it("always bakes aSizeFactor, aLogicalPaperId, aClickAttraction", () => {
+  it("always bakes aClickPack (vec4 packing click offset + sizeFactor)", () => {
     const geometry = makeGeometry(256);
     bakeFieldAttributes(geometry, { random: seededRandom(11) });
-    expect(geometry.getAttribute("aSizeFactor")).toBeDefined();
-    expect(geometry.getAttribute("aLogicalPaperId")).toBeDefined();
-    expect(geometry.getAttribute("aClickAttraction")).toBeDefined();
+    const attr = geometry.getAttribute("aClickPack");
+    expect(attr).toBeDefined();
+    expect(attr!.itemSize).toBe(4);
   });
 
-  it("lands-mode defaults make the shader additions no-ops: size=1, id=-1, click=0", () => {
+  it("does NOT bake legacy unpacked attributes (paper identity lives in JS)", () => {
+    const geometry = makeGeometry(64);
+    bakeFieldAttributes(geometry, { random: seededRandom(1) });
+    // Legacy names that would push the attribute count past WebGL's
+    // effective slot budget on some platforms.
+    expect(geometry.getAttribute("aSizeFactor")).toBeUndefined();
+    expect(geometry.getAttribute("aClickAttraction")).toBeUndefined();
+    expect(geometry.getAttribute("aLogicalPaperId")).toBeUndefined();
+  });
+
+  it("lands-mode aClickPack defaults: xyz=0 (click off), w=1 (sizeFactor no-op)", () => {
     const pointCount = 1024;
     const geometry = makeGeometry(pointCount);
     bakeFieldAttributes(geometry, { random: seededRandom(13) });
-
-    const aSizeFactor = geometry.getAttribute("aSizeFactor")!.array as Float32Array;
-    const aLogicalPaperId = geometry.getAttribute("aLogicalPaperId")!.array as Float32Array;
-    const aClickAttraction = geometry.getAttribute("aClickAttraction")!.array as Float32Array;
-
+    const aClickPack = geometry.getAttribute("aClickPack")!.array as Float32Array;
     for (let i = 0; i < pointCount; i += 1) {
-      expect(aSizeFactor[i]).toBe(1);
-      expect(aLogicalPaperId[i]).toBe(-1);
-      expect(aClickAttraction[i * 3]).toBe(0);
-      expect(aClickAttraction[i * 3 + 1]).toBe(0);
-      expect(aClickAttraction[i * 3 + 2]).toBe(0);
+      expect(aClickPack[i * 4 + 0]).toBe(0);
+      expect(aClickPack[i * 4 + 1]).toBe(0);
+      expect(aClickPack[i * 4 + 2]).toBe(0);
+      expect(aClickPack[i * 4 + 3]).toBe(1);
     }
   });
 
-  it("marks aClickAttraction for DynamicDraw (orb's d3-force partial updates)", () => {
+  it("marks aClickPack for DynamicDraw (orb's d3-force partial updates)", () => {
     const geometry = makeGeometry(128);
     bakeFieldAttributes(geometry, { random: seededRandom(1) });
-    const attr = geometry.getAttribute("aClickAttraction")!;
+    const attr = geometry.getAttribute("aClickPack")!;
     expect(attr.usage).toBe(DynamicDrawUsage);
   });
 
@@ -196,9 +201,7 @@ describe("bakeFieldAttributes", () => {
       "aFunnelStartShift",
       "aFunnelEndShift",
       "aBucket",
-      "aSizeFactor",
-      "aLogicalPaperId",
-      "aClickAttraction",
+      "aClickPack",
     ]) {
       const a = geometry1.getAttribute(name)!.array as Float32Array;
       const b = geometry2.getAttribute(name)!.array as Float32Array;

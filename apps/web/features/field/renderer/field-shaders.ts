@@ -31,12 +31,19 @@ attribute vec3 aMove;
 attribute vec3 aSpeed;
 attribute vec3 aRandomness;
 
-// Paper-mode additions (orb-field pivot, step 4). Lands-mode bakes
-// aSizeFactor=1.0, aLogicalPaperId=-1, aClickAttraction=(0,0,0) so
-// these additions are no-ops and Maze parity is preserved.
-attribute float aSizeFactor;
-attribute float aLogicalPaperId;
-attribute vec3 aClickAttraction;
+// Paper-mode additions (orb-field pivot, step 4), packed into a single
+// vec4 attribute so the total attribute budget is identical to the
+// pre-pivot shader. Some WebGL platforms expose fewer attribute slots
+// than the v2 spec floor; keeping the count flat is the safest design.
+//
+//   aClickPack.xyz = aClickAttraction  (0,0,0) in lands-mode
+//   aClickPack.w   = aSizeFactor       (1.0 in lands-mode)
+//
+// With these defaults the shader additions are bit-exact no-ops.
+// Paper identity (paperId ↔ particleIndex) is carried on the JS side
+// (usePaperAttributesBaker returns a Map), so the shader needs no
+// paper-id slot.
+attribute vec4 aClickPack;
 
 uniform bool uIsMobile;
 uniform float uPixelRatio;
@@ -284,10 +291,10 @@ void main() {
     uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uTimeFactor * uSpeed))
   );
 
-  // Click-attraction displacement. aClickAttraction is zero in lands-mode
+  // Click-attraction displacement. aClickPack.xyz is zero in lands-mode
   // AND when no click sim is active; uClickStrength gates the fade-in/out.
   // Combined, this is a perfect zero in lands-mode.
-  displaced += aClickAttraction * uClickStrength;
+  displaced += aClickPack.xyz * uClickStrength;
 
   if (uStream > 0.0) {
     displaced.x += uTime * uTimeFactor * uSpeed * uStream * 0.3;
@@ -318,9 +325,10 @@ void main() {
   gl_PointSize = uSize;
   gl_PointSize *= 100.0 / vDistance;
   gl_PointSize *= uPixelRatio;
-  // Paper-mode per-particle size modulation. aSizeFactor=1.0 in
-  // lands-mode, so this multiply is a bit-exact no-op by construction.
-  gl_PointSize *= aSizeFactor;
+  // Paper-mode per-particle size modulation. aClickPack.w (=aSizeFactor)
+  // is 1.0 in lands-mode, so this multiply is a bit-exact no-op by
+  // construction.
+  gl_PointSize *= aClickPack.w;
 
   vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
   // Light-mode alpha boost: particles that were glow on black need more
