@@ -11,7 +11,7 @@ const CosmographRenderer = dynamic(
     ssr: false,
     loading: () => (
       <div
-        className="absolute inset-0 bg-[var(--graph-bg)]"
+        className="absolute inset-0 bg-[var(--background)]"
         role="img"
         aria-label="Loading knowledge graph..."
       />

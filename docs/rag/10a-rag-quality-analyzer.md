@@ -20,7 +20,7 @@
 > cascade traces (Langfuse export today; observability parquet pipeline
 > later), computes RAG-specific quality metrics that Langfuse Cloud
 > Hobby cannot natively surface (lane-fusion contribution, cross-encoder
-> rerank effectiveness, parent-paper promotion dedup, hot-vs-warm tier
+> rerank effectiveness, parent-paper promotion dedup, evidence-vs-mapped tier
 > hit-rate split, per-`chunk_version_key` A/B recall, evidence-unit
 > grounding round-trip success), persists them into a single Postgres
 > table on the serve cluster (`solemd.rag_quality_metrics`), and exposes
@@ -75,7 +75,7 @@ algorithms:
    quality trends survive Langfuse Cloud Hobby's 30-day data-access
    window (`10 §7.3`).
 2. Six retrieval-internal analyzers (lane-fusion contribution, rerank
-   effectiveness, parent-paper promotion dedup, hot-vs-warm tier split,
+   effectiveness, parent-paper promotion dedup, evidence-vs-mapped tier split,
    per-policy A/B, grounding round-trip) that Langfuse evaluators
    cannot natively express because they require the cascade's
    per-stage `score_breakdown` payload (`08 §15.2`), not just the
@@ -112,7 +112,7 @@ Inherits every convention from `00`, `02 §0`, `03 §0`, `05a §0`,
 
 | Concern | Quality-analyzer delta |
 |---|---|
-| **Vocabulary discipline** | "Evidence unit" is the canonical retrieval-time term per `05a §0`/`07 §0`/`08 §0`. "Chunk" applies only to warehouse-side assembly + storage (`paper_chunks`, `paper_chunk_members`, `paper_chunk_versions`, per `02 §856`/§868/§841). Hot tier promotes evidence-unit docs into `evidence_index` (`07 §3.5`); warm tier has evidence units in warehouse but they are **not indexed** there. Stage 3 promotion (`08 §6.2`) keeps **up to 3 evidence hits per paper**, not "chunks per paper." Abstract-only / thin-text papers can have a smaller evidence surface; not every paper "fully chunks." Every metric below is named in this vocabulary. **locked**. |
+| **Vocabulary discipline** | "Evidence unit" is the canonical retrieval-time term per `05a §0`/`07 §0`/`08 §0`. "Chunk" applies only to warehouse-side assembly + storage (`paper_chunks`, `paper_chunk_members`, `paper_chunk_versions`, per `02 §856`/§868/§841). Evidence tier promotes evidence-unit docs into `evidence_index` (`07 §3.5`); mapped tier has evidence units in warehouse but they are **not indexed** there. Stage 3 promotion (`08 §6.2`) keeps **up to 3 evidence hits per paper**, not "chunks per paper." Abstract-only / thin-text papers can have a smaller evidence surface; not every paper "fully chunks." Every metric below is named in this vocabulary. **locked**. |
 | **Cascade-trace-schema-drift coordination rule** | `08 §15` defines the cascade trace shape. Any new field added to that catalog (especially Stage 1 `score_breakdown`, Stage 2 `rerank_score` per candidate, Stage 4 grounding-roundtrip flag) must be backfilled into this doc's parquet schema (§7) **in the same PR** as the `08` change. The analyzer (`engine/app/rag_quality/analyzer.py`) drops unknown fields and emits a `severity=warn` log; coordination is the recovery path. **locked**. |
 | **RAG-quality Postgres table convention** | Exactly one table — `solemd.rag_quality_metrics` on the **serve cluster** (not warehouse). Append-only; PK = `run_id`; one row per `(run_id, query_id)`. Aggregations done at query-time via Grafana / SQL views. No materialized views in v1. The table is registered in `12 §9` ledger (see Upstream amendments). **locked**. |
 | **Canonical A/B dimensions** | Two columns are the canonical experiment axes: `dataset_name` (the benchmark suite name from `benchmark_catalog.py`) and `chunk_version_key` (`05a §1`). Every analyzer that compares variants compares along one of these two axes. No ad-hoc per-PR experiment tags; if a third axis is needed, add a typed column, not a JSON blob. **locked**. |
@@ -301,22 +301,22 @@ queries don't need to special-case lane.
 
 **Code home.** `engine/app/rag_quality/dedup_analyzer.py`. **locked**.
 
-### §4.4 Hot-tier vs warm-tier hit-rate split
+### §4.4 Evidence-tier vs mapped-tier hit-rate split
 
 **Definition.** Per benchmark suite, hit@k for queries that resolved
-against hot-only candidates vs queries that drew from the warm tier.
-The hot tier is the ~10K-paper promoted subset (`07 §3.5`); the warm
+against evidence-only candidates vs queries that drew from the mapped tier.
+The evidence tier is the ~10K-paper promoted subset (`07 §3.5`); the mapped
 tier is the remainder of `paper_index`. The split reveals whether the
-hot subset cohort is the right ~10K papers — if hit@k is dramatically
-higher on warm, the promotion criteria need revisiting.
+evidence subset cohort is the right ~10K papers — if hit@k is dramatically
+higher on mapped, the promotion criteria need revisiting.
 
 **Inputs from cascade trace.** Stage 1's `tier_filter` per query
-(`08 §2.1` `RetrieveRequest.hot_only` plus per-candidate `tier` from
+(`08 §2.1` `RetrieveRequest.evidence_only` plus per-candidate `tier` from
 the OpenSearch `_source`). The analyzer joins this against the existing
 `hit_at_k` computation (§3) and emits the split.
 
 **Output shape.** One SMALLINT column `tier SMALLINT` on
-`rag_quality_metrics` (1 = warm, 2 = hot, per `07 §3.2` registry).
+`rag_quality_metrics` (1 = mapped, 2 = evidence, per `07 §3.2` registry).
 Aggregation in Grafana groups by `(dataset_name, tier)`.
 
 **Computation cost.** Pure Python; per-query column write.
@@ -453,7 +453,7 @@ table "rag_quality_metrics" {
   column "chunk_version_key"  { null = true;  type = uuid }      # one of two canonical A/B axes (§0)
   column "lane"               { null = false; type = smallint }  # 1=paper, 2=evidence (07 §3.2 registry mirror)
   column "grounding_level"    { null = false; type = smallint }  # 1=paper, 2=evidence (§4.7)
-  column "tier"               { null = true;  type = smallint }  # 1=warm, 2=hot, NULL=mixed (07 §3.2 registry mirror; §4.4)
+  column "tier"               { null = true;  type = smallint }  # 1=mapped, 2=evidence, NULL=mixed (07 §3.2 registry mirror; §4.4)
 
   # §3 metrics (already computed; analyzer copies in)
   column "hit_rank"                       { null = true;  type = integer }   # 1-based; NULL=miss
@@ -627,7 +627,7 @@ set; field types are the typical pyarrow mappings.
 | `query_family` | `string` | `RuntimeEvalCaseResult.query_family` | per-row faceting |
 | `lane` | `int8` | `RetrieveRequest.lane` (`08 §2.1`) | 1=paper, 2=evidence |
 | `grounding_level` | `int8` | `RetrieveResponse.grounding_level` (`08 §2.2`) | 1=paper-grounded packet, 2=evidence-grounded packet |
-| `tier_filter` | `string` | `hot_only` flag derivation | "hot_only" / "both" |
+| `tier_filter` | `string` | `evidence_only` flag derivation | "evidence_only" / "both" |
 | `chunk_version_key` | `string` (UUIDv7 hex) | `08 §1` (carried on `EvidenceHit`) | nullable for paper-lane |
 | `serving_run_id` | `string` (UUIDv7 hex) | `08 §15.2` trace-level | snapshot |
 | `cohort_id` | `int32` | `08 §15.2` trace-level | resolved from active pointer |
@@ -694,7 +694,7 @@ class CascadeTraceRecord(BaseModel):
     query_family: str
     lane: Literal["paper", "evidence"]
     grounding_level: Literal["paper", "evidence"]
-    tier_filter: Literal["hot_only", "both"]
+    tier_filter: Literal["evidence_only", "both"]
     chunk_version_key: UUID | None = None
     serving_run_id: UUID
     cohort_id: int | None = None
@@ -960,11 +960,11 @@ churning without confidence; alarm threshold provisional.
 
 | Property | Value |
 |---|---|
-| Title | "Hot vs warm tier hit@k delta" |
+| Title | "Evidence vs mapped tier hit@k delta" |
 | Query | `SELECT dataset_name, tier, AVG(CAST(hit_at_k AS INT))::real AS hit_at_k FROM solemd.rag_quality_metrics WHERE tier IS NOT NULL AND recorded_at >= NOW() - INTERVAL '7 days' GROUP BY dataset_name, tier` |
-| Visualization | grouped bar (per dataset, hot vs warm side-by-side) |
+| Visualization | grouped bar (per dataset, evidence vs mapped side-by-side) |
 
-If hot is consistently below warm on multiple suites, the hot-tier
+If evidence is consistently below mapped on multiple suites, the evidence-tier
 promotion criteria (`07 §3.5`) need revisiting.
 
 ### §10.5 Per-policy A/B panel

@@ -33,7 +33,7 @@ const TIMELINE_HEIGHT = 44;
 const timelineStyle: React.CSSProperties = {
   height: TIMELINE_HEIGHT,
   overflow: "hidden",
-  backgroundColor: "var(--graph-bg)",
+  backgroundColor: "var(--background)",
 };
 
 /**

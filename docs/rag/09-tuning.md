@@ -828,7 +828,7 @@ Per-family bumps inside one connection:
 SET LOCAL maintenance_work_mem = '16GB';            -- 128 GB host only; 8GB on 68 GB
 SET LOCAL max_parallel_maintenance_workers = 12;    -- 128 GB only
 -- ...
-CREATE INDEX paper_citations_p07_pkey ON solemd.paper_citations_p07 (citing_corpus_id, cited_corpus_id);
+CREATE INDEX paper_blocks_p07_pkey ON solemd.paper_blocks_p07 (corpus_id, block_ordinal);
 -- session-scoped reset on transaction commit; pool returns connection unchanged
 ```
 
@@ -997,7 +997,7 @@ the XID horizon. If a long-held transaction blocks freezing
 worker will log:
 
 ```
-LOG: autovacuum: FREEZE table "solemd.paper_citations_p07" cancelled by lock conflict
+LOG: autovacuum: FREEZE table "solemd.paper_blocks_p07" cancelled by lock conflict
 ```
 
 `10-observability.md` consumes this from `pg_stat_all_tables.n_dead_tup`

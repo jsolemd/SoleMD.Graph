@@ -21,7 +21,7 @@
  * CanvasTexture soft disk as `map`, so the field stays a bit
  * defocused behind the interactive foreground constellations without
  * paying for a fullscreen CSS blur. The backdrop is the wrapper
- * div's `var(--graph-bg)`, so the connectome tracks light/dark
+ * div's `var(--background)`, so the connectome tracks light/dark
  * theme via CSS (Canvas is alpha-transparent).
  *
  * Motion: double-LPF cascade — a slow random walk on `goalVel`
@@ -318,7 +318,7 @@ export default function ConnectomeLoader({
   }, []);
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 bg-[var(--graph-bg)]">
+    <div className="pointer-events-none absolute inset-0 z-0 bg-[var(--background)]">
       <Canvas
         camera={{ position: [0, 0, 7], fov: 60 }}
         dpr={[1, 2]}

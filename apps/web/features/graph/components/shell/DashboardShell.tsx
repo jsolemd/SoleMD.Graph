@@ -13,7 +13,7 @@ const DashboardShellClient = dynamic(
     loading: () => (
       <div
         className="fixed inset-0"
-        style={{ backgroundColor: "var(--graph-bg)" }}
+        style={{ backgroundColor: "var(--background)" }}
       />
     ),
   }

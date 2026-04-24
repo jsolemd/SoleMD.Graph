@@ -993,7 +993,7 @@ async def test_open_or_resume_run_ignores_deferred_family_drift(
         manifest_uri=f"{tmp_path}/manifests",
         release_checksum="checksum-v1",
         families=(),
-        deferred_families=("tldrs", "s2orc_v2"),
+        deferred_families=("tldrs", "embeddings_specter_v2", "s2orc_v2"),
     )
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
@@ -1058,7 +1058,11 @@ async def test_open_or_resume_run_ignores_deferred_family_drift(
     assert resumed.ingest_run_id == ingest_run_id
     assert row is not None
     assert row["advisory_lock_key"] == 222
-    assert row["plan_manifest"]["deferred_families"] == ["tldrs", "s2orc_v2"]
+    assert row["plan_manifest"]["deferred_families"] == [
+        "tldrs",
+        "embeddings_specter_v2",
+        "s2orc_v2",
+    ]
 
 
 @pytest.mark.asyncio
@@ -1113,7 +1117,7 @@ async def test_open_or_resume_run_ignores_loaded_family_plan_drift(
         manifest_uri=f"{tmp_path}/new-root/manifests",
         release_checksum="checksum-v1",
         families=(citations_family,),
-        deferred_families=("authors", "tldrs", "s2orc_v2"),
+        deferred_families=("authors", "tldrs", "embeddings_specter_v2", "s2orc_v2"),
     )
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
@@ -1753,6 +1757,7 @@ def test_s2_default_plan_defers_opt_in_families(
     assert "authors" not in plan.family_names
     assert "authors" in plan.deferred_families
     assert "tldrs" in plan.deferred_families
+    assert "embeddings_specter_v2" in plan.deferred_families
     assert "s2orc_v2" in plan.deferred_families
 
 

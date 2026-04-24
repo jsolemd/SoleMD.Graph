@@ -7,7 +7,7 @@ export function GraphBundleErrorState({ error }: { error: Error }) {
   return (
     <div
       className="fixed inset-0 flex items-center justify-center px-6"
-      style={{ backgroundColor: "var(--graph-bg)" }}
+      style={{ backgroundColor: "var(--background)" }}
     >
       <div
         className="w-[min(520px,92vw)] rounded-3xl px-6 py-7"

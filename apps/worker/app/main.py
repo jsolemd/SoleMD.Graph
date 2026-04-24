@@ -13,7 +13,6 @@ from app.broker import configure_broker
 from app.config import settings
 from app.db import (
     build_pool_specs,
-    open_named_connection,
     open_pools,
     probe_postgres_target,
     probe_redis_target,
@@ -31,12 +30,7 @@ from app.ingest.cli import (
     parse_manual_release_request,
 )
 from app.ingest.source_retention import (
-    SourceRetentionBlocked,
-    SourceRetentionError,
-    apply_source_retention_report,
-    build_source_retention_report,
-    hold_source_retention_lock,
-    load_source_retention_run_state,
+    run_source_retention_operation,
 )
 from app.corpus.cli import (
     enqueue_corpus_selection_request,
@@ -326,62 +320,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("--execute requires --action archive or --action delete")
         if args.action is not None and not args.execute:
             parser.error("--action requires --execute")
-
-        async def _run() -> tuple[int, str]:
-            try:
-                async with open_named_connection(settings, name="ingest_write") as connection:
-                    async with hold_source_retention_lock(
-                        connection,
-                        source_code=args.source_code,
-                        release_tag=args.release_tag,
-                    ):
-                        run_state = await load_source_retention_run_state(
-                            connection,
-                            source_code=args.source_code,
-                            release_tag=args.release_tag,
-                        )
-                        report = build_source_retention_report(
-                            settings,
-                            source_code=args.source_code,
-                            release_tag=args.release_tag,
-                            run_state=run_state,
-                            dry_run=not args.execute,
-                        )
-                        changed: tuple[str, ...] = ()
-                        if args.execute:
-                            changed = apply_source_retention_report(
-                                report,
-                                action=args.action,
-                                archive_root=args.archive_root,
-                                provenance_ok=args.provenance_ok,
-                            )
-                        return (
-                            0,
-                            json.dumps(
-                                {
-                                    "changed": changed,
-                                    "report": json.loads(report.to_json()),
-                                },
-                                indent=2,
-                                sort_keys=True,
-                            ),
-                        )
-            except (SourceRetentionBlocked, SourceRetentionError) as exc:
-                payload = {
-                    "changed": (),
-                    "error": str(exc),
-                    "report": {
-                        "source_code": args.source_code,
-                        "release_tag": args.release_tag,
-                        "dry_run": not args.execute,
-                        "execution_blocked": True,
-                        "blockers": (str(exc),),
-                        "items": (),
-                    },
-                }
-                return (1 if args.execute else 0, json.dumps(payload, indent=2, sort_keys=True))
-
-        exit_code, payload = asyncio.run(_run())
+        exit_code, payload = asyncio.run(
+            run_source_retention_operation(
+                settings,
+                source_code=args.source_code,
+                release_tag=args.release_tag,
+                execute=args.execute,
+                action=args.action or "delete",
+                archive_root=args.archive_root,
+                provenance_ok=args.provenance_ok,
+            )
+        )
         print(payload)
         return exit_code
     if args.command == "enqueue-evidence-text":

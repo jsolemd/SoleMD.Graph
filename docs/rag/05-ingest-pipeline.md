@@ -21,8 +21,9 @@
 > **selected canonical corpus** remains owned by `05e-corpus-selection.md`.
 > Under the locked stage contract, `corpus` owns `corpus` membership plus
 > baseline canonical `papers` / `paper_text`; `mapped` owns heavier canonical
-> PT3 / authorship and any citation-edge enrichment actually required
-> downstream; `evidence` owns full-document payloads, chunking, and grounding.
+> PT3 / authorship and actual paper-to-paper citation edges in
+> `paper_citations`; `evidence` owns full-document payloads, chunking,
+> grounding, and in-text citation mentions.
 > Current code still includes some broad canonical promotion helpers as
 > transitional machinery; that reality does not redefine raw-ingest ownership.
 >
@@ -148,11 +149,11 @@ set. Per-shard sizes from a 2026-04-16 listing of
 | `paper-ids` | `paper-ids/paper-ids-NNNN.jsonl.gz` | 30 | raw identifier input; `05e` backfills canonical `papers` ids for admitted corpus papers |
 | `abstracts` | `abstracts/abstracts-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.abstract` for admitted corpus papers |
 | `authors` | `authors/authors-NNNN.jsonl.gz` | 30 | `s2_authors_raw`; per-paper author fanout still lands in `s2_paper_authors_raw` from `papers`, and `05e` promotes mapped-paper authorship into `authors` + `paper_authors` |
-| `citations` | `citations/citations-NNNN.jsonl.gz` (largest) | 358 | locked next-batch target: broad paper-level citation aggregates by default; full citation-edge rows only when a mapped/graph wave actually needs them |
-| `tldrs` | `tldrs/tldrs-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.tldr` for admitted corpus papers |
+| `citations` | `citations/citations-NNNN.jsonl.gz` (largest) | 358 | raw aggregate metrics by default; actual `paper_citations` edges are mapped-tier enrichment |
+| `tldrs` | `tldrs/tldrs-NNNN.jsonl.gz` | 30 | mapped-tier input; `05e` backfills `paper_text.tldr` for mapped papers, not broad raw corpus |
 | `publication-venues` | one shard | 1 | raw venue input for selection and later canonical backfill |
-| `s2orc` | `s2orc/`, `s2orc-v2/`, `s2orc_v2/` (empty today; slot reserved) | 0 | downstream child-wave document-spine input, not broad raw-ingest ownership |
-| `embeddings-specter_v2` | not present in 2026-03-10 release; reserved | 0 | `paper_embeddings_graph` halfvec(768) per `02 §4.6` |
+| `s2orc_v2` | `s2orc_v2/` when mirrored for the release | deferred | evidence-tier document-spine input only; not broad raw or mapped ownership |
+| `embeddings-specter_v2` | `embeddings-specter_v2/` when mirrored for the release | deferred | mapped-tier `paper_embeddings_graph` halfvec(768) input per `02 §4.6` |
 | `manifests` | `manifests/<dataset>.manifest.json` | 1 per ds | per-dataset planning input (§4.1) |
 
 `<dataset>.manifest.json` shape (verbatim from disk):
@@ -392,8 +393,8 @@ family's index list completes.
 Per partition, after that partition's indexes are built:
 
 ```sql
-ALTER TABLE solemd.paper_citations_p07 SET LOGGED;
-VACUUM (FREEZE, ANALYZE, PARALLEL 6) solemd.paper_citations_p07;
+ALTER TABLE solemd.paper_blocks_p07 SET LOGGED;
+VACUUM (FREEZE, ANALYZE, PARALLEL 6) solemd.paper_blocks_p07;
 ```
 
 `SET LOGGED` writes the entire partition to WAL (PG wiki on SET LOGGED).
@@ -506,12 +507,13 @@ the canonical paper layer idempotently so those tables reflect the
 selected universe rather than the full raw release breadth.
 
 **`citations` should converge on a broad aggregate surface, not broad edge
-persistence.** Largest dataset — 358 shards, ~330 GB compressed. The locked
-next implementation batch replaces broad pre-corpus citation-edge persistence
-with paper-level aggregate metrics such as `reference_out_count`,
-`influential_reference_count`, and ideally `linked_reference_count`. Full
-`paper_citations` backfill remains a mapped-owned or child-wave enrichment when
-graph / retrieval work actually needs edge rows.
+persistence.** Largest dataset — 358 shards, ~330 GB compressed. Raw ingest
+writes paper-level aggregate metrics such as `reference_out_count`,
+`influential_reference_count`, and `linked_reference_count` to
+`s2_paper_reference_metrics_raw`. Actual paper-to-paper edges belong to mapped
+enrichment in `paper_citations`, scoped to mapped citing papers and resolving
+`cited_corpus_id` only when the cited paper is already canonical. Evidence owns
+only text-anchored citation mentions in `paper_citation_mentions`.
 
 **`abstracts`** remain raw text input until `05e` backfills
 `paper_text.abstract` for mapped papers. Storage remains `EXTERNAL` per
@@ -527,8 +529,15 @@ canonical `papers.pmid`, `doi_norm`, `pmc_id`, and `s2_paper_id` for
 mapped papers. Those ids are then used by PT3's `pmid → corpus_id`
 lookup (§5.3).
 
-**`tldrs`, `publication-venues`** — same shape; `embeddings-specter_v2`
-covered in §5.4.
+**`publication-venues`** follows the same raw family shape as the other
+default S2 files.
+
+**`tldrs`** is deliberately not part of default broad raw ingest. The mapped
+rollout consumes it for active mapped papers and backfills `paper_text.tldr`
+there; retention must keep the source shards until that mapped wave has either
+consumed or explicitly waived them.
+
+`embeddings-specter_v2` is covered in §5.4.
 
 ### 5.2 PubTator3 BioCXML → warehouse
 
@@ -610,17 +619,20 @@ newly admitted `corpus_id`s flush at family-boundary checkpoints.
 
 ### 5.4 Graph-embedding ingest / generation
 
-`embeddings-specter_v2` is not present in the 2026-03-10 release on
-disk. The graph lane still requires `paper_embeddings_graph`, so the
-source contract is now explicit:
+`embeddings-specter_v2` is a mapped-tier graph source, not default raw
+ingest. If the local mirror contains S2's release shards for the active
+release, the mapped rollout consumes only the active mapped cohort and writes
+`paper_embeddings_graph`. If the local mirror is missing those shards, the
+graph lane still requires `paper_embeddings_graph`, so the source contract is:
 
 1. **Use upstream S2 embeddings when the release actually carries them.**
 2. **Otherwise generate SPECTER2 locally for the active graph rollout wave**
    and write the same `paper_embeddings_graph` rows.
 
-This is a local project policy, not a vendor guarantee. It keeps the
-graph lane buildable without pretending the upstream release always
-ships the embedding shard.
+This is a local project policy around our mirror and rollout scope. It keeps
+the graph lane buildable without pretending every local release mirror already
+contains the embedding shard or that the first mapped wave needs full-upstream
+coverage.
 
 DuckDB read:
 
@@ -762,12 +774,13 @@ Retention tiers:
 Default footprint rules:
 
 - S2 citation ingest defaults to aggregate paper-level metrics in
-  `solemd.s2_paper_reference_metrics_raw`. Full citation-edge promotion is a
-  downstream mapped-corpus choice, not part of the broad raw default.
-- S2ORC / full-text shard ingest is optional and downstream-gated. It should
-  not be pulled into the default raw release just because the files exist.
-  Treat it like graph embeddings: load or generate it only for the active
-  mapped / evidence wave that needs the richer surface.
+  `solemd.s2_paper_reference_metrics_raw`. Actual `paper_citations` edge
+  materialization is a mapped-corpus enrichment, not part of the broad raw
+  default.
+- `s2orc_v2/` is evidence-tier only. It should not be pulled into default raw
+  ingest or mapped rollout just because the files exist.
+- `tldrs/` and `embeddings-specter_v2/` are mapped-tier inputs. Load or
+  generate them only for the active mapped wave that needs the richer surface.
 - PubTator BioCXML is needed for high-fidelity text/entity extraction, but the
   compressed tarballs do not need to remain on local hot storage after the
   corresponding release family is committed and recoverable from an external
@@ -797,6 +810,9 @@ the latest `ingest_runs.families_loaded`, and emits a dry-run JSON report. It
 never mutates files unless called with `--execute --action archive|delete`.
 `delete` additionally requires `--provenance-ok` because raw release files are
 recoverable only through upstream re-download or an external archive.
+`archive` is intentionally limited to a same-filesystem rename; off-device
+copies must be performed and verified outside the worker before using the
+guarded delete path.
 
 For `s2:2026-03-10`, the intended policy is:
 
@@ -805,8 +821,9 @@ For `s2:2026-03-10`, the intended policy is:
 - Keep `papers/` and `abstracts/` until their family appears in
   `families_loaded`; before the full S2 release publishes they are archive
   candidates, not automatic delete candidates.
-- Treat `s2orc_v2/` and `tldrs/` as downstream-gated delete candidates because
-  they are not part of default raw ingest.
+- Keep `tldrs/` and `embeddings-specter_v2/` until the mapped rollout consumes
+  or explicitly waives them.
+- Keep `s2orc_v2/` until the evidence tier consumes or explicitly waives it.
 - Keep `manifests/` on hot storage for checksum/provenance validation.
 - Treat unregistered directories such as `paper-ids/` as manual-review items,
   not automatic deletion targets.
@@ -1228,8 +1245,8 @@ The next implementation PR should not stop at actor stubs. Minimum acceptance:
 - one end-to-end local sample ingest writes real warehouse rows and updates
   `ingest_runs`
 - S2 citations now default to refresh-safe aggregate metrics in
-  `solemd.s2_paper_reference_metrics_raw`; canonical `paper_citations` stays
-  deferred unless a mapped/graph wave explicitly needs edge rows
+  `solemd.s2_paper_reference_metrics_raw`; actual `paper_citations` edge
+  materialization is mapped-owned enrichment
 - docs move with code if the file layout, queue names, or role boundaries
   change
 - chunking stays downstream of the raw ingest lane rather than being
@@ -1253,8 +1270,8 @@ Beyond `02 §5`:
    the partition's hash bucket.** §4.3 routing correctness; audited
    per cycle:
    ```sql
-   SELECT count(*) FROM solemd.paper_citations_p07
-    WHERE (hashint8(citing_corpus_id) % 32 + 32) % 32 <> 7;
+   SELECT count(*) FROM solemd.paper_blocks_p07
+    WHERE (hashint8(corpus_id) % 32 + 32) % 32 <> 7;
    -- expected: 0
    ```
 5. **`source_release_id` on every fact row is `<=` `paper_lifecycle.last_seen_release_id`.**
@@ -1276,8 +1293,9 @@ The operational selected stage contract is owned by `05e` as the
 
 - `corpus` owns `solemd.corpus`, `papers`, `paper_text`, and the selection
   audit surfaces
-- `mapped` owns heavier canonical PT3 / authorship and any citation-edge
-  enrichment actually required downstream
+- `mapped` owns heavier canonical PT3 / authorship and actual paper-to-paper
+  citation enrichment in `paper_citations`
+- `evidence` owns text-anchored citation mentions in `paper_citation_mentions`
 
 Current code still includes some broad canonical promotion helpers on
 `ingest_write`; treat those as transitional implementation inventory rather
@@ -1375,9 +1393,10 @@ implementation contract, and no FDW surface belongs here.
 
 Forward-tracked; none block subsequent docs:
 
-- **SPECTER2 shard arrival.** `embeddings-specter_v2` not on disk in
-  2026-03-10. §5.4 reserves the slot; once shards arrive, §6.5 wall
-  adds 3–6 h for HNSW build (only if the `02 §4.6` trigger fires).
+- **SPECTER2 mirror completeness.** `embeddings-specter_v2` is mapped-tier
+  input. §5.4 reserves the loader path; once shards are mirrored or local
+  generation is scheduled for the mapped cohort, §6.5 wall adds 3-6 h for HNSW
+  build only if the `02 §4.6` trigger fires.
 - **Parquet vs JSONL discrepancy with the brief.** Brief mentions
   "parquet/jsonl"; on-disk reality is JSONL.gz only. DuckDB handles
   both; §5.1 uses `read_json_auto` today. Source:

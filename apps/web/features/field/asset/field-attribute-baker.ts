@@ -104,6 +104,7 @@ export interface FieldAttributeBakeOptions {
 export const ORB_PAPER_OVERRIDE_ATTRIBUTES = [
   "aSpeed",
   "aBucket",
+  "aClickPack",
   "aStreamFreq",
   "aFunnelThickness",
   "aFunnelNarrow",

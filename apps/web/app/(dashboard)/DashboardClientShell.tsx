@@ -32,6 +32,7 @@ import {
 } from "@/features/field/scroll/field-scene-store";
 import type { FieldController } from "@/features/field/controller/FieldController";
 import { installBlobMutationSubscriber } from "@/features/orb/bake/install-blob-mutation-subscriber";
+import { installBlobPointsSubscriber } from "@/features/orb/interaction/install-blob-points-subscriber";
 import { useOrbGeometryMutationStore } from "@/features/orb/stores/geometry-mutation-store";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import { useShellVariant } from "@/features/graph/components/shell/use-shell-variant";
@@ -98,6 +99,8 @@ export function DashboardClientShell({
   // returns to /graph — the baker will re-stream on re-mount.
   const blobGeometrySubscriber =
     fieldMode === "orb" ? installBlobMutationSubscriber : undefined;
+  const blobPointsSubscriber =
+    fieldMode === "orb" ? installBlobPointsSubscriber : undefined;
 
   useEffect(() => {
     if (fieldMode === "orb") return;
@@ -121,23 +124,10 @@ export function DashboardClientShell({
       <FieldModeProvider mode={fieldMode}>
         <FieldSceneStoreProvider store={sceneStore}>
           <FieldRuntimeContext.Provider value={bridge}>
-            {/* Dashboard backdrop. Body bg is clobbered by Mantine's
-                default `--mantine-color-body` (#242424) regardless of
-                our `body { background-color: var(--background) }` in
-                styles/base.css — an upstream specificity issue this
-                route group can't solve globally. Paint `--graph-bg`
-                behind the canvas via a z:-1 backdrop so (a) particles
-                render above it and (b) the dashboard retains its
-                intended near-black surface even in surfaces that
-                don't wrap their own opaque shell. */}
-            <div
-              aria-hidden
-              className="pointer-events-none fixed inset-0 -z-10"
-              style={{ backgroundColor: "var(--graph-bg)" }}
-            />
             <FieldCanvas
               activeIds={FIELD_STAGE_ITEM_IDS}
               blobGeometrySubscriber={blobGeometrySubscriber}
+              blobPointsSubscriber={blobPointsSubscriber}
               cameraRef={cameraRef}
               className="fixed inset-0"
               onControllerReady={handleControllerReady}

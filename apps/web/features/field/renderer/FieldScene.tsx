@@ -10,6 +10,9 @@ import {
   NormalBlending,
   ShaderMaterial,
   type Camera,
+  type Points,
+  type Scene,
+  type WebGLRenderer,
 } from "three";
 import { FIELD_NON_DESKTOP_BREAKPOINT } from "../field-breakpoints";
 import { BlobController as BlobControllerClass } from "../controller/BlobController";
@@ -53,6 +56,25 @@ export type BlobGeometrySubscriber = (args: {
   invalidate: () => void;
 }) => () => void;
 
+/**
+ * Out-of-tree subscriber for the blob layer's THREE.Points handle +
+ * the R3F renderer + scene + camera.
+ *
+ * Passed to FieldScene by orb mode so the picker can render the blob's
+ * geometry against the same shader uniforms as the display pass. The
+ * subscriber is responsible for enabling the blob's picking layer
+ * (typically `points.layers.enable(1)`) and publishing a pickSync
+ * handle; cleanup disables the layer and retracts the handle.
+ */
+export type BlobPointsSubscriber = (args: {
+  points: Points;
+  material: ShaderMaterial;
+  renderer: WebGLRenderer;
+  scene: Scene;
+  camera: Camera;
+  invalidate: () => void;
+}) => () => void;
+
 interface FieldSceneProps {
   activeIds?: readonly FieldStageItemId[];
   cameraRef?: MutableRefObject<Camera | null>;
@@ -70,6 +92,14 @@ interface FieldSceneProps {
    * into the same 16384-particle buffer.
    */
   blobGeometrySubscriber?: BlobGeometrySubscriber;
+  /**
+   * Optional blob-points subscriber. When provided, FieldScene installs
+   * it once the blob THREE.Points handle is attached. Used by orb mode
+   * to wire GPU picking against the live renderer/scene/camera — the
+   * subscriber enables a layer mask bit on blob so the picker can
+   * exclude stream/objectFormation from the picking pass.
+   */
+  blobPointsSubscriber?: BlobPointsSubscriber;
 }
 
 interface StageLayerHandle {
@@ -78,6 +108,7 @@ interface StageLayerHandle {
   mouseWrapper: MutableRefObject<Group | null>;
   wrapper: MutableRefObject<Group | null>;
   geometry: MutableRefObject<BufferGeometry | null>;
+  points: MutableRefObject<Points | null>;
 }
 
 // Maze parity toggle: source exposes `?blending` to swap AdditiveBlending
@@ -109,7 +140,7 @@ function FieldStageLayer({
     <group ref={handles.wrapper} position={[0, 0, 0]} scale={[1, 1, 1]}>
       <group ref={handles.mouseWrapper}>
         <group ref={handles.model}>
-          <points frustumCulled={false}>
+          <points ref={handles.points} frustumCulled={false}>
             <bufferGeometry ref={handles.geometry}>
               <bufferAttribute attach="attributes-position" args={[buffers.position, 3]} />
               <bufferAttribute attach="attributes-aMove" args={[buffers.aMove, 3]} />
@@ -124,6 +155,7 @@ function FieldStageLayer({
               <bufferAttribute attach="attributes-aFunnelStartShift" args={[buffers.aFunnelStartShift, 1]} />
               <bufferAttribute attach="attributes-aFunnelEndShift" args={[buffers.aFunnelEndShift, 1]} />
               <bufferAttribute attach="attributes-aBucket" args={[buffers.aBucket, 1]} />
+              <bufferAttribute attach="attributes-aClickPack" args={[buffers.aClickPack, 4]} />
             </bufferGeometry>
             <shaderMaterial
               ref={handles.material}
@@ -185,9 +217,13 @@ export function FieldScene({
   sceneStateRef,
   stageReady = true,
   blobGeometrySubscriber,
+  blobPointsSubscriber,
 }: FieldSceneProps) {
   const viewportWidth = useThree((state) => state.size.width);
   const invalidate = useThree((state) => state.invalidate);
+  const gl = useThree((state) => state.gl);
+  const scene = useThree((state) => state.scene);
+  const camera = useThree((state) => state.camera);
   const isMobile = viewportWidth < FIELD_NON_DESKTOP_BREAKPOINT;
   const colorScheme = useComputedColorScheme("dark");
   const lightModeValue = colorScheme === "light" ? 1 : 0;
@@ -260,16 +296,19 @@ export function FieldScene({
   const blobMouseWrapperRef = useRef<Group | null>(null);
   const blobWrapperRef = useRef<Group | null>(null);
   const blobGeometryRef = useRef<BufferGeometry | null>(null);
+  const blobPointsRef = useRef<Points | null>(null);
   const streamMaterialRef = useRef<ShaderMaterial | null>(null);
   const streamModelRef = useRef<Group | null>(null);
   const streamMouseWrapperRef = useRef<Group | null>(null);
   const streamWrapperRef = useRef<Group | null>(null);
   const streamGeometryRef = useRef<BufferGeometry | null>(null);
+  const streamPointsRef = useRef<Points | null>(null);
   const objectFormationMaterialRef = useRef<ShaderMaterial | null>(null);
   const objectFormationModelRef = useRef<Group | null>(null);
   const objectFormationMouseWrapperRef = useRef<Group | null>(null);
   const objectFormationWrapperRef = useRef<Group | null>(null);
   const objectFormationGeometryRef = useRef<BufferGeometry | null>(null);
+  const objectFormationPointsRef = useRef<Points | null>(null);
 
   const blobHandles = useMemo<StageLayerHandle>(
     () => ({
@@ -278,6 +317,7 @@ export function FieldScene({
       mouseWrapper: blobMouseWrapperRef,
       wrapper: blobWrapperRef,
       geometry: blobGeometryRef,
+      points: blobPointsRef,
     }),
     [],
   );
@@ -288,6 +328,7 @@ export function FieldScene({
       mouseWrapper: streamMouseWrapperRef,
       wrapper: streamWrapperRef,
       geometry: streamGeometryRef,
+      points: streamPointsRef,
     }),
     [],
   );
@@ -298,6 +339,7 @@ export function FieldScene({
       mouseWrapper: objectFormationMouseWrapperRef,
       wrapper: objectFormationWrapperRef,
       geometry: objectFormationGeometryRef,
+      points: objectFormationPointsRef,
     }),
     [],
   );
@@ -434,6 +476,41 @@ export function FieldScene({
     blobHandles,
     invalidate,
     pointSources.blob,
+  ]);
+
+  // Install the blob-points subscriber (orb-mode GPU picking). The
+  // subscriber receives the blob THREE.Points + its ShaderMaterial + the
+  // R3F renderer/scene/camera, publishes a pickSync handle to the orb
+  // store, and enables a layers bit on blob so the picker can exclude
+  // stream/objectFormation from the picking pass. Cleanup retracts the
+  // handle (identity-guarded) and disables the layer bit.
+  useEffect(() => {
+    if (!blobPointsSubscriber) return;
+    if (!activeIdSet.has("blob")) return;
+    if (!pointSources.blob) return;
+    const points = blobHandles.points.current;
+    const material = blobHandles.material.current;
+    if (!points || !material) return;
+    const dispose = blobPointsSubscriber({
+      points,
+      material,
+      renderer: gl,
+      scene,
+      camera,
+      invalidate,
+    });
+    return () => {
+      dispose();
+    };
+  }, [
+    activeIdSet,
+    blobHandles,
+    blobPointsSubscriber,
+    camera,
+    gl,
+    invalidate,
+    pointSources.blob,
+    scene,
   ]);
 
   useFrame((state, delta) => {

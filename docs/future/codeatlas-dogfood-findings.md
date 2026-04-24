@@ -4,12 +4,266 @@ Dogfood pass run against `mcp__codeatlas-graph__*` using real navigation
 tasks in SoleMD.Graph. This doc records **server-side** issues that live
 in `/workspaces/SoleMD.Infra/codeatlas/`.
 
+## Round 9 (2026-04-23) — R1–R7 structural navigation upgrades
+
+Round 8 closed the six distortions that would make an evaluating agent
+take the *wrong* action. Round 9 pivots from "stop distorting" to **"make
+navigation structurally better"** — new fields that surface already-
+stored data, new server-side classifications, new advisory blocks, and
+one closure of a long-filed deferred (S13). All seven are additive.
+
+- ✅ **R1** — Cross-tool `payload.truncation` advisory block
+  (`{hit_limit, kind, observed, limit, hint?}`) with `kind ∈ {result,
+  depth, step}`. Helper in
+  `code_search/server/response_postprocess.py`. Wired into
+  `dependents` (`kind=depth` when BFS beyond `max_depth` shows more
+  reach, otherwise `kind=result` when pagination cuts the list),
+  `find_patterns` (`kind=result` when `groups == limit`), `list_flows`
+  (`kind=result` when `flows == limit`), `get_flow` (`kind=step` when
+  `node_count > len(steps)`), and `inspect_symbol` (caller/callee
+  caps). Tests: new `tests/test_truncation_advisory.py` (8 cases).
+- ✅ **R2** — `inspect_symbol` surfaces stored signature metadata.
+  `payload.resolved.signature = {args, param_types, return_type,
+  decorators, is_exported, is_test}` — pulled from the Function node
+  the writer already populates. For class resolves, each method in
+  `class_rollup.methods` carries the same fields. File:
+  `code_search/server/handlers/inspect.py`,
+  `code_search/server/handlers/inspect_class.py`,
+  `code_search/neo4j/queries_analysis.py`. Tests: extended
+  `tests/test_inspect_handler.py` (helper + class-rollup shape).
+- ✅ **R3** — Fuzzy name candidates on `inspect_symbol` no_match.
+  Bare-name Cypher with APOC `sorensenDiceSimilarity >= 0.72` and
+  prefix fallback when APOC is unavailable. Emits
+  `payload.candidates: [{name, file, line, kind}]` (top 3) and
+  rewrites `next_action` to `"Did you mean …?"`. File:
+  `code_search/server/handlers/inspect.py`. Tests: new
+  `tests/test_inspect_fuzzy_candidates.py` (6 cases including the
+  APOC-missing fallback).
+- ✅ **R4** — Server-side `kind` classification on
+  `find_patterns(pattern="reuse_candidates")` groups. 8-rule ordered
+  classifier: `hook` > `class_method` > `component` > `store` >
+  `css_constant` > `route_handler` > `constant` > `util`. Markdown
+  formatter groups by kind. Files:
+  `code_search/server/handlers/patterns.py`. Tests: new
+  `tests/test_reuse_candidates_kind.py` (parametric ruleset + markdown
+  section ordering).
+- ✅ **R5** — Per-community rank on
+  `find_patterns(pattern="hub_functions")`. Widened Cypher to project
+  `community_id` + `community_label`; oversamples by
+  `max(limit*5, limit+50)` (capped at 500) and computes
+  `per_community_rank` in Python before display trimming, so a
+  community whose top hub ranks globally #7 still shows as its
+  community's #1. File:
+  `code_search/server/handlers/patterns.py`. Tests: new
+  `tests/test_hub_functions_per_community.py` (rank-per-community +
+  display-cap-after-ranking).
+  **Codex rescue verification:** handed the R5 diff to `codex:rescue`
+  before merge. Verdict: "conditionally sound" — no correctness bug in
+  returned rows. Codex flagged a tie-break concern on equal in_degree
+  within the same community (fixed post-rescue by extending ORDER BY to
+  `calls_in_degree DESC, importance_score DESC, name ASC`). Two noted
+  *design limitations* kept as-is: (a) the 500-row oversample ceiling is
+  always above the schema-max `limit=200`, but very large communities'
+  tails beyond 500 are silently unranked; (b) null-community rows share
+  one "unclustered" bucket and the markdown suppresses the line for
+  those rows rather than emitting `rank=None`.
+- ✅ **R6** — `get_flow` community summary + step truncation.
+  `flow.steps_truncated: bool` (true when Flow node's stored
+  `node_count` exceeds returned step count), `flow.community_map:
+  [{community_id, label, node_count, file_count}]`,
+  `flow.community_boundary_crossings: int`. Cypher in
+  `code_search/neo4j/queries_flows.py` additionally projects
+  `community_id` + `community_label` per step; enrichment in
+  `code_search/tools/neo4j_tools.py`. Tests: new
+  `tests/test_get_flow_community_summary.py` (multi-community flow +
+  truncation case).
+- ✅ **R7** — Close S13: `slice_build(mode=extend)` emits structured
+  `extend_refused` on no-op. When zero symbols were added, flips
+  `status` → `"no_op"` and attaches `extend_refused = {reason,
+  budget_before, budget_after, new_symbols_resolved,
+  new_symbols_added}` with reason in `{budget_exhausted,
+  duplicate_entry_points, no_new_symbols}`. Success path gains an
+  `added_symbols: int` count. File:
+  `code_search/server/handlers/slices.py`. Tests: new
+  `tests/test_slice_extend_observability.py` (4 cases — one per
+  reason + success sanity).
+
+**Tests:** full codeatlas suite — **1210 passed, 20 skipped** in 238.42s
+(Round-8 baseline 1167 → +43 new tests for R1–R7: 8 truncation, 3
+signature/class-rollup, 6 fuzzy-candidates, 14 reuse-kind, 2
+hub-per-community, 2 get-flow community, 4 slice-extend).
+**Image / rebuild:** `DOCKER_BUILDKIT=1 docker build -t
+infra-codeatlas:latest -f service/Dockerfile .` →
+`docker compose -f compose.shared.yaml -f codeatlas/compose.yaml -p
+infra --project-directory codeatlas up -d codeatlas`. Smoke:
+`curl http://localhost:8100/readyz` reports
+`"status":"ready","projects":["solemd.graph","solemd.infra","solemd.make"]`.
+**Live verification:** `/tmp/codeatlas-dogfood/round9/` —
+`r1-dependents.json` (kind=step via get_flow below; dependents on
+`apps/worker/app/db.py` had no truncation — 0 deps, not a
+truncation scenario),
+`r2-inspect-signature.json`
+(`{args:["settings","names"], param_types:["Settings","tuple[PoolName, ...] | None"],
+return_type:"WorkerPools", decorators:[], is_exported:false, is_test:false}`),
+`r3-fuzzy-typo.json` (typo "FieldControler" → top candidate
+`bindFieldControllers` at line 26 of `field-scroll-driver.ts`),
+`r4-reuse-kind.json` (kinds observed: `hook`, `component`, `util`,
+`store` across 30 Cypher rows — display-compacted to 8 per
+`_compact_find_patterns_payload`; truncation attached with
+`observed=30, limit=30`),
+`r5-hub-per-community.json` (each returned row carries `community_id`
++ `community_label` e.g. `apps/worker (open_pools)`, `apps/web (add)` —
+`open_pools` shows `per_community_rank: 2` behind `close` in
+community #36),
+`r6-get-flow.json` (`MapPage`: `steps_truncated: true` (476/479 steps),
+`community_boundary_crossings: 105`, `community_map` size ≥ 3;
+envelope also carries `truncation.kind: "step", observed: 476,
+limit: 479`),
+`r7-slice-extend-noop.json` (extend with empty `entry_points` →
+`status: "no_op"`, `extend_refused: {reason: "no_new_symbols",
+budget_before: 1184, budget_after: 1184, new_symbols_resolved: 0,
+new_symbols_added: 0}`).
+
+**Round-10 candidates (not in scope):** E1-F2 (Dramatiq actor-message
+edges), E1-F3 (`analyze_impact` dead-code cross-check vs live callers),
+E1-F4 (`index` file re-export surfacing), E2-F2
+(`duplicate_signatures.actionability` scoring), E2-F4 (CSS-var runtime
+detection via string-template analysis), E3-F3 (DECORATOR_USES edges),
+E3-F5 (`graph_overview` per-community test coverage), E3-F6
+(`find_route_handlers` — or `find_patterns(pattern="route_handlers")` —
+convenience tool).
+
+
 ## Status legend
 
 - ✅ IMPLEMENTED — code edits landed in `/workspaces/SoleMD.Infra/`;
   requires a server restart (`docker compose restart codeatlas` or the
   equivalent) to take effect.
 - 📋 FILED — documented, not yet implemented.
+
+## Round 8 (2026-04-23) — Q1–Q6 close the evaluation-distortion gap
+
+Round 7's evaluation report named four new distortions (F1–F4) plus two
+pre-existing S-findings (S7, S11) that would cause an agent to take the
+wrong action if acted on blindly. Round 8 ships the subset of fixes
+whose absence would produce wrong deletions, wrong hotspot calls,
+missed cache staleness, or silently under-covered doc searches. All
+six are VERIFIED live against a post-reindex distortion re-check
+(cache refreshed 2026-04-24T03:56:21Z;
+`/tmp/codeatlas-dogfood/round8/` has the persisted JSON).
+
+- ✅ **Q1 (F3)** — `/route.ts` / `/route.tsx` added to
+  `NEXTJS_ROUTE_SUFFIXES`. One-line change with dual effect: the
+  dead-code Cypher now suppresses App-Router handlers (they have no
+  static caller but are HTTP entry points), and `writer_metadata.py`
+  sets `is_route_component=true` on them so they get promoted in
+  `_ENTRY_POINT_QUERY` and flow detection. File:
+  `code_search/neo4j/query_specs.py`. Tests: extended
+  `tests/test_neo4j_queries.py::test_graph_overview_dead_code_uses_shared_route_suffix_params`.
+  **Live check:** `overview.dead_code_candidates` (10 entries) has
+  zero `/route.ts` files after reindex; `list_flows` now lists 3
+  route-handler flows (`HEAD`, `route::GET#L150`, `serveAsset` all
+  under `apps/web/app/graph-bundles/[checksum]/[asset]/route.ts`).
+- ✅ **Q2 (F1)** — `orphan_exports` inherits the non-production filter.
+  Added new `_NON_PRODUCTION_PATH_SEGMENTS = ("/_smoke/", "/_templates/")`
+  (CONTAINS-anywhere, not prefix-only) on top of the Round-7 prefix /
+  suffix list; threaded through both `build_dead_code_query` and
+  `_query_orphan_exports`. Exposed `include_non_production: bool =
+  false` on the `find_patterns` handler (same opt-in shape as
+  `dead_code_candidates`). Files:
+  `code_search/neo4j/query_specs.py`,
+  `code_search/server/handlers/patterns.py`,
+  `code_search/server/tool_definitions.py`. Tests:
+  `tests/test_overview_dead_code_filter.py` (extended with segment
+  assertions), new `tests/test_patterns_orphan_filter.py` (2 tests).
+  **Live check:** default `find_patterns(pattern="orphan_exports")`
+  yields zero `_smoke/`/`_templates/` entries out of 8 orphans;
+  `include_non_production=true` surfaces 7 — exact same surface,
+  toggle works.
+- ✅ **Q3 (F2)** — community labeler pivots from import-based to
+  member-path-based domain. New `_dominant_path_prefix` (longest
+  path-segment prefix covering ≥60% of member paths, counted against
+  the matched cohort at each depth so non-co-occurring segments can't
+  chain into a spurious prefix) feeds `_member_path_domain_label`.
+  Falls back to the legacy `top_modules` import domain when the
+  dominant prefix has <2 meaningful segments after stopword filtering.
+  The Cypher subquery was widened to return `paths[0..200] AS
+  member_paths`. File: `code_search/neo4j/writer_analysis.py`. Tests:
+  `tests/test_neo4j_community_labels.py` — 9 new tests covering the
+  dominance helper, cohort-narrowing regression, empty/singleton
+  inputs, all-identical paths, stopword-only collapse, and end-to-end
+  label flip.
+  **Codex rescue verification:** handed the Q3 diff to
+  `codex:rescue` before merge; it flagged a real bug (per-depth
+  counting didn't narrow to the matched cohort, so a mixed-root
+  community could assemble a spurious chained prefix), which was
+  fixed before rebuild. Codex also noted missing edge-case coverage;
+  tests were added for each.
+  **Live check:** `config (…)` labels are gone entirely. The 446-node
+  worker-actor community is now `apps/worker (open_pools)`. All
+  top-8 communities use `apps/web (…)` / `apps/worker (…)` domains.
+- ✅ **Q4 (F4)** — `_TOP_FUNCTIONS_QUERY` filters tiny utility nodes.
+  Added `coalesce(fn.cyclomatic_complexity, 0) >= 3 AND
+  coalesce(fn.end_line - fn.line_number, 0) >= 3` to the WHERE clause.
+  The original plan specified `>= 2 / >= 3` but the live `now()`
+  stub has `cc=2, span=3` (4-line function with one `if`), so the
+  looser thresholds still admitted it — bumped the complexity floor to
+  `>= 3`. This is a display filter only: the underlying
+  `pagerank_score` is still stored on each node; the hotspot
+  *readout* just demotes simple utilities. File:
+  `code_search/neo4j/query_specs.py`. Tests: new
+  `test_top_functions_filters_tiny_utility_nodes` in
+  `tests/test_neo4j_queries.py`.
+  **Live check:** `now()` is absent from `overview.top_functions`;
+  top 8 are now real branching hotspots (`resolve`, `open_pools`,
+  `run_release_ingest`, `runtime_settings_factory`,
+  `run_corpus_selection`, `acquire_paper_text`, `WikiPanel`,
+  `write_jsonl_gz`).
+- ✅ **Q5 (S7)** — `graph_overview` surfaces cache staleness at the
+  top-level `graph_context` block. Added `_compute_cache_advisory`
+  helper in `response_postprocess.py` that derives
+  `is_cached`, `cache_refreshed_at`, `cache_age_seconds`, and
+  `cache_advisory` (`"fresh"` <10min, `"stale (>1h)"` >1h, else
+  `"aging"`) from the precomputed overview's timestamp. Backward-compat
+  fields inside `payload.overview.cache_source` /
+  `.cache_refreshed_at` are preserved. File:
+  `code_search/server/response_postprocess.py`. Tests: new
+  `tests/test_graph_overview_cache_signal.py` (7 tests including
+  boundary thresholds and a `Z`-suffix tolerance test).
+  **Live check:** `payload.graph_context` now carries `is_cached=true,
+  cache_advisory="fresh", cache_age_seconds=52.6,
+  cache_refreshed_at="2026-04-24T03:56:21Z"`.
+- ✅ **Q6 (S11)** — `search_docs_multi` splits the merged `errors`
+  list into two structured fields: `unmatched_library_ids:
+  list[str]` (IDs that resolved to nothing) and `skipped_libraries:
+  list[{library_id, reason}]` (IDs that resolved but were unavailable,
+  e.g. `reason: "pending_indexing"`). Humanized warning prose still
+  appears in the markdown path unchanged. File:
+  `doc_search/tools/search.py`. Tests:
+  `tests/test_doc_search_resolve.py` — added
+  `test_query_docs_multi_reports_unmatched_and_skipped_structurally`.
+  **Live check:** calling with `library_ids=["/foo/bar",
+  "/greensock/gsap"]` returns `unmatched_library_ids: ["/foo/bar"]`
+  and `normalized_library_ids: {"/greensock/gsap": "/greensock/GSAP"}`.
+
+**Tests:** full codeatlas suite — **1167 passed, 20 skipped** in 238.53s.
+**Image:** `infra-codeatlas:latest` digest
+`sha256:88c35fb37e20837bbb17593d435e1ff1613594dc03ea2e5b2e3aac346981ee10`.
+**Rebuild / recreate:** `DOCKER_BUILDKIT=1 docker build -t
+infra-codeatlas:latest -f service/Dockerfile .` →
+`docker compose -f compose.shared.yaml -f codeatlas/compose.yaml -p
+infra --project-directory codeatlas up -d codeatlas`.
+**Persisted re-check JSON:** `/tmp/codeatlas-dogfood/round8/` —
+`graph-overview.json`, `list-flows.json`, `orphan-exports.json`,
+`orphan-exports-with-nonprod.json`, `search-docs-multi.json`,
+`verification-summary.md`.
+
+**Still filed (out of Round-8 scope):** S1 (duplicate Cosmograph
+library registration — libraries.yaml curation), S2 (TS↔Python CALLS
+bleed — multi-round refactor), S8 (`search_code` semantic latency —
+performance investigation), S13 (`slice_build` extend no-op — narrow,
+doesn't distort evaluation), S16 (compound-semantic ranking — ranking
+tuning).
 
 ## Round 7 (2026-04-24) — P1–P6 + evaluation deliverable
 

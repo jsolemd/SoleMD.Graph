@@ -146,7 +146,7 @@ Contract:
   Identity comes from the enclosing `<serving_run_id>` / `<chunk_version_key>`.
 - Cross-reference: the OpenSearch bulk-load pattern in
   `07-opensearch-plane.md` reads from
-  `archives/serving-packages/{hot,warm}/<serving_run_id>/*`, not from a
+  `archives/serving-packages/{evidence,mapped}/<serving_run_id>/*`, not from a
   streaming PG pipe.
 
 ## 5. Sizing envelope

@@ -248,9 +248,9 @@ Each item is marked PLANNED (not started / early), IN PROGRESS, or SHIPPED.
 |---|---|---|
 | PubTator3 tab load + domain filter | SHIPPED | |
 | S2 bulk papers load + domain filter | SHIPPED | |
-| S2 Batch API enrichment | SHIPPED | See `s2_client.py` docstring |
+| S2 release-backed enrichment | IN PROGRESS | Raw defaults are release files; TLDRs and SPECTER2 are mapped-tier inputs |
 | BioCXML archive overlay pipeline | SHIPPED | 4-stage archive -> member -> overlay backfill |
-| Monthly diff-based S2 refresh | IN PROGRESS | Workflow defined in `s2_client.py` docstring |
+| Monthly diff-based S2 refresh | IN PROGRESS | Use S2 Datasets API release diffs; live Graph API is bounded enrichment only |
 
 ### RAG runtime
 

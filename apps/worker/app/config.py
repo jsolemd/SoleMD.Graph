@@ -164,6 +164,10 @@ class Settings(BaseSettings):
         default=30.0,
         alias="NCBI_API_TIMEOUT_SECONDS",
     )
+    ncbi_api_key: str = Field(
+        default="",
+        alias="NCBI_API_KEY",
+    )
     corpus_vocab_terms_path: str = Field(
         default="data/vocab_terms.tsv",
         alias="CORPUS_VOCAB_TERMS_PATH",

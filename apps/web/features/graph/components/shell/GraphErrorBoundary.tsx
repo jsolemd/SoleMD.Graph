@@ -30,7 +30,7 @@ export class GraphErrorBoundary extends Component<Props, State> {
     const isWebGL = msg.includes("webgl") || msg.includes("gpu");
 
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[var(--graph-bg)]">
+      <div className="fixed inset-0 flex items-center justify-center bg-[var(--background)]">
         <div className="flex max-w-md flex-col items-center gap-6 px-8 text-center">
           <BrainCircuit
             size={48}

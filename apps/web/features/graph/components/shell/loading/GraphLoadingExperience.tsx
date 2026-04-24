@@ -62,7 +62,7 @@ export function GraphLoadingExperience({
     <>
       <motion.div
         className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-5"
-        style={{ backgroundColor: "var(--graph-bg)" }}
+        style={{ backgroundColor: "var(--background)" }}
         initial={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{
@@ -75,7 +75,7 @@ export function GraphLoadingExperience({
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(circle at center, transparent 0%, transparent 34%, color-mix(in srgb, var(--graph-bg) 12%, transparent) 62%, color-mix(in srgb, var(--graph-bg) 32%, transparent) 100%)",
+              "radial-gradient(circle at center, transparent 0%, transparent 34%, color-mix(in srgb, var(--background) 12%, transparent) 62%, color-mix(in srgb, var(--background) 32%, transparent) 100%)",
           }}
         />
         {interactiveBackdrop && <GraphLoadingConstellations />}

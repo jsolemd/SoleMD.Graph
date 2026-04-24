@@ -12,6 +12,7 @@ export interface FieldBounds {
 export interface FieldPointSourceBuffers {
   aAlpha: Float32Array;
   aBucket: Float32Array;
+  aClickPack: Float32Array;
   aFunnelEndShift: Float32Array;
   aFunnelNarrow: Float32Array;
   aFunnelStartShift: Float32Array;

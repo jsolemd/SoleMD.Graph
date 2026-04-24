@@ -80,6 +80,9 @@ paper-level work.
    membership definition.
 8. **Source precedence is explicit.** `document_source_kind = pmc_bioc` outranks
    `s2orc_annotation` when evidence-text acquisition succeeds.
+9. **S2ORC is evidence-tier only.** `s2orc_v2` is reserved as a release-backed
+   fallback/full-text input for evidence waves. It is not a default raw ingest
+   family and it is not a mapped-tier input.
 
 ## Upstream handoff
 
@@ -108,6 +111,9 @@ The live API checks on 2026-04-19 made the split clear:
   additional PubMed-side recovery path when that field is missing.
 - The live Semantic Scholar API rate-limited quickly under unauthenticated use,
   which is already enough to disqualify it as the selected-corpus backbone.
+- The release-backed `s2orc_v2` files remain useful only at the evidence tier:
+  they can fill document-spine gaps for mapped papers when PMC BioC is absent,
+  but they should not broaden corpus membership or mapped rollout scope.
 - PubTator-by-PMID returned only title/abstract BioC for the tested paper.
 - The PMC BioC API returned the full passage structure for the same article.
 - A PMCID in PubMed / PMC identifier services does **not** guarantee that the

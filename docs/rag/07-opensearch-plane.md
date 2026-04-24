@@ -578,7 +578,7 @@ Mapping notes:
 
 - Most paper-level filter fields (`publication_year`, `is_retracted`,
   `package_tier`, `evidence_priority_score`) are denormalized onto every
-  evidence-unit doc. At the hot-tier ceiling (~100 K units) this denorm
+  evidence-unit doc. At the evidence-tier ceiling (~100 K units) this denorm
   cost is ~3 MB total — trivial; benefit is paper-level filter
   pushdown at the evidence-lane query without a parent-join detour.
 - `evidence_key` is `keyword` (not `uuid`) because OpenSearch's
@@ -678,19 +678,19 @@ Dense-vector storage on disk (Faiss segment) under fp16 is
 `dim × 2 bytes/dim + HNSW graph overhead (~1.5×)`. The two-tier model
 makes the totals tractable on a single workstation — `paper_index`
 holds ~14 M paper-level vectors regardless of tier; `evidence_index`
-holds only the hot-tier evidence units (capped at ~100 K).
+holds only the evidence cohort (capped at ~100 K evidence units).
 
 | Index             | Doc count          | Raw fp16 vectors | HNSW (~1.5×)  | Total per index |
 |-------------------|-------------------:|-----------------:|---------------:|----------------:|
-| `paper_index`     | ~14 M (warm + hot) | ~21.5 GB         | ~10.7 GB       | ~32.2 GB        |
-| `evidence_index`  | ~100 K (hot only)  | ~150 MB          | ~75 MB         | ~225 MB         |
+| `paper_index`     | ~14 M (mapped + evidence) | ~21.5 GB         | ~10.7 GB       | ~32.2 GB        |
+| `evidence_index`  | ~100 K (evidence only)  | ~150 MB          | ~75 MB         | ~225 MB         |
 
 Per-doc breakdown:
 - `paper_index`: 14 M × 768 × 2 B = 21.5 GB raw fp16; HNSW edge
-  overhead at `m=16` adds ~50 % → ~32 GB. Includes both warm-tier
-  (~14 M minus ~10 K) and hot-tier (~10 K) papers; the per-row
+  overhead at `m=16` adds ~50 % → ~32 GB. Includes both mapped-tier
+  (~14 M minus ~10 K) and evidence-tier (~10 K) papers; the per-row
   difference is just the `tier` byte field.
-- `evidence_index`: 10 K hot papers × ~10 evidence units each × 768 ×
+- `evidence_index`: 10 K evidence papers × ~10 evidence units each × 768 ×
   2 B = ~150 MB raw fp16; ~50 % overhead → ~225 MB. Initial load at
   500 papers × 10 units → ~7.5 MB.
 
@@ -718,28 +718,28 @@ Implications:
 
 - The corrected two-tier model removes the prior draft's ~322 GB
   `evidence_index` problem entirely. `evidence_index` is now a
-  trivial ~225 MB hot-cohort artifact; the variable to size against
+  trivial ~225 MB evidence-cohort artifact; the variable to size against
   is the ~32 GB `paper_index`.
 - Single-node OpenSearch on a workstation is a comfortable shape for
   this scale, not a stretch. Multi-node migration is gated on paper
-  count growth (>50 M) or explicit warm-tier sharding by year/venue —
+  count growth (>50 M) or explicit mapped-tier sharding by year/venue —
   both deferred per §13.
 
 The fp16 quantization keeps the paper-level lane tractable: at fp32
 `paper_index` would be ~64 GB raw + HNSW → ~96 GB, blowing past the
 68 GB host's RAM entirely. **locked** for the sq_fp16 choice;
-**provisional** for the hot-tier ceiling that drives `evidence_index`
+**provisional** for the evidence-tier ceiling that drives `evidence_index`
 sizing (§3.5).
 
-### 4.3 Hot-tier growth ceiling
+### 4.3 Evidence-tier growth ceiling
 
-The §3.5 ceiling of ~10 K hot papers translates to ~225 MB of
+The §3.5 ceiling of ~10 K evidence papers translates to ~225 MB of
 `evidence_index` Faiss storage. Even a 5× ceiling expansion (~50 K
-hot papers × ~10 evidence units → ~500 K units → ~1.1 GB) stays trivial
+evidence papers × ~10 evidence units → ~500 K units → ~1.1 GB) stays trivial
 against the 68 GB host. The chunk-index lane is not the memory
-constraint; the warm-tier `paper_index` is.
+constraint; the mapped-tier `paper_index` is.
 
-Practical operator headroom: hot-tier ceiling can grow to ~50 K
+Practical operator headroom: evidence-tier ceiling can grow to ~50 K
 papers on the 68 GB host before chunk-index memory shows up in cache
 contention. On 128 GB the ceiling is bounded by encoder throughput
 (~250 K MedCPT-Query encodes per hour on the RTX 5090, per
@@ -913,7 +913,7 @@ Notes:
 
 ### 5.4 Hybrid query shape — evidence lane
 
-`evidence_index` is hot-tier-only by construction (§3.5), so no `tier`
+`evidence_index` is restricted to the evidence cohort by construction (§3.5), so no `tier`
 filter is needed at query time. The evidence lane is what `08` reaches
 for when the user wants sentence-coordinated grounding ("deep grounding"
 queries).
@@ -1069,15 +1069,15 @@ Two parallel Dramatiq actors per `06 §6.3`,
 `engine/app/workers/opensearch.py`:
 
 - **`opensearch.build_paper_index`** — slow path. Builds the full
-  ~14 M paper-level index (warm + hot). Wall-clock: ~2–4 h. Triggered
-  on full serving cutover or when the warm-tier set changes (rare).
+  ~14 M paper-level index (mapped + evidence). Wall-clock: ~2–4 h. Triggered
+  on full serving cutover or when the mapped-tier set changes (rare).
 - **`opensearch.build_evidence_index`** — fast path. Builds the
-  hot-tier-only ~100 K-evidence-unit index. Wall-clock: ~5–15 min. Triggered
-  on hot-cohort change or on demand.
+  evidence-cohort ~100 K-evidence-unit index. Wall-clock: ~5–15 min. Triggered
+  on evidence-cohort change or on demand.
 
 Both actors read from serve via the `serve_read` pool and warehouse
 via the `warehouse_read` pool; both write to OpenSearch over HTTP.
-Independent cadence is the win — hot-cohort tweaks don't pay the
+Independent cadence is the win — evidence-cohort tweaks don't pay the
 14 M-doc rebuild cost.
 
 ### 7.1 Trigger
@@ -1160,7 +1160,7 @@ from app.opensearch.indexer import (
     time_limit=6 * 60 * 60 * 1000,   # 6 h ceiling — paper_index slow path
 )
 async def build_paper_index_actor(serving_run_id: str) -> None:
-    """Slow path: ~14 M paper-level docs (warm + hot)."""
+    """Slow path: ~14 M paper-level docs (mapped + evidence)."""
     await _build_index(
         serving_run_id, family="opensearch_paper_index",
         bulk_loader=bulk_load_paper_index,
@@ -1173,7 +1173,7 @@ async def build_paper_index_actor(serving_run_id: str) -> None:
     time_limit=30 * 60 * 1000,       # 30 min ceiling — evidence_index fast path
 )
 async def build_evidence_index_actor(serving_run_id: str) -> None:
-    """Fast path: ~100 K hot-tier evidence-unit docs."""
+    """Fast path: ~100 K evidence-tier evidence-unit docs."""
     await _build_index(
         serving_run_id, family="opensearch_evidence_index",
         bulk_loader=bulk_load_evidence_index,
@@ -1367,8 +1367,8 @@ Before the alias swap, the cohort orchestrator confirms:
 ### 8.2 Atomic swap
 
 Single `_aliases` POST with add+remove pair. When both tiers rebuilt
-this cycle, all four actions land in one POST; when only the hot
-tier rebuilt (chunk-cohort change without warm-tier touch), only the
+this cycle, all four actions land in one POST; when only the evidence
+tier rebuilt (chunk-cohort change without mapped-tier touch), only the
 `evidence_index_live` actions appear and `paper_index_live` stays
 pointed at the prior index. Either way, the atomicity property holds
 for the indexes being swapped:
@@ -1596,7 +1596,7 @@ Standard path: `pg_cron` on serve (`04 §11.1`) detects an
 `ingest_runs.status='published'` flip on warehouse, enqueues a
 projection cohort, the cohort manifest names
 `opensearch_paper_index` and/or `opensearch_evidence_index` as families
-(may name both, may name only the hot lane), the `04 §3` flow runs PG
+(may name both, may name only the evidence lane), the `04 §3` flow runs PG
 projections first, then the §7 actors build the named OpenSearch
 indexes (in parallel where dependencies allow), then the §8 swap
 (paired with the PG-side single-row pointer flip).
@@ -1607,8 +1607,8 @@ Wall-clock for the OpenSearch portion:
   bulk + force-merge + warmup at ~14 M docs); ~5–15 min for
   `evidence_index` (~100 K docs). Both actors run in parallel where
   encoder GPU contention permits.
-- **Hot-tier-only refresh**: ~5–15 min total (skip the slow path).
-  This is the everyday cadence for hot-cohort tweaks; warm-tier
+- **Evidence-tier-only refresh**: ~5–15 min total (skip the slow path).
+  This is the everyday cadence for evidence-cohort tweaks; mapped-tier
   rebuilds are rare (mapping change or full ingest cycle).
 
 **provisional** until measured.
@@ -1770,7 +1770,7 @@ Worker logs (jsonlog format per `06 §10.3`):
 The exact JSON shape of the request/response that
 `08-retrieval-cascade.md` consumes. `08` orchestrates and **chooses
 the lane**: `paper` for general retrieval (default; spans both tiers),
-`evidence` for hot-tier deep-grounding queries that need
+`evidence` for evidence-tier deep-grounding queries that need
 sentence-coordinated citations. This doc fixes the wire contract.
 
 ### 14.1 Request — paper-lane retrieve
@@ -1790,13 +1790,13 @@ class PaperFilter(BaseModel):
     is_retracted:         bool | None = False
     publication_year_gte: int | None = None
     publication_year_lte: int | None = None
-    tier_in:              list[int] = [1, 2]         # [1=warm, 2=hot]; default both
-    hot_only:             bool = False                 # convenience: equivalent to tier_in=[2]
-    package_tier_in:      list[int] | None = None    # legacy product-tier flag (orthogonal to warm/hot)
+    tier_in:              list[int] = [1, 2]         # [1=mapped, 2=evidence]; default both
+    evidence_only:        bool = False                 # convenience: equivalent to tier_in=[2]
+    package_tier_in:      list[int] | None = None    # legacy product-tier flag (orthogonal to mapped/evidence)
     concept_ids_any:      list[int] | None = None    # OR semantics over concept_ids_top
 ```
 
-Engine helper translates `hot_only=True` → `tier_in=[2]` before
+Engine helper translates `evidence_only=True` → `tier_in=[2]` before
 materializing the §5.3 hybrid query JSON. Filters duplicate across both
 sub-queries (§5.3 note).
 
@@ -2024,13 +2024,13 @@ them.
 
 | Decision | Revisit trigger |
 |---|---|
-| Hot-tier ceiling = 10 000 papers; initial start = 500 papers | Operator-tunable as RAM headroom and recall-quality measurements warrant; 50 K is the practical upper bound on the 68 GB host before evidence-index memory shows up in cache contention. |
-| Hot-tier mean evidence-units-per-paper = 10 | Real document-length distribution from PT3 grounding spine; range 5–30 acceptable. |
+| Evidence-tier ceiling = 10 000 papers; initial start = 500 papers | Operator-tunable as RAM headroom and recall-quality measurements warrant; 50 K is the practical upper bound on the 68 GB host before evidence-index memory shows up in cache contention. |
+| Evidence-tier mean evidence-units-per-paper = 10 | Real document-length distribution from PT3 grounding spine; range 5–30 acceptable. |
 | HNSW `m=16`, `ef_construction=256`, `ef_search=100` | Recall@k benchmarking against the cascade evaluation suite. |
 | RRF `rank_constant=60` | Top-1 / top-10 conversion measured on real query workload. |
 | Per-index doc-count tolerance ±5 % vs cohort manifest | Real release-to-release variability over multiple cohorts. |
 | `bulk` batch size 1 000–5 000 | Throughput measurement on the 68 GB host. |
-| `evidence_index` k-NN p95 budget `< 100 ms` | First sample query workload at hot-tier scale (initially ~100 K docs, not the warehouse-scale evidence surface). |
+| `evidence_index` k-NN p95 budget `< 100 ms` | First sample query workload at evidence-tier scale (initially ~100 K docs, not the warehouse-scale evidence surface). |
 | `_warmup` after every alias swap | Whether the cold-cache p99 hit is genuinely user-visible. |
 | Per-request `ef_search` override budget | `08`'s per-lane decision based on rerank-candidate quality. |
 | Pre-filter vs post-filter fallback threshold (0.5 % match rate) | Real query selectivity distribution. |

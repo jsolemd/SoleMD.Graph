@@ -240,10 +240,12 @@ Hash-partitioned by `corpus_id` into 32 children, named `_p00 … _p31`:
 - `pubtator.entity_annotations` (after `pmid → corpus_id` backfill)
 - `pubtator.relations` (after backfill)
 
-Hash-partitioned by `citing_corpus_id` into 32 children:
+No current `paper_citations` partitioning is part of the mapped citation
+contract. If mapped citation volume later forces partitioning, use the open
+trigger in §11 rather than treating broad raw citation scale as the default.
 
-- `solemd.paper_citations`
-- `solemd.paper_citation_contexts`
+Future/provisional citation-context storage, if needed, may partition by the
+mapped citing paper key.
 
 ### 3.2 Children
 
@@ -442,8 +444,9 @@ Transitional note:
 - The locked next implementation batch introduces a broad pre-mapped aggregate
   citation surface carrying at least `reference_out_count` and
   `influential_reference_count`, ideally also `linked_reference_count`.
-- Full citation-edge persistence should become mapped-owned or child-wave
-  enrichment rather than the default broad raw contract.
+- Actual citation-edge persistence is mapped-owned enrichment into
+  `paper_citations`, not the default broad raw contract. Evidence owns
+  in-text citation anchors in `paper_citation_mentions`.
 
 #### `solemd.s2_paper_assets_raw`
 
@@ -882,57 +885,56 @@ edge scans stay cheap.
 
 Under the locked next stage contract, these heavier fanout tables are not
 corpus-baseline requirements for every admitted paper. `paper_selection_summary`
-remains the pre-mapped gating surface; `paper_authors` and `paper_citations`
-become mapped-owned or child-wave enrichments.
+remains the pre-mapped gating surface; `paper_authors` and actual
+paper-to-paper `paper_citations` edges are mapped-owned enrichments.
 
 #### `solemd.paper_citations`
 
-Hash-partitioned by `citing_corpus_id` × 32. Fillfactor 100.
+Mapped-owned actual paper-to-paper citation edges. Fillfactor 100.
 
-```hcl
-table "paper_citations" {
-  schema = schema.solemd
-  column "citing_corpus_id"     { null = false, type = bigint }
-  column "cited_corpus_id"      { null = false, type = bigint }
-  column "first_seen_at"        { null = false, type = timestamptz, default = sql("now()") }
-  column "last_seen_at"         { null = false, type = timestamptz, default = sql("now()") }
-  column "first_seen_release_id" { null = false, type = integer }
-  column "last_seen_release_id"  { null = false, type = integer }
-  column "influence_score"      { null = true,  type = real }
-  column "intent_code"          { null = false, type = smallint, default = 0 }
-  column "is_influential"       { null = false, type = boolean, default = false }
-  column "is_self_citation"     { null = false, type = boolean, default = false }
-  column "source_mask"          { null = false, type = sql("bit(8)"), default = sql("B'00000000'") }
-  primary_key { columns = [column.citing_corpus_id, column.cited_corpus_id] }
-  partition {
-    type    = HASH
-    columns = [column.citing_corpus_id]
-  }
-  settings { fillfactor = 100, toast_tuple_target = 2040 }
-}
+```sql
+CREATE TABLE IF NOT EXISTS solemd.paper_citations (
+    corpus_id BIGINT NOT NULL REFERENCES solemd.corpus (corpus_id) ON DELETE CASCADE,
+    reference_checksum TEXT NOT NULL,
+    cited_corpus_id BIGINT REFERENCES solemd.corpus (corpus_id) ON DELETE SET NULL,
+    cited_s2_paper_id TEXT,
+    linkage_status SMALLINT NOT NULL DEFAULT 1,
+    is_influential BOOLEAN NOT NULL DEFAULT false,
+    intent_raw TEXT,
+    PRIMARY KEY (corpus_id, reference_checksum)
+);
 ```
 
-Local indexes (inherited on each of `paper_citations_p00 … p31`):
-- PK `(citing_corpus_id, cited_corpus_id)`.
-- Btree `(cited_corpus_id, citing_corpus_id)` — reverse-citation lookups.
-- Partial btree `(cited_corpus_id, citing_corpus_id)` where
-  `is_influential = true` — influence-only scans.
+Mapped ownership contract:
 
-Extended statistics: `CREATE STATISTICS` on `(intent_code,
-is_influential, source_mask)` with `dependencies, ndistinct` — improves
-planner estimates on the correlated filter.
+- Scope rows to mapped citing papers rather than all upstream S2 citing papers.
+- Resolve `cited_corpus_id` when the cited paper is already canonical; otherwise
+  keep `cited_s2_paper_id` plus `linkage_status`.
+- Keep `intent_raw` and `is_influential` as S2 release provenance, not evidence
+  grounding.
+- In-text citation anchors stay in `paper_citation_mentions`, because they
+  depend on parsed document text and canonical offsets.
+
+Local indexes:
+
+- PK `(corpus_id, reference_checksum)`.
+- Btree `(cited_corpus_id, corpus_id)` where `cited_corpus_id IS NOT NULL` for
+  reverse-citation lookups.
+- Partial btree `(corpus_id, cited_corpus_id)` where `is_influential = true`.
 
 #### `solemd.paper_citation_contexts`
 
-Hash-partitioned by `citing_corpus_id` × 32. Fillfactor 100.
+Future/provisional context table for heavy citation-context text if mapped
+citation evidence needs it. If added, keep it keyed by the mapped citing
+`corpus_id`. Fillfactor 100.
 
-Columns: `citing_corpus_id`, `cited_corpus_id`, `context_ordinal` INTEGER,
+Columns: `corpus_id`, `cited_corpus_id`, `context_ordinal` INTEGER,
 `section_role` SMALLINT, `context_text` TEXT (EXTENDED + lz4),
 `context_intent` SMALLINT.
 
 Local indexes:
-- PK `(citing_corpus_id, cited_corpus_id, context_ordinal)`.
-- Btree `(citing_corpus_id, cited_corpus_id)` — context fetch for an edge.
+- PK `(corpus_id, cited_corpus_id, context_ordinal)`.
+- Btree `(corpus_id, cited_corpus_id)` — context fetch for an edge.
 
 #### `solemd.paper_concepts`
 
@@ -1354,7 +1356,7 @@ ALTER TABLE solemd.source_releases SET (
 | BIGINT `corpus_id` with identity sequence | Single-writer single-DB; tight join keys; cannot be undone after ingest. |
 | UUIDv7 for `ingest_run_id`, `graph_run_id`, `chunk_version_key` | Timestamp-ordered, externally sortable, no sequence leakage. |
 | UUIDv5 for `evidence_key`, stored in `paper_evidence_units` | Content-bound, release-independent, round-trippable from serving docs. |
-| Hash partitioning by `corpus_id` / `citing_corpus_id` × 32 for the grounding + citation + entity families | Matches rag-future.md §4 shape; stays inside PG 18 fast-path lock slots. |
+| Hash partitioning by `corpus_id` × 32 for the grounding + entity families | Matches rag-future.md §4 shape; stays inside PG 18 fast-path lock slots. `paper_citations` is mapped-owned and unpartitioned until the §11 trigger fires. |
 | `paper_text` split out from `papers` | Metadata reads don't drag abstracts off disk. |
 | `paper_citation_contexts` split out from `paper_citations` | Narrow edge, heavy text separated. |
 | `paper_embeddings_graph` kept; `paper_embeddings_retrieval` omitted from day-one warehouse | SPECTER2 powers graph build; retrieval embeddings are owned by OpenSearch. Reproducibility comes from release-scoped archive artifacts, not a hot PG table. Provenance on graph embeddings stays explicit via `embedding_source_kind`. |
@@ -1388,7 +1390,7 @@ ALTER TABLE solemd.source_releases SET (
 | `pg_partman` 5.x for `ingest_runs` / `load_history` time-range lifecycle | Row count > 10 M. |
 | HNSW on `paper_embeddings_graph` inside PG | A PG-local graph-build query family proves to need it. |
 | Columnar extension (Citus / Hydra) on `paper_citation_contexts` | Table > 200 GB and scan-heavy. |
-| Citation edge table partitioning switched from `citing_corpus_id` to a composite hash | Reverse-citation workload outgrows the reverse btree. |
+| Citation edge table partitioning added for `paper_citations` | Mapped citation volume or reverse-citation workload outgrows the current btrees. |
 | `concept_aliases` trigram index | Fuzzy alias lookup becomes a proven hot path. |
 | Staged list-partitioning on `pubtator.*` before `corpus_id` backfill | If `pmid → corpus_id` backfill can't complete in a single pass. |
 | `paper_evidence_units` partitioning | Row count > ~50 M. |

@@ -644,7 +644,7 @@ until SUCCESS, then prunes per retention window.
 The canonical recovery path for a corrupted OpenSearch index is **full
 re-index from serve** via the `07 §7.2` `opensearch.build_paper_index`
 or `opensearch.build_evidence_index` actor. RTO: 2–6 h depending on
-hot-tier vs warm-tier scope. RPO: as good as the most recent
+evidence-tier vs mapped-tier scope. RPO: as good as the most recent
 serving-run cohort cycle.
 
 Snapshot-restore is the **acceleration path**, not the canonical one.
@@ -927,7 +927,7 @@ Every backed-up system carries an explicit (RTO, RPO) pair. These are
 | `graph-db-serve` (PITR, single-table or whole-cluster) | 30–60 min | ≤ 5 min | pgBackRest restore at `process-max=4` on NVMe-backed PGDATA + WAL replay. RPO = `archive_timeout = 60s` × small WAL queue = max 5 min. |
 | `graph-db-warehouse` (full rebuild from raw + dumps) | 5–9 h | 24 h | `research-distilled §2` benchmark: 638 GB S2 + 210 GB PT3 bulk load on this hardware = 5–9 h with UNLOGGED → indexed → LOGGED. Dumps lay the identity / ledger subset back in < 30 min. RPO = nightly dump cadence. |
 | `graph-db-warehouse` (single dumped warehouse table) | 15–30 min | 24 h | Per-table `pg_restore` + atomic-swap pattern in §4.6. |
-| `graph-opensearch` (full re-index from serve) | 2–6 h | = projection cadence | `07 §7` bulk-then-freeze on warm tier (~14 M docs) is the worst case. Hot tier alone is ~30 min. |
+| `graph-opensearch` (full re-index from serve) | 2–6 h | = projection cadence | `07 §7` bulk-then-freeze on mapped tier (~14 M docs) is the worst case. Evidence tier alone is ~30 min. |
 | `graph-opensearch` (snapshot-restore) | 30–90 min | ≤ 24 h | When snapshot is fresher than the most recent published cohort. |
 | `graph-redis` | n/a (cache regenerates on miss) | ∞ | Acceptable per §6. |
 | Langfuse | n/a (no backup) | sliding 30 d (Cloud) | Per §7 — telemetry, not record-of-truth. Loss flushes recent trace history; no SoleMD canonical state at risk. |
@@ -1018,7 +1018,7 @@ the dumped identity / ledger subset.
 **Procedure B (snapshot-restore, when serve is concurrently down)**:
 1. §5.3 runbook.
 
-**RTO**: 2–6 h (A, warm tier) or 30–90 min (B).
+**RTO**: 2–6 h (A, mapped tier) or 30–90 min (B).
 
 ### §12.5 Whole-host disk loss
 

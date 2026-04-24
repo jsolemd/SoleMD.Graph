@@ -1,12 +1,16 @@
 "use client";
 
 import type { GraphBundle } from "@solemd/graph";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 import { useGraphWarmup } from "@/features/graph/hooks/use-graph-warmup";
 import { usePaperAttributesBaker } from "../bake/use-paper-attributes-baker";
 import { useFieldRuntime } from "@/features/field/renderer/field-runtime-context";
 import { useOrbGeometryMutationStore } from "../stores/geometry-mutation-store";
+import { OrbClickCaptureLayer } from "../interaction/OrbClickCaptureLayer";
+import { useOrbClick } from "../interaction/use-orb-click";
+import { useOrbPickerStore } from "../interaction/orb-picker-store";
+import { PICK_NO_HIT } from "@/features/field/renderer/field-picking";
 import { OrbDetailPanel } from "./OrbDetailPanel";
 
 /**
@@ -36,7 +40,7 @@ import { OrbDetailPanel } from "./OrbDetailPanel";
  * as opaque substrate.
  */
 export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
-  const { connection, status } = useGraphWarmup(bundle);
+  const { connection, queries, status } = useGraphWarmup(bundle);
   const { setStageReady } = useFieldRuntime();
 
   // Orb doesn't wait on FixedStageManager — the blob controller needs
@@ -53,8 +57,22 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
     enabled: connection != null,
   });
 
+  const selectByIndex = useOrbClick(queries, "corpus");
+
+  const handleCapturedClick = useCallback(
+    (clientX: number, clientY: number) => {
+      const handle = useOrbPickerStore.getState().handle;
+      if (!handle) return;
+      const index = handle.pickSync(clientX, clientY);
+      if (index === PICK_NO_HIT) return;
+      selectByIndex(index);
+    },
+    [selectByIndex],
+  );
+
   return (
     <main className="relative min-h-screen">
+      <OrbClickCaptureLayer onClick={handleCapturedClick} />
       <OrbDetailPanel />
       {process.env.NODE_ENV !== "production" ? (
         <OrbStreamingHud paperState={paperState} warmupStatus={status} />

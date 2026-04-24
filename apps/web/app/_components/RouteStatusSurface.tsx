@@ -142,7 +142,7 @@ export function RouteStatusSurface({
     >
       <main
         className="relative flex min-h-screen items-center justify-center px-4 py-8 sm:px-6"
-        style={{ backgroundColor: "var(--graph-bg)" }}
+        style={{ backgroundColor: "var(--background)" }}
       >
         <div className="absolute right-4 top-4 sm:right-5 sm:top-5">
           <button

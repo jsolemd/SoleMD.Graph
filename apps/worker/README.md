@@ -59,7 +59,12 @@ advisory lock as ingest, reads `source_releases` / `ingest_runs`, and prints
 which S2 source directories are `keep`, `archive_candidate`,
 `delete_candidate`, or `manual_review`. Mutation requires `--execute` plus an
 explicit action. `--action delete` also requires `--provenance-ok`; manifests
-and unregistered directories are never deleted automatically.
+unregistered directories are never deleted automatically. Deferred registered
+families are also kept until their owner tier consumes or waives them:
+`tldrs` and `embeddings-specter_v2` belong to mapped rollout, while
+`s2orc_v2` belongs to evidence. `--action archive` is a same-filesystem rename
+only; off-device copies must be verified outside the worker before using the
+guarded delete path.
 `enqueue-corpus-selection` / `run-corpus-selection-now` and
 `enqueue-evidence-wave` / `run-evidence-wave-now` use the shared validated
 corpus request models before enqueueing or executing the selection/evidence

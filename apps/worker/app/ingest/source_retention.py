@@ -12,6 +12,7 @@ from typing import Literal
 import asyncpg
 
 from app.config import Settings
+from app.db import open_named_connection
 from app.ingest.manifest_registry import (
     ManifestRegistryError,
     SourceFamilySpec,
@@ -38,7 +39,6 @@ RetentionAction = Literal[
 ]
 RetentionApplyAction = Literal["archive", "delete"]
 
-_ACTIVE_INGEST_STATUSES = frozenset({1, 2, 3, 4})
 _TERMINAL_INGEST_STATUSES = frozenset(
     {INGEST_STATUS_PUBLISHED, INGEST_STATUS_FAILED, INGEST_STATUS_ABORTED}
 )
@@ -90,6 +90,60 @@ class SourceRetentionReport:
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2, sort_keys=True)
+
+
+async def run_source_retention_operation(
+    runtime_settings: Settings,
+    *,
+    source_code: SourceCode,
+    release_tag: str,
+    execute: bool,
+    action: RetentionApplyAction,
+    archive_root: Path | None,
+    provenance_ok: bool,
+) -> tuple[int, str]:
+    try:
+        async with open_named_connection(runtime_settings, name="ingest_write") as connection:
+            async with hold_source_retention_lock(
+                connection,
+                source_code=source_code,
+                release_tag=release_tag,
+            ):
+                run_state = await load_source_retention_run_state(
+                    connection,
+                    source_code=source_code,
+                    release_tag=release_tag,
+                )
+                report = build_source_retention_report(
+                    runtime_settings,
+                    source_code=source_code,
+                    release_tag=release_tag,
+                    run_state=run_state,
+                    dry_run=not execute,
+                )
+                changed: tuple[str, ...] = ()
+                if execute:
+                    changed = apply_source_retention_report(
+                        report,
+                        action=action,
+                        archive_root=archive_root,
+                        provenance_ok=provenance_ok,
+                    )
+                return 0, _retention_payload_json(report=report, changed=changed)
+    except SourceRetentionError as exc:
+        payload = {
+            "changed": (),
+            "error": str(exc),
+            "report": {
+                "source_code": source_code,
+                "release_tag": release_tag,
+                "dry_run": not execute,
+                "execution_blocked": True,
+                "blockers": (str(exc),),
+                "items": (),
+            },
+        }
+        return (1 if execute else 0), json.dumps(payload, indent=2, sort_keys=True)
 
 
 @asynccontextmanager
@@ -240,12 +294,11 @@ def apply_source_retention_report(
 ) -> tuple[str, ...]:
     if report.execution_blocked:
         raise SourceRetentionBlocked("; ".join(report.blockers))
-    if action == "archive" and archive_root is None:
-        raise SourceRetentionError("--archive-root is required for archive action")
     if action == "delete" and not provenance_ok:
         raise SourceRetentionError("--provenance-ok is required before deleting source archives")
 
     release_dir = Path(report.release_dir).resolve(strict=True)
+    archive_root = _validated_archive_root(archive_root, release_dir) if action == "archive" else None
     changed: list[str] = []
     for item in report.items:
         if action == "archive" and not item.safe_to_archive:
@@ -295,6 +348,21 @@ def _retention_blockers(
             if run_state.manifest_checksum and run_state.manifest_checksum != current_checksum:
                 blockers.append("current manifest checksum differs from source_releases.manifest_checksum")
     return blockers
+
+
+def _retention_payload_json(
+    *,
+    report: SourceRetentionReport,
+    changed: tuple[str, ...],
+) -> str:
+    return json.dumps(
+        {
+            "changed": changed,
+            "report": asdict(report),
+        },
+        indent=2,
+        sort_keys=True,
+    )
 
 
 def _classify_dataset_path(
@@ -378,11 +446,11 @@ def _classify_dataset_path(
         dataset=dataset,
         family=spec.family,
         path=str(dataset_path),
-        action="delete_candidate",
-        reason="optional downstream-gated family is not part of default raw ingest",
+        action="keep",
+        reason=f"{spec.tier} family is deferred from default ingest and has not been consumed yet",
         byte_count=byte_count,
-        safe_to_archive=True,
-        safe_to_delete=True,
+        safe_to_archive=False,
+        safe_to_delete=False,
     )
 
 
@@ -431,6 +499,15 @@ def _validate_mutation_path(source_path: Path, release_dir: Path) -> None:
         raise SourceRetentionError(f"refusing to mutate provenance directory: {source_path}")
     if source_path.is_symlink():
         raise SourceRetentionError(f"refusing to mutate symlinked source path: {source_path}")
+
+
+def _validated_archive_root(archive_root: Path | None, release_dir: Path) -> Path:
+    if archive_root is None:
+        raise SourceRetentionError("--archive-root is required for archive action")
+    resolved = archive_root.resolve(strict=False)
+    if resolved == release_dir or resolved.is_relative_to(release_dir):
+        raise SourceRetentionError("archive root must not be inside the source release directory")
+    return resolved
 
 
 def _delete_path(source_path: Path) -> None:

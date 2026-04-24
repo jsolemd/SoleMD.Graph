@@ -115,6 +115,8 @@ async def fetch_pmc_biocxml(
     locator: ResolvedLocator,
 ) -> tuple[bytes, FetchManifest]:
     url = f"{PMCOA_API_ROOT}/BioC_xml/{locator.locator_value}/unicode"
+    if settings.ncbi_api_key:
+        url = f"{url}?{urlencode({'api_key': settings.ncbi_api_key})}"
 
     try:
         payload = await asyncio.to_thread(
@@ -175,16 +177,16 @@ async def _resolve_via_id_converter(
     identifier: str,
     id_type: str,
 ) -> str | None:
-    query = urlencode(
-        {
-            "ids": identifier,
-            "format": "json",
-            "tool": settings.ncbi_api_tool,
-            "email": settings.ncbi_api_email,
-            "idtype": id_type,
-        }
-    )
-    url = f"{PMC_ID_CONVERTER_ROOT}?{query}"
+    params = {
+        "ids": identifier,
+        "format": "json",
+        "tool": settings.ncbi_api_tool,
+        "email": settings.ncbi_api_email,
+        "idtype": id_type,
+    }
+    if settings.ncbi_api_key:
+        params["api_key"] = settings.ncbi_api_key
+    url = f"{PMC_ID_CONVERTER_ROOT}?{urlencode(params)}"
     payload = await asyncio.to_thread(
         _fetch_optional_bytes,
         url,
@@ -206,16 +208,16 @@ async def _resolve_via_pubmed_summary(
     *,
     pmid: str,
 ) -> str | None:
-    query = urlencode(
-        {
-            "db": "pubmed",
-            "id": pmid,
-            "retmode": "json",
-            "tool": settings.ncbi_api_tool,
-            "email": settings.ncbi_api_email,
-        }
-    )
-    url = f"{PUBMED_EUTILS_SUMMARY_ROOT}?{query}"
+    params = {
+        "db": "pubmed",
+        "id": pmid,
+        "retmode": "json",
+        "tool": settings.ncbi_api_tool,
+        "email": settings.ncbi_api_email,
+    }
+    if settings.ncbi_api_key:
+        params["api_key"] = settings.ncbi_api_key
+    url = f"{PUBMED_EUTILS_SUMMARY_ROOT}?{urlencode(params)}"
     payload = await asyncio.to_thread(
         _fetch_optional_bytes,
         url,

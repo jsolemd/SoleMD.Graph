@@ -184,6 +184,7 @@ function bakeGeometryAttributes(
     aFunnelStartShift: extractAttribute(geometry, "aFunnelStartShift"),
     aFunnelEndShift: extractAttribute(geometry, "aFunnelEndShift"),
     aBucket,
+    aClickPack: extractAttribute(geometry, "aClickPack"),
     color: deriveColorBuffer(aBucket),
   };
 }

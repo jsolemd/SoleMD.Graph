@@ -401,35 +401,91 @@ follow-up — this round's goal was only to verify the boundary holds.
 |---------|--------|
 | S1 (duplicate Cosmograph library) | still filed — registry still has two `ready` entries |
 | S2 (flow TS↔Python CALLS bleed) | still filed — `trace_flow` refuses correctly, but `get_flow(HomePage)` still over-includes |
-| S7 (`graph_overview` cache staleness not surfaced at top level) | still filed |
 | S8 (`search_code` semantic latency) | still filed |
-| S11 (`search_docs_multi` library-not-found is in-band prose) | still filed |
-| S13 (slice extend silent no-op) | still filed |
+| S13 (slice extend silent no-op) | **closed by Round-9 R7** — extend now flips `status="no_op"` with structured `extend_refused` |
 | S16 (compound semantic query thin results) | still filed |
+
+### Round 9 — structural navigation upgrades (shipped)
+
+See `docs/future/codeatlas-dogfood-findings.md` "Round 9" for full
+detail. Round 9 is additive — no new distortion was filed, so no
+new evaluation pass is warranted against this report. The seven
+upgrades (R1–R7) shipped:
+
+- **R1** — `payload.truncation` advisory block on dependents,
+  find_patterns, list_flows, get_flow, inspect_symbol.
+- **R2** — `payload.resolved.signature` on `inspect_symbol`
+  (args/param_types/return_type/decorators/is_exported/is_test);
+  class rollup carries per-method signatures.
+- **R3** — `payload.candidates` fuzzy suggestions on
+  `inspect_symbol` no_match (APOC Sorensen-Dice with prefix
+  fallback).
+- **R4** — server-side `kind` classification on
+  `find_patterns(pattern="reuse_candidates")` groups.
+- **R5** — `community_id`, `community_label`, `per_community_rank`
+  on `find_patterns(pattern="hub_functions")` rows.
+- **R6** — `flow.community_map`,
+  `flow.community_boundary_crossings`, `flow.steps_truncated` on
+  `get_flow`.
+- **R7** — closes S13: `slice_build(mode=extend)` no-ops emit
+  structured `extend_refused` + `status="no_op"`.
+
+**Round-10 candidates (not in scope for R9):** E1-F2 (Dramatiq
+actor-message edges), E1-F3 (`analyze_impact` dead-code cross-check
+vs live callers), E1-F4 (`index` file re-export surfacing), E2-F2
+(`duplicate_signatures.actionability` scoring), E2-F4 (CSS-var
+runtime detection via string-template analysis), E3-F3
+(DECORATOR_USES edges), E3-F5 (`graph_overview` per-community test
+coverage), E3-F6 (`find_patterns(pattern="route_handlers")`
+convenience surface).
 
 ### Verified live (current + prior rounds)
 
 | Fix | Live signal |
 |-----|-------------|
-| **P1 (S6)** | No `///…` prefixes in any `graph_overview.communities` label; no `constructor` or generic verb as primary label token. `'config (open_pools)'` surfaces F2 as a remaining gap. |
-| **P2 (S10)** | `dead_code_candidates` no longer includes `examples/prompt-drag/…`. F1 captures the `_smoke/`/`_templates/` gap — scoped to `orphan_exports` (not `dead_code_candidates`). |
-| **P3 (S5)** | Docs chunks carry empty `sql_tables` and `feature_entrypoints` — pinned by unit tests. Live dogfood did not surface a docs facet counter-example. |
-| **P4 (S15)** | `inspect_symbol(BlobController)` now returns `class_rollup: {is_class: true, method_count: 7, rolled_up: true, caller_count: 5, callee_count: 6}` (was `0/0`). |
-| **P5 (S9)** | `list_flows` now shows `s2::worker` / `s2::worker#L354` / `s2::worker#L395` / … instead of `worker@apps/worker/app/ingest/writers/s2#L513`. |
-| **P6 (S12)** | Unit tests cover the `_resolve_library` helper; live dogfood did not hit a case-sensitivity miss because the P1/P5 work didn't touch `search_docs`. |
+| **Q1 (F3)** (round 8) | `overview.dead_code_candidates` (10 entries) has zero `/route.ts` / `/route.tsx` files. `list_flows` now lists 3 route-handler flows under `apps/web/app/graph-bundles/[checksum]/[asset]/route.ts`. |
+| **Q2 (F1)** (round 8) | Default `find_patterns(pattern="orphan_exports")` returns zero `_smoke/` or `_templates/` entries (8 total). Opt-in `include_non_production=true` surfaces 7 of them — toggle works. |
+| **Q3 (F2)** (round 8) | `config (…)` labels are gone entirely. Worker actor community (446 nodes) now labelled `apps/worker (open_pools)`. Top 8 communities use `apps/web (…)` / `apps/worker (…)` path-derived domains. |
+| **Q4 (F4)** (round 8) | `now()` absent from `overview.top_functions`; top 8 are real branching hotspots (`resolve`, `open_pools`, `run_release_ingest`, `runtime_settings_factory`, `run_corpus_selection`, `acquire_paper_text`, `WikiPanel`, `write_jsonl_gz`). |
+| **Q5 (S7)** (round 8) | `payload.graph_context` carries `is_cached=true, cache_advisory="fresh"/"aging"/"stale (>1h)", cache_age_seconds, cache_refreshed_at` at the top level — agents don't have to drill into `overview.cache_*` to see staleness. |
+| **Q6 (S11)** (round 8) | `search_docs_multi` returns structured `unmatched_library_ids: list[str]` and `skipped_libraries: list[{library_id, reason}]` — no more `status: success` with `Library not found` buried in markdown prose. |
+| **P1 (S6)** (round 7) | No `///…` prefixes in any `graph_overview.communities` label; no `constructor` or generic verb as primary label token. Round-8 Q3 superseded the remaining `config (…)` gap via path-based domains. |
+| **P2 (S10)** (round 7) | `dead_code_candidates` no longer includes `examples/prompt-drag/…`. Round-8 Q2 extended the same filter into `orphan_exports` (segment-anywhere for `_smoke/` / `_templates/`). |
+| **P3 (S5)** (round 7) | Docs chunks carry empty `sql_tables` and `feature_entrypoints` — pinned by unit tests. Live dogfood did not surface a docs facet counter-example. |
+| **P4 (S15)** (round 7) | `inspect_symbol(BlobController)` now returns `class_rollup: {is_class: true, method_count: 7, rolled_up: true, caller_count: 5, callee_count: 6}` (was `0/0`). |
+| **P5 (S9)** (round 7) | `list_flows` now shows `s2::worker` / `s2::worker#L354` / `s2::worker#L395` / … instead of `worker@apps/worker/app/ingest/writers/s2#L513`. |
+| **P6 (S12)** (round 7) | Unit tests cover the `_resolve_library` helper; Round-8 Q6 extended the flow by exposing structured unmatched/skipped fields when resolution fails. |
 | **S3** (round 6) | `analyze_diff HEAD~3..HEAD` returns no `.state/*.db` entries, `response_may_be_stale` warning gone. |
 | **S4** (round 6) | `graph_overview.coupling_warnings` lists each pair once with `lo_to_hi_edges`/`hi_to_lo_edges` — verified in §5.1 above. |
 | **S14** (round 6) | `codeatlas-infra` search no longer ranks `skills/**` above source chunks (verified post-purge in round 6). |
 | **S17** (round 6) | `force=True` bypasses the 20% orphan-deletion safety guard (covered by `tests/test_sync_orphan_force.py`). |
 
-All P1–P6 fixes carry regression tests in
-`tests/test_neo4j_community_labels.py`,
-`tests/test_overview_dead_code_filter.py`,
+All P1–P6 / Q1–Q6 fixes carry regression tests in
+`tests/test_neo4j_community_labels.py` (+9 Q3 cases),
+`tests/test_overview_dead_code_filter.py` (+1 Q2 segment case),
+`tests/test_patterns_orphan_filter.py` (new Q2),
+`tests/test_neo4j_queries.py` (+1 Q4 filter case, +1 Q1 suffix case),
+`tests/test_graph_overview_cache_signal.py` (new Q5, 7 cases),
 `tests/test_file_facets.py`,
 `tests/test_inspect_handler.py`,
 `tests/test_entry_point_ordering.py`, and
-`tests/test_doc_search_resolve.py` — **93 tests pass** across the
-affected modules.
+`tests/test_doc_search_resolve.py` (+1 Q6 case) — full codeatlas suite
+reports **1167 passed, 20 skipped**.
+
+### Round-8 open items (directly observed)
+
+- F1 — closed by Q2.
+- F2 — closed by Q3.
+- F3 — closed by Q1.
+- F4 — closed by Q4.
+- S7 — closed by Q5.
+- S11 — closed by Q6.
+
+### Round-9 items (directly observed)
+
+- S13 — closed by R7 (`extend_refused` + `status="no_op"` on no-op).
+- R1–R6 are additive upgrades (no prior distortion); no round-8 items
+  converted to closed by them.
 
 ---
 

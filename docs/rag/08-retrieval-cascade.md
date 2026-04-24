@@ -70,9 +70,9 @@ Eight load-bearing properties:
    between requests are invisible to in-flight requests; new requests
    pick up new state. (§9)
 4. **Lane choice is explicit and cheap.** `lane='paper'` is the
-   default and covers warm + hot via the `paper_index` `tier` field;
-   `lane='evidence'` implies `hot_only=True` and targets
-   `evidence_index` for hot-only evidence-unit retrieval with
+   default and covers mapped + evidence via the `paper_index` `tier` field;
+   `lane='evidence'` implies `evidence_only=True` and targets
+   `evidence_index` for evidence-cohort evidence-unit retrieval with
    sentence/block-coordinated grounding. (§10)
 5. **Filters push down to OpenSearch.** Engine never re-filters
    results pulled from OpenSearch. The `07 §5.6` filter contract is
@@ -149,7 +149,7 @@ class RetrievalFilter(BaseModel):
     publication_year_gte: int | None = Field(default=None, ge=1500, le=2100)
     publication_year_lte: int | None = Field(default=None, ge=1500, le=2100)
     is_retracted:         bool | None = False        # default excludes retracted
-    package_tier_in:      list[int] | None = None    # legacy product-tier (orthogonal to warm/hot)
+    package_tier_in:      list[int] | None = None    # legacy product-tier (orthogonal to mapped/evidence)
     venue_in:             list[str] | None = None    # `paper_index.venue_display` keyword
     concept_ids_any:      list[int] | None = None    # OR semantics over concept_ids[_top]
     corpus_ids_in:        list[int] | None = None    # parent-restrict; evidence-lane only
@@ -162,7 +162,7 @@ class RetrieveRequest(BaseModel):
     query_text:    str = Field(min_length=1, max_length=2048)
     k:             int = Field(default=10, ge=1, le=100)            # final ranked-paper count
     lane:          Literal["paper", "evidence"] = "paper"
-    hot_only:      bool = False                                     # implies tier_in=[2]
+    evidence_only: bool = False                                     # implies tier_in=[2]
     filter:        RetrievalFilter = RetrievalFilter()
     cohort_id:     int | None = None                                # explicit cohort pin; default = active
 
@@ -173,9 +173,9 @@ class RetrieveRequest(BaseModel):
 
     @model_validator(mode="after")
     def _enforce_lane_invariants(self) -> "RetrieveRequest":
-        # lane='evidence' implies hot_only=True (07 §3.3 / §10).
-        if self.lane == "evidence" and not self.hot_only:
-            object.__setattr__(self, "hot_only", True)
+        # lane='evidence' implies evidence_only=True (07 §3.3 / §10).
+        if self.lane == "evidence" and not self.evidence_only:
+            object.__setattr__(self, "evidence_only", True)
         # corpus_ids_in is evidence-lane only.
         if self.lane == "paper" and self.filter.corpus_ids_in is not None:
             raise ValueError("corpus_ids_in is only valid for lane='evidence'")
@@ -249,7 +249,7 @@ Grounding-level rule:
 
 - `RankedPaper.grounding_level = "evidence"` when the paper has at
   least one resolved `EvidenceHit` after Stage 4.
-- `RankedPaper.grounding_level = "paper"` for warm-tier paper support
+- `RankedPaper.grounding_level = "paper"` for mapped-tier paper support
   and for degraded evidence-lane rows that fell back to card-only
   support.
 - `RetrieveResponse.grounding_level` is the strongest grounding level
@@ -435,7 +435,7 @@ async def _stage_1_lane_fusion(self, req, query_vector, snapshot):
             k=200,
             ef_search=req.ef_search_override or 100,
             filter=req.filter,
-            tier_in=[2] if req.hot_only else [1, 2],          # §10
+            tier_in=[2] if req.evidence_only else [1, 2],          # §10
             search_pipeline="solemd_hybrid_rrf",
         )
         os_resp = await self.os.search(
@@ -1032,7 +1032,7 @@ from a `serving_artifacts` parquet snapshot) is **deferred**.
 
 ### 10.1 Default — `lane='paper'`
 
-Covers both warm and hot tiers via the `paper_index` `tier` field
+Covers both mapped and evidence tiers via the `paper_index` `tier` field
 (`07 §3.2`). This is the everyday RAG path; the result is a list of
 papers ranked by RRF + cross-encoder relevance. Suitable for:
 - General search ("find papers about X").
@@ -1041,7 +1041,7 @@ papers ranked by RRF + cross-encoder relevance. Suitable for:
 
 ### 10.2 Opt-in — `lane='evidence'`
 
-Targets `evidence_index_live`, which is hot-tier-only by construction
+Targets `evidence_index_live`, which is restricted to the evidence cohort by construction
 (`07 §3.5`). Returns paper-level results with up to 3 evidence-unit
 hits per paper, each carrying sentence coordinates for grounding.
 Suitable for:
@@ -1049,9 +1049,9 @@ Suitable for:
 - LLM grounding pipelines that need precise citation spans.
 - Evidence-comparison surfaces.
 
-The cascade enforces `hot_only=True` automatically when `lane='evidence'`
+The cascade enforces `evidence_only=True` automatically when `lane='evidence'`
 (per §2.1 `RetrieveRequest._enforce_lane_invariants`); this is a
-correctness rule, not a heuristic — `evidence_index` simply has no warm
+correctness rule, not a heuristic — `evidence_index` simply has no mapped
 tier to scope to.
 
 ### 10.3 Combined-lane call pattern
@@ -1065,7 +1065,7 @@ it server-side today (deferred per §2.4). Justification:
   into one response, complicating §9 cohort stability.
 - Client-side fusion gives the caller the freedom to weight lanes
   differently (e.g., "rank by evidence-lane score, fall back to
-  paper-lane for non-hot papers").
+  paper-lane for non-evidence papers").
 - Two parallel HTTP calls keep the cascade contract simple at the
   cost of some duplicated request work. If traces show duplicate
   Stage 0 encodes for same-query dual-lane bursts, add a small
@@ -1081,8 +1081,8 @@ The cascade never auto-promotes a `lane='paper'` request to
   orchestrator), not cascade concern.
 - Auto-promotion would silently change the response shape (adding
   `evidence_hits`), breaking caller assumptions.
-- The evidence lane is hot-cohort-scoped — auto-promoting a query
-  outside the hot cohort would silently truncate recall.
+- The evidence lane is evidence-cohort-scoped — auto-promoting a query
+  outside the evidence cohort would silently truncate recall.
 
 If a future query-rewriter (deferred) decides "this query needs
 sentence grounding," it sets `lane='evidence'` explicitly before
@@ -1105,7 +1105,7 @@ Per `07 §5.6` and the `RetrievalFilter` model (§2.1):
 | `venue_in` | `terms` on `venue_display` (keyword) | paper lane only |
 | `concept_ids_any` | `terms` on `concept_ids_top` (paper) / `concept_ids` (evidence) | both lanes |
 | `corpus_ids_in` | `terms` on `corpus_id` | evidence lane only |
-| `tier_in` (derived from `lane` + `hot_only`) | `terms` on `tier` | paper lane only |
+| `tier_in` (derived from `lane` + `evidence_only`) | `terms` on `tier` | paper lane only |
 
 The `RetrievalFilter` Pydantic model is the single source. Current
 OpenSearch supports a top-level `hybrid.filter`, and that is the
@@ -1648,7 +1648,7 @@ For the evidence lane, steps 5–9 differ:
 | Five-stage cascade: Stage 0 query encode → Stage 1 lane fusion (OpenSearch) → Stage 2 cross-encoder rerank → Stage 3 parent-child promotion → Stage 4 grounding dereference | Mirrors the canonical biomedical RAG cascade (`research-distilled §6`, MedCPT card); each stage has a single owner and a single failure class. |
 | One endpoint, one wire contract: `POST /api/retrieve` with `RetrieveRequest` / `RetrieveResponse` | Streaming and multi-turn deferred per §2.4; no scope creep. |
 | Pydantic v2 models with `frozen=True` and `extra="forbid"` for both request and response | `06 §4.5` hot-path performance rule + boundary contract. |
-| `lane='paper'` default; `lane='evidence'` opt-in implies `hot_only=True` automatically | `07 §3.5` evidence-index-is-hot-only; explicit caller intent (§10). |
+| `lane='paper'` default; `lane='evidence'` opt-in implies `evidence_only=True` automatically | `07 §3.5` evidence-index-is-evidence-only; explicit caller intent (§10). |
 | Caller never supplies query vector; engine owns encoding | `07 §6` encoder placement; trace consistency. |
 | Active-pointer fetched once per request; cohort stable for the request's duration; in-process last-known-good cache (60 s) | `04 §3.5` pointer atomicity; mid-request flips invisible (§9). |
 | Cross-encoder top-30; `CROSS_ENCODER_TOP_N` is a source constant | Sweet-spot for sub-second cascade on RTX 5090; over-30 blows the budget (§5.1). |
@@ -1704,7 +1704,7 @@ For the evidence lane, steps 5–9 differ:
 | Native Server-Sent-Events FastAPI handler | Same trigger as streaming above. |
 | Two-pass rerank (cheap reranker on top-100, expensive on top-10) | Cross-encoder budget at top-30 stops being adequate; today single-pass is enough. |
 | ColBERTv2 late-interaction sidecar after Stage 2 | `07 §13` deferred; only after MedCPT cascade is live and SPLADE doesn't close the gap. |
-| Per-paper rerank context window beyond `title + abstract` (e.g. include top-3 chunks for warm papers) | Recall@10 measurement shows abstract-only loses on long papers. |
+| Per-paper rerank context window beyond `title + abstract` (e.g. include top-3 chunks for mapped papers) | Recall@10 measurement shows abstract-only loses on long papers. |
 | Server-side query rewriter ahead of Stage 0 | Misspelling / synonym handling proves insufficient at OpenSearch analyzer level. |
 
 ## Open items

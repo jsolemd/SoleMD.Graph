@@ -10,6 +10,7 @@ from app.ingest.runtime import (
     INGEST_STATUS_PUBLISHED,
 )
 from app.ingest.source_retention import (
+    SourceRetentionError,
     SourceRetentionRunState,
     apply_source_retention_report,
     build_source_retention_report,
@@ -17,7 +18,7 @@ from app.ingest.source_retention import (
 from helpers import write_jsonl_gz, write_manifest
 
 
-def test_s2_retention_keeps_unloaded_citations_and_marks_optional_source_deleteable(tmp_path: Path) -> None:
+def test_s2_retention_keeps_unloaded_downstream_tier_sources(tmp_path: Path) -> None:
     release_dir = _write_s2_release(tmp_path)
     run_state = _run_state(
         release_dir,
@@ -40,14 +41,21 @@ def test_s2_retention_keeps_unloaded_citations_and_marks_optional_source_deletea
     assert items["papers"].action == "archive_candidate"
     assert items["papers"].safe_to_archive
     assert not items["papers"].safe_to_delete
-    assert items["s2orc_v2"].action == "delete_candidate"
-    assert items["s2orc_v2"].safe_to_delete
-    assert items["tldrs"].action == "delete_candidate"
+    assert items["s2orc_v2"].action == "keep"
+    assert "evidence" in items["s2orc_v2"].reason
+    assert not items["s2orc_v2"].safe_to_delete
+    assert items["tldrs"].action == "keep"
+    assert "mapped" in items["tldrs"].reason
+    assert not items["tldrs"].safe_to_delete
+    assert items["embeddings-specter_v2"].action == "keep"
+    assert items["embeddings-specter_v2"].family == "embeddings_specter_v2"
+    assert "mapped" in items["embeddings-specter_v2"].reason
+    assert not items["embeddings-specter_v2"].safe_to_delete
     assert items["manifests"].action == "keep"
     assert items["paper-ids"].action == "manual_review"
 
 
-def test_s2_retention_delete_applies_only_delete_safe_candidates(tmp_path: Path) -> None:
+def test_s2_retention_delete_skips_unconsumed_downstream_tier_sources(tmp_path: Path) -> None:
     release_dir = _write_s2_release(tmp_path)
     run_state = _run_state(
         release_dir,
@@ -69,14 +77,95 @@ def test_s2_retention_delete_applies_only_delete_safe_candidates(tmp_path: Path)
         provenance_ok=True,
     )
 
-    assert str(release_dir / "s2orc_v2") in changed
-    assert str(release_dir / "tldrs") in changed
-    assert not (release_dir / "s2orc_v2").exists()
-    assert not (release_dir / "tldrs").exists()
+    assert changed == ()
+    assert (release_dir / "s2orc_v2").exists()
+    assert (release_dir / "tldrs").exists()
+    assert (release_dir / "embeddings-specter_v2").exists()
     assert (release_dir / "papers").exists()
     assert (release_dir / "abstracts").exists()
     assert (release_dir / "citations").exists()
     assert (release_dir / "manifests").exists()
+
+
+def test_s2_retention_delete_requires_provenance_confirmation(tmp_path: Path) -> None:
+    release_dir = _write_s2_release(tmp_path)
+    run_state = _run_state(
+        release_dir,
+        release_status="ingesting",
+        ingest_status=INGEST_STATUS_ABORTED,
+        families_loaded=("publication_venues", "authors", "papers", "abstracts"),
+    )
+    report = build_source_retention_report(
+        _settings_for(tmp_path),
+        source_code="s2",
+        release_tag="2026-03-10",
+        run_state=run_state,
+        dry_run=False,
+    )
+
+    try:
+        apply_source_retention_report(report, action="delete")
+    except SourceRetentionError as exc:
+        assert "--provenance-ok" in str(exc)
+    else:
+        raise AssertionError("delete mutation should require explicit provenance confirmation")
+
+    assert (release_dir / "s2orc_v2").exists()
+    assert (release_dir / "tldrs").exists()
+
+
+def test_s2_retention_archive_rejects_release_local_archive_root(tmp_path: Path) -> None:
+    release_dir = _write_s2_release(tmp_path)
+    run_state = _run_state(
+        release_dir,
+        release_status="ingesting",
+        ingest_status=INGEST_STATUS_ABORTED,
+        families_loaded=("publication_venues", "authors", "papers", "abstracts"),
+    )
+    report = build_source_retention_report(
+        _settings_for(tmp_path),
+        source_code="s2",
+        release_tag="2026-03-10",
+        run_state=run_state,
+        dry_run=False,
+    )
+
+    try:
+        apply_source_retention_report(
+            report,
+            action="archive",
+            archive_root=release_dir / "_archive",
+        )
+    except SourceRetentionError as exc:
+        assert "archive root must not be inside the source release directory" in str(exc)
+    else:
+        raise AssertionError("archive mutation should reject roots inside the source release")
+
+    assert (release_dir / "papers").exists()
+    assert not (release_dir / "_archive").exists()
+
+
+def test_s2_retention_marks_symlink_aliases_manual_review(tmp_path: Path) -> None:
+    release_dir = _write_s2_release(tmp_path)
+    (release_dir / "s2orc").symlink_to(release_dir / "s2orc_v2")
+    run_state = _run_state(
+        release_dir,
+        release_status="ingesting",
+        ingest_status=INGEST_STATUS_ABORTED,
+        families_loaded=("publication_venues", "authors", "papers", "abstracts"),
+    )
+    report = build_source_retention_report(
+        _settings_for(tmp_path),
+        source_code="s2",
+        release_tag="2026-03-10",
+        run_state=run_state,
+        dry_run=False,
+    )
+    items = {item.dataset: item for item in report.items}
+
+    assert items["s2orc"].action == "manual_review"
+    assert not items["s2orc"].safe_to_archive
+    assert not items["s2orc"].safe_to_delete
 
 
 def test_s2_retention_blocks_active_runs(tmp_path: Path) -> None:
@@ -163,13 +252,19 @@ def _write_s2_release(tmp_path: Path) -> Path:
         "papers",
         "abstracts",
         "tldrs",
+        "embeddings-specter_v2",
         "citations",
         "s2orc_v2",
     )
     for dataset in datasets:
         dataset_dir = release_dir / dataset
-        file_path = dataset_dir / f"{dataset}-0000.jsonl.gz"
-        write_jsonl_gz(file_path, [{"id": dataset}])
+        if dataset == "embeddings-specter_v2":
+            file_path = dataset_dir / f"{dataset}-0000.parquet"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(b"PAR1")
+        else:
+            file_path = dataset_dir / f"{dataset}-0000.jsonl.gz"
+            write_jsonl_gz(file_path, [{"id": dataset}])
         write_manifest(
             release_dir / "manifests" / f"{dataset}.manifest.json",
             dataset=dataset,

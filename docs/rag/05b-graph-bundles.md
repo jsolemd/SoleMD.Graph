@@ -237,7 +237,7 @@ or **new** (this doc authors it). All file paths are repository-relative.
 | 5 | Build writes (warehouse) | `engine/app/graph/build_writes.py` | **locked** | Inserts `graph_points`, `graph_clusters`, `graph_base_points` into warehouse. Membership state lives in `graph_points` (`graph_run_id` + `corpus_id`); see (b) discussion in §0. |
 | 6 | Cluster labels (LLM) | `engine/app/graph/labels.py`, `engine/app/graph/llm_labels.py` | **locked** | Modified file; algorithm unchanged for this doc. Inputs: cluster centroid + member sample; output: short label + long description. |
 | 7 | Paper-evidence summary refresh | `engine/app/graph/paper_evidence.py` | **locked** | Graph-side evidence-unit summary; consumed by exports (cluster exemplars, paper documents). |
-| 8 | Bundle export engine | `engine/app/graph/export_bundle.py` (1019 lines) | **adapt** | The big file. Two surgical fixes per §11: (a) `solemd.citations` → `solemd.paper_citations` rename + partition-key predicate at line ~1032 (`engine/app/graph/export_bundle.py:1032`); (b) `pa.external_ids->>'ORCID'` and `pa.affiliations[1]` rewrites at `engine/app/graph/export_bundle.py:340-342` to match the new `paper_authors` shape per `02 §4.2`. Speed-first refactor in §6 is the larger change (engine-agnostic export contract; measured choice between native-PG and DuckDB helper per table). |
+| 8 | Bundle export engine | `engine/app/graph/export_bundle.py` (1019 lines) | **adapt** | The big file. Two surgical fixes per §11: (a) `solemd.citations` → mapped-owned `solemd.paper_citations` at line ~1032 (`engine/app/graph/export_bundle.py:1032`); (b) `pa.external_ids->>'ORCID'` and `pa.affiliations[1]` rewrites at `engine/app/graph/export_bundle.py:340-342` to match the new `paper_authors` shape per `02 §4.2`. Speed-first refactor in §6 is the larger change (engine-agnostic export contract; measured choice between native-PG and DuckDB helper per table). |
 | 9 | Bundle export contract validator | `engine/app/graph/export.py` | **locked** | `validate_bundle_manifest_contract()`, `bundle_contract()`. The browser TypeScript schema mirrors this. |
 | 10 | Bundle finalization + checksum publish | `engine/app/graph/build_publish.py:51-102` (`_finalize_graph_run`), `engine/app/graph/export_bundle.py:165-184` (`_publish_checksum_bundle_alias`) | **adapt** | The `is_current = %s` UPDATE at line 76–87 stays for now (warehouse-side ledger field); the call to `_sync_current_corpus_membership()` at line 101 is **deleted**. (b) §11. |
 | 11 | Warehouse-side membership sync | `engine/app/graph/build_publish.py:120-173, 176-214` (`_sync_current_corpus_membership`, `sync_current_graph_membership`) | **delete** | Per (b). The function and its CLI / API entry points are removed. Drop `solemd.corpus.is_in_current_map` and `is_in_current_base` columns (`02 §4.2` amendment). |
@@ -539,13 +539,12 @@ planner uses index-only paths for the per-paper rollups in
 
 ### 5.2 Hash-partition pruning where available
 
-`solemd.paper_citations`, `solemd.paper_authors` (if partitioned —
-`02 §4.2` provisional) are hash-partitioned on `corpus_id` (or
-`citing_corpus_id` for citations) × 32 per `02 §0.6, §3.1`.
-`paper_evidence_units` stays unpartitioned day one per `02 §4.5`; bundle
-queries should therefore rely on direct keyed lookups there until the
-documented row-count trigger for later partitioning is crossed. For partitioned
-families, show the planner pruning by selecting on the hash key:
+`paper_blocks`, `paper_sentences`, mapped mention tables, and some canonical
+PT3 tables are hash-partitioned on `corpus_id` × 32 per `02 §0.6, §3.1`.
+`paper_citations` and `paper_evidence_units` stay unpartitioned day one; bundle
+queries should therefore rely on direct keyed lookups there until the documented
+row-count trigger for later partitioning is crossed. For partitioned families,
+show the planner pruning by selecting on the hash key:
 
 ```sql
 -- Bundle query; planner prunes to relevant partitions
@@ -1148,15 +1147,14 @@ rows.
    currently-published `graph_run_id` (count of currently-base / mapped
    points).
 4. `engine/app/graph/export_bundle.py:1032` — rename `solemd.citations c`
-   to `solemd.paper_citations c`. Add an explicit hash-key predicate
-   so the planner prunes (the partition key is `citing_corpus_id` per
-   `02 §3.1`):
+   to mapped-owned `solemd.paper_citations c`, joining through the current
+   `paper_citations` shape from `02 §4.4`:
 
    ```sql
    FROM solemd.paper_citations c
-   JOIN render_points src ON src.corpus_id = c.citing_corpus_id
+   JOIN render_points src ON src.corpus_id = c.corpus_id
    JOIN render_points dst ON dst.corpus_id = c.cited_corpus_id
-   WHERE c.source_release_id IS NOT NULL  -- planner hint, harmless
+   WHERE c.cited_corpus_id IS NOT NULL
    ```
 5. `engine/app/graph/export_bundle.py:340-342` — replace
    `pa.external_ids->>'ORCID'` and `pa.affiliations[1]` with the new
@@ -1470,7 +1468,7 @@ bundle lane enforces:
 | Asset URL pattern `/graph-bundles/<bundle_checksum>/<file>` with `Cache-Control: public, max-age=31536000, immutable` | Next.js immutable-asset convention; checksum guarantees correctness. |
 | ZSTD-3 parquet compression with 122 880-row groups | Current project default for first sample builds; keep benchmark-owned rather than treating it as a universal DuckDB sweet spot. |
 | `_sync_current_corpus_membership()` deletion | Per (b). |
-| Schema-rebuild fixes: `solemd.citations` → `solemd.paper_citations`; `pa.external_ids->>'ORCID'` / `pa.affiliations[1]` → new `paper_authors` columns | `02 §4.2` post-amendment shape. |
+| Schema-rebuild fixes: `solemd.citations` → mapped-owned `solemd.paper_citations`; `pa.external_ids->>'ORCID'` / `pa.affiliations[1]` → new `paper_authors` columns | `02 §4.2` / `02 §4.4` post-amendment shape. |
 | New `graph_run_status` enum in `enum-codes.yaml` | `12 §4` registry pattern. |
 
 ### Provisional (revisit after first sample build)

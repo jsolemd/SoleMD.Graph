@@ -451,7 +451,7 @@ table "paper_api_cards" {
   column "citation_count"        { null = false, type = integer, default = 0 }
   column "influential_citation_count" { null = false, type = integer, default = 0 }
   column "publication_year"      { null = true,  type = smallint }
-  column "package_tier"          { null = false, type = smallint, default = 0 } // 0 none, 1 warm, 2 hot
+  column "package_tier"          { null = false, type = smallint, default = 0 } // 0 none, 1 mapped, 2 evidence
   column "text_availability"     { null = false, type = smallint, default = 0 }
   column "article_type"          { null = true,  type = smallint }
   column "language"              { null = true,  type = smallint }
@@ -488,7 +488,7 @@ table "paper_api_cards" {
 ```
 
 Consumed by engine API list endpoints
-(`/papers?graph_run=…&tier=hot&limit=…`), graph-selection side panel
+(`/papers?graph_run=…&tier=evidence&limit=…`), graph-selection side panel
 (one `corpus_id` per point), and wiki list views.
 
 The covering index `idx_paper_api_cards_list` is the canonical
@@ -627,7 +627,7 @@ Columns (MAXALIGN): `serving_run_id` UUID PK `uuidv7()` default;
 (cross-cluster refs enforced in engine, not PG); `build_started_at`,
 `build_completed_at` TIMESTAMPTZ; `source_release_watermark`,
 `contract_version`, `synonym_version`, `analyzer_version` INTEGER;
-`package_tier` (hot | warm | mixed), `vector_mode` (halfvec_fp16 | fp32
+`package_tier` (evidence | mapped | mixed), `vector_mode` (halfvec_fp16 | fp32
 | sparse), `build_status` SMALLINT (`building=1`, `published=2`,
 `aborted=3`, `failed=4`, `retired=5`; canonical registry in `04 §0` /
 `db/schema/enum-codes.yaml`); `opensearch_alias_swap_status` SMALLINT (`pending` |

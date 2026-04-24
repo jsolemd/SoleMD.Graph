@@ -103,15 +103,43 @@ Rules:
 ## Boot Contract
 
 ```text
-Windows boot/logon
-  -> scheduled task mounts VHD
-  -> WSL distro starts
+WSL distro starts (cold boot OR wake-from-sleep OR wsl --shutdown cycle)
+  -> systemd runs solemd-graph-mount.service (Before=docker.service)
+     -> invokes scheduled task "WSL Mount SoleMD Graph VHD" via schtasks.exe
+     -> polls /mnt/solemd-graph/tei-models up to 90s for autofs to resolve
   -> systemd starts docker
-  -> automount exposes /mnt/solemd-graph
+  -> automount has /mnt/solemd-graph ready for bind mounts
   -> containers with restart policy come back
 ```
 
 No step in this path should depend on Docker Desktop UI or manual terminal work.
+
+Why the systemd service exists: the `WSL Mount SoleMD Graph VHD` scheduled task
+only fires on Windows boot/logon triggers. Laptop sleep/wake and `wsl --shutdown`
+cycles kill the WSL VM without a new Windows boot or logon, so the task does not
+re-fire and the 1.85 TB vhdx ends up detached. Every bind mount under
+`/mnt/solemd-graph` then fails with `no such device` and the warehouse DB, TEI,
+and any container with that path dies at start.
+
+Ownership:
+
+| Artifact | Path |
+|---|---|
+| systemd unit | `/etc/systemd/system/solemd-graph-mount.service` |
+| mount helper | `/usr/local/bin/ensure-solemd-graph-mount.sh` |
+| Windows task | Task Scheduler → `WSL Mount SoleMD Graph VHD` |
+
+Troubleshooting when a container reports "no such device" on `/mnt/solemd-graph`:
+
+```bash
+systemctl status solemd-graph-mount.service
+journalctl -u solemd-graph-mount.service --no-pager
+/usr/local/bin/ensure-solemd-graph-mount.sh   # safe to re-run; idempotent
+```
+
+Swap policy: WSL2 swap uses the default Windows location (not `E:`). Do not set
+`swapFile=` in `C:\Users\Jon\.wslconfig` — the E: drive has shown I/O errors
+that can cascade into container health failures.
 
 Current local asymmetry is intentional:
 - `graph-db-serve`, `pgbouncer-serve`, and `graph-redis` are always-up and use

@@ -70,10 +70,10 @@ were superseded or never shipped; the canonical sequence skips those numbers.
 | 004e | Endocrine/metabolic base additions | DKA, myxedema entity rules |
 | 005 | S2 enrichment tracking | `papers.s2_full_checked_at`, `papers.s2_found` |
 | 006 | S2 embedding tracking | `papers.s2_embedding_checked_at` |
-| 007 | S2 metadata + related tables | `papers.paper_id`, `papers.paper_external_ids`, `solemd.publication_venues`, `solemd.authors`, `solemd.paper_authors`, `solemd.author_affiliations`, `solemd.paper_assets`, `solemd.paper_references`, `solemd.citations` |
+| 007 | S2 metadata + related tables | `papers.paper_id`, `papers.paper_external_ids`, `solemd.publication_venues`, `solemd.authors`, `solemd.paper_authors`, `solemd.author_affiliations`, `solemd.paper_assets`, `solemd.paper_citations` |
 | 008 | S2 reference tracking | `papers.s2_references_checked_at`, `papers.s2_references_release_id` |
 | 009 | Graph build tables | `solemd.graph_runs`, `solemd.graph_points`, `solemd.graph_clusters` |
-| 010 | Extend citations for bulk dataset | `citations.contexts`, `citations.intents`, `citations.is_influential` |
+| 010 | Citation enrichment history | Superseded by raw `s2_paper_reference_metrics_raw` plus mapped `paper_citations` |
 | 011 | Bulk citation checkpoints | `solemd.bulk_citation_ingest_batches` |
 | 012 | Canonical entity records | `solemd.entities` |
 | 013 | PubTator tables set LOGGED | Convert `pubtator.*` from UNLOGGED -> LOGGED (fix for 342M row loss) |
@@ -639,23 +639,22 @@ Outgoing reference list per paper from S2 Graph API.
 | source_release_id | TEXT | |
 | **UNIQUE** | (`corpus_id`, `reference_index`) | |
 
-### `solemd.citations`
+### `solemd.paper_citations`
 
-Domain-domain citation edges. Primary graph edge source from S2 bulk dataset.
+Mapped actual paper-to-paper citation edges. Raw ingest keeps broad citation
+metrics in `s2_paper_reference_metrics_raw`; this table is populated during
+mapped enrichment for mapped citing papers.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| citing_corpus_id | BIGINT FK->corpus | |
-| cited_corpus_id | BIGINT FK->corpus | |
-| citation_id | BIGINT | S2 bulk dataset identifier |
-| cited_paper_id | TEXT | S2 paperId |
-| contexts | JSONB DEFAULT '[]' | Citation context snippets from S2 bulk |
-| intents | JSONB DEFAULT '[]' | Citation intent labels |
+| corpus_id | BIGINT FK->corpus | Mapped citing paper |
+| reference_checksum | TEXT | Stable release-scoped reference row key |
+| cited_corpus_id | BIGINT FK->corpus | Populated when cited paper is canonical |
+| cited_s2_paper_id | TEXT | S2 paperId for unresolved/out-of-corpus cited paper |
+| linkage_status | SMALLINT | Pending / linked / orphan |
 | is_influential | BOOLEAN | S2 influential citation flag |
-| context_count | INTEGER DEFAULT 0 | Convenience count |
-| source | TEXT DEFAULT 'semantic_scholar_graph_api' | |
-| source_release_id | TEXT | |
-| **PK** | (`citing_corpus_id`, `cited_corpus_id`) | |
+| intent_raw | TEXT | Raw S2 intent payload |
+| **PK** | (`corpus_id`, `reference_checksum`) | |
 
 ---
 
@@ -817,11 +816,11 @@ Aligned entity mentions with concept identifiers. Hash-partitioned x16.
          | 1:N
          +--------------+--------------+---------------+---------------+
          |              |              |               |               |
-+--------+--------+ +---+-----------+ ++--------------+ ++------------+ ++--------------+
-| paper_references| | paper_authors | |paper_documents| | paper_assets| |   citations   |
-| corpus_id (FK)  | | corpus_id(FK) | |corpus_id(PK) | |corpus_id(FK)| |citing/cited FK|
-| ref_corpus_id   | | author_id(FK) | |-> sections    | |asset_kind   | |contexts,intents|
-| title, year     | | name, affils  | |  -> blocks    | |remote_url   | |is_influential |
++-----------------+ +---+-----------+ ++--------------+ ++------------+ ++--------------+
+| paper_citations | | paper_authors | |paper_documents| | paper_assets| | pubtator rels |
+| corpus_id (FK)  | | corpus_id(FK) | |corpus_id(PK) | |corpus_id(FK)| |corpus_id pair |
+| cited_corpus_id | | author_id(FK) | |-> sections    | |asset_kind   | |relation type |
+| cited_s2_paper  | | name, affils  | |  -> blocks    | |remote_url   | |source lineage |
 +-----------------+ |  v            | |    -> sents   | +-------------+ +---------------+
                     | author_affils | |  -> cit_ments |
                     +---------------+ |  -> ent_ments |

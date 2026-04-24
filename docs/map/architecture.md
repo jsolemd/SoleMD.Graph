@@ -21,9 +21,9 @@ thousands of papers as an interactive map of neuroscience, psychiatry, and
 neurology -- clustered by research community, filterable by entity type,
 searchable by concept.
 
-Pre-computed data from PubTator3 (entities, relations, abstracts for 36M
-papers) and Semantic Scholar (citations, SPECTER2 embeddings, TLDRs for
-225M+ papers) means there is no local NER or PDF extraction pipeline.
+Pre-computed data from PubTator3 and Semantic Scholar provides the raw release
+backbone. S2 citation aggregates land in raw ingest, S2 TLDRs and SPECTER2 feed
+mapped rollout, and S2ORC_v2 is reserved for evidence-tier full-text fallback.
 
 ---
 
@@ -311,8 +311,8 @@ The durable backbone is relational. Full column-level schema lives in
 | `solemd.publication_venues` | Normalized publication venue registry |
 | `solemd.authors` / `paper_authors` / `author_affiliations` | S2 author snapshots + ordered author list + raw affiliation rows |
 | `solemd.paper_assets` | OA PDF metadata (later: mirrored / local assets) |
-| `solemd.paper_references` | Outgoing bibliographic references per paper |
-| `solemd.citations` | Normalized domain-domain citation edges |
+| `solemd.s2_paper_reference_metrics_raw` | Broad raw citation aggregates for gating |
+| `solemd.paper_citations` | Mapped actual paper-to-paper citation edges |
 | `solemd.base_policy` | Active base-admission policy record |
 | `solemd.base_journal_family` / `journal_rule` | Curated journal families + venue -> family mapping |
 | `solemd.entity_rule` / `relation_rule` | Rule-backed base-admission rules |
@@ -348,13 +348,13 @@ The durable backbone is relational. Full column-level schema lives in
 
 | Tier | Lives in | Contents |
 |---|---|---|
-| HOT | PostgreSQL (~50-150 GB) | Users, papers, chunks, MedCPT embeddings (HNSW), PubTator annotations + relations, citations, SPECTER2 (halfvec), TLDRs |
-| COLD | Local NVMe (~60 GB) | S2 papers dataset (~45 GB JSONL.gz), PubTator3 tab files (~11 GB). Raw source files only. |
+| HOT | PostgreSQL (~50-150 GB) | Users, mapped papers, chunks, MedCPT embeddings (HNSW), PubTator annotations + relations, citation aggregates, mapped SPECTER2 (halfvec), mapped TLDRs, evidence text |
+| COLD | Local NVMe / release mirror | S2 and PubTator release files that are still active, resumable, or awaiting mapped/evidence consumption. Raw source files only. |
 
-**Only the S2 papers dataset is a full download.** Everything else
-(abstracts, embeddings, TLDRs, references) comes via the S2 Batch API.
-See `engine/app/corpus/s2_client.py` module docstring for the S2 API
-contract.
+S2 broad corpus work is release-backed through `apps/worker/app/ingest/`.
+The live Semantic Scholar Graph API is not the corpus backbone; use it only for
+bounded enrichment or reconciliation where rate limits and non-release
+semantics are acceptable.
 
 ---
 

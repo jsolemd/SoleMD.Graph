@@ -121,6 +121,10 @@ def stream_family(
         return _stream_abstracts(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "tldrs":
         return _stream_tldrs(file_path, max_records_per_file, on_progress=on_progress)
+    if family_name == "embeddings_specter_v2":
+        raise SourceSchemaDrift(
+            "embeddings_specter_v2 is a mapped-tier source family; its loader is not part of default S2 raw ingest"
+        )
     if family_name == "citations":
         return _stream_citations(file_path, max_records_per_file, on_progress=on_progress)
     if family_name == "s2orc_v2":
@@ -156,6 +160,7 @@ def _target_tables_for_family(family_name: str) -> tuple[str, ...]:
         ),
         "abstracts": ("solemd.s2_papers_raw",),
         "tldrs": ("solemd.s2_papers_raw",),
+        "embeddings_specter_v2": ("solemd.paper_embeddings_graph",),
         "citations": ("solemd.s2_paper_reference_metrics_raw",),
         "s2orc_v2": ("solemd.s2orc_documents_raw",),
     }

@@ -4,7 +4,11 @@ import { useRef, useState, type CSSProperties, type MutableRefObject } from "rea
 import { PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import type { Camera } from "three";
-import { FieldScene, type BlobGeometrySubscriber } from "./FieldScene";
+import {
+  FieldScene,
+  type BlobGeometrySubscriber,
+  type BlobPointsSubscriber,
+} from "./FieldScene";
 import { FrameloopInvalidator } from "./FrameloopInvalidator";
 import { useAdaptiveFrameloop } from "./use-adaptive-frameloop";
 import type { FieldController } from "../controller/FieldController";
@@ -33,6 +37,12 @@ interface FieldCanvasProps {
    * baker) can stream attribute mutations into the running scene.
    */
   blobGeometrySubscriber?: BlobGeometrySubscriber;
+  /**
+   * Orb-mode hook: when provided, FieldScene installs this subscriber on
+   * the blob layer's THREE.Points so out-of-tree surfaces (the picker)
+   * can render picking passes against the live renderer/scene/camera.
+   */
+  blobPointsSubscriber?: BlobPointsSubscriber;
   className?: string;
   style?: CSSProperties;
 }
@@ -45,6 +55,7 @@ export function FieldCanvas({
   stageReady = true,
   onControllerReady,
   blobGeometrySubscriber,
+  blobPointsSubscriber,
   className,
   style,
 }: FieldCanvasProps) {
@@ -96,6 +107,7 @@ export function FieldCanvas({
           stageReady={stageReady}
           onControllerReady={onControllerReady}
           blobGeometrySubscriber={blobGeometrySubscriber}
+          blobPointsSubscriber={blobPointsSubscriber}
         />
       </Canvas>
     </div>

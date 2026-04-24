@@ -95,8 +95,7 @@
 
   /* ── Graph canvas (unique values only — rest reference foundations) ── */
   --graph-canvas-filter: saturate(1.8) brightness(0.85);
-  --graph-bg: #fffffe;
-  --graph-panel-bg: var(--graph-bg);
+  --graph-panel-bg: var(--background);
   --graph-panel-border: var(--border-subtle);
   --graph-panel-text: var(--text-primary);
   --graph-panel-text-muted: var(--text-secondary);
@@ -310,7 +309,6 @@ html:root {
 
   /* ── Graph canvas (only values that diverge from foundations) ── */
   --graph-canvas-filter: none;
-  --graph-bg: #000000;
   /* True-AMOLED canvas — panels sit inky on pure black (L+6 canvas→panel).
      Inputs drop back near-black so the panel frames them. Rim-light + the
      --graph-panel-border hairline carry the separation in place of a drop

@@ -9,47 +9,36 @@ import { useResolveAndSelectNode } from "@/features/graph/hooks/use-resolve-and-
  * Orb paper-selection handler.
  *
  * Consumes `useResolveAndSelectNode` (the cross-renderer selection
- * funnel) and returns a `selectByIndex(index)` callback for the orb
- * picking path. When the field picker resolves a click to a particle
- * index, this hook dispatches `{ layer, index }` into the graph store
- * via the shared resolver — the same code path Cosmograph uses.
+ * funnel) and returns a `selectByIndex(index | null)` callback for the
+ * orb picking path. When the field picker resolves a click to a
+ * particle index, this hook dispatches `{ layer, index }` into the
+ * graph store via the shared resolver — the same code path Cosmograph
+ * uses.
  *
- * ### GPU picking status (5e)
- *
- * The field-side GPU picking (`createFieldPicker` + picking material)
- * lives in `features/field/renderer/field-picking.ts` and is designed
- * to run inside R3F with access to the renderer/scene/camera/points.
- * Wiring that R3F-internal path into OrbSurface (which sits outside
- * the canvas tree) is scoped as a 5e follow-up — it needs a new
- * FieldScene subscriber prop symmetric to `blobGeometrySubscriber`
- * plus a picking ShaderMaterial matching the field vertex shader.
- *
- * In the meantime the click path is wired end-to-end: any caller that
- * can resolve a click to an index (e.g. a later pick layer, or a
- * SelectionDebug HUD) can call `selectByIndex(i)` and the detail panel
- * lights up.
+ * When `queries` is null (bundle not yet warm) the hook always returns
+ * a no-op — we can't resolve a click without DuckDB. `useResolveAndSelectNode`
+ * is still wired so the callback dependency keys stay stable once
+ * queries arrives.
  */
 export function useOrbClick(
   queries: GraphBundleQueries | null,
   activeLayer: GraphLayer,
 ) {
+  // Only invoke the real resolver when queries is present. Casting
+  // is safe because the outer callback guards on `queries == null` and
+  // the underlying hook returns a callback that closes over queries —
+  // it doesn't dereference it at build time.
   const resolveAndSelect = useResolveAndSelectNode(
-    queries ??
-      // Cast-safe null fallback: the returned callback is a no-op when
-      // queries is null because the caller guards on it first.
-      (EMPTY_QUERIES as unknown as GraphBundleQueries),
+    (queries ?? null) as unknown as GraphBundleQueries,
     activeLayer,
   );
 
   return useCallback(
     (index: number | null) => {
-      if (queries == null || index == null || index < 0) return;
+      if (queries == null) return;
+      if (index == null || index < 0) return;
       void resolveAndSelect({ index });
     },
     [queries, resolveAndSelect],
   );
 }
-
-// Stub used only as a type-safe fallback when `queries` is null. Every
-// field is absent — the returned callback never runs against it.
-const EMPTY_QUERIES = {};

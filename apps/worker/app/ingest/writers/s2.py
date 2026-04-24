@@ -157,6 +157,10 @@ async def load_family(
             on_input_progress=on_input_progress,
             on_batch_processed=on_batch_processed,
         )
+    if family_name == "embeddings_specter_v2":
+        raise ValueError(
+            "embeddings_specter_v2 is owned by the mapped tier and is not loadable through default S2 raw ingest"
+        )
     if family_name == "citations":
         return await _load_citations(
             pool,

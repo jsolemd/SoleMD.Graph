@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 SourceCode = Literal["s2", "pt3"]
 TriggerKind = Literal["manual", "manifest"]
-ContentKind = Literal["jsonl_gz", "tsv_gz", "tar_gz", "manifest_json", "sqlite"]
+ContentKind = Literal["jsonl_gz", "tsv_gz", "tar_gz", "manifest_json", "sqlite", "parquet"]
 
 
 class StartReleaseRequest(BaseModel):

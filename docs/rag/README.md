@@ -155,11 +155,11 @@ The locked stage hierarchy is:
   - the stricter paper-level active universe inside corpus
   - mapped-owned heavy surfaces such as `paper_authors`,
     canonical `pubtator.entity_annotations`, canonical `pubtator.relations`,
-    and any citation-edge enrichment actually required downstream
+    and actual paper-to-paper citation edges in `paper_citations`
 - `evidence`
   - the smaller full-text / chunking / grounding subset inside mapped
-  - owns evidence-wave membership, canonical document acquisition, and
-    document-spine child work
+  - owns evidence-wave membership, canonical document acquisition,
+    document-spine child work, and in-text `paper_citation_mentions`
 
 Two scope predicates matter:
 

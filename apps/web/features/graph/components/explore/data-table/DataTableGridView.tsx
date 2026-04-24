@@ -79,9 +79,9 @@ export function DataTableGridView({
       stickyHeader
       style={{ fontSize: panelScaledPx(10) }}
       styles={{
-        thead: { backgroundColor: "var(--graph-bg)" },
+        thead: { backgroundColor: "var(--background)" },
         th: {
-          backgroundColor: "var(--graph-bg)",
+          backgroundColor: "var(--background)",
           borderColor: "var(--graph-panel-border)",
           padding: "4px 6px",
         },
@@ -90,7 +90,7 @@ export function DataTableGridView({
       }}
     >
       <Table.Thead>
-        <Table.Tr style={{ backgroundColor: "var(--graph-bg)" }}>
+        <Table.Tr style={{ backgroundColor: "var(--background)" }}>
           <Table.Th style={{ ...panelTableHeaderStyle, width: 28 }}>#</Table.Th>
           {tableColumns.map((key) => {
             const meta = getColumnMetaForLayer(key, activeLayer);

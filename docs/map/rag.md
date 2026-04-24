@@ -373,7 +373,7 @@ Their intended next use belongs in the plan doc, not here.
 | `solemd.graph_runs` | Resolves `graph_release_id` to one concrete graph run | Supports `current`, explicit run ids, and bundle checksums |
 | `solemd.graph_points` | Defines release membership for retrieval and graph resolution | Every live query is scoped through the resolved run |
 | `solemd.papers` | Core paper metadata, paper FTS, and dense embeddings | Title, abstract, TLDR, venue, counts, `embedding`, `fts_vector` (stored tsvector); all graph-scoped queries JOIN through `graph_points` before FTS evaluation |
-| `solemd.citations` | Citation-context recall and bounded neighbor expansion | Boost-only lane, not a standalone result spine |
+| `solemd.paper_citations` | Mapped citation-neighbor recall and bounded expansion | Boost-only lane, not a standalone result spine |
 | `solemd.paper_entity_mentions` | Entity seed recall and post-rank enrichment | Also anchors species and concept-level signals |
 | `pubtator.relations` | Relation seed recall and relation enrichment | Supplies normalized subject/object relation matching |
 | `solemd.paper_references` | Bibliography for returned evidence bundles | Used after ranking on the top result set |
@@ -480,7 +480,7 @@ query shape, while the plan is the concrete execution posture for that request.
 | `dense_query` | `solemd.papers.embedding` | Semantic paper recall | Uses SPECTER2 ad-hoc query encoding |
 | `entity_match` | `solemd.paper_entity_mentions` | Seed recall and enrichment | Exact concept or canonical-name matching with bounded terms |
 | `relation_match` | `pubtator.relations` | Seed recall and enrichment | Relation-type matching against normalized relation terms |
-| `citation_context` | `solemd.citations` | Boost-only expansion | Expands from already recalled candidates; not treated as a full RRF lane |
+| `citation_context` | `solemd.paper_citations` | Boost-only expansion | Expands from already recalled mapped candidates; not treated as a full RRF lane |
 | `semantic_neighbor` | `solemd.papers.embedding` plus selected context | Selected-paper expansion | Only runs when a selected paper exists and broader expansion is justified |
 
 ---

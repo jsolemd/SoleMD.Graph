@@ -92,7 +92,7 @@ export function MobileShell(state: DashboardShellController) {
   return (
     <div
       className="fixed inset-0"
-      style={{ backgroundColor: "var(--graph-bg)" }}
+      style={{ backgroundColor: "var(--background)" }}
     >
       {canvasReady && (
         <>

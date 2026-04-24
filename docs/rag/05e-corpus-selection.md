@@ -9,8 +9,8 @@
 > `mapped_surface_materialization` phases, and per-paper selection summary
 > refresh. The landed split keeps baseline corpus materialization at
 > (`papers`, `paper_text`) and mapped-surface
-> materialization (`paper_authors`, canonical PT3, and any citation-edge
-> enrichment that downstream mapped waves truly require). `mapped`
+> materialization (`paper_authors`, canonical PT3, and actual `paper_citations`
+> edge enrichment for mapped papers). `mapped`
 > promotion now uses journal, venue-pattern, entity-rule, and relation-rule
 > families with second-gate logic for noisy entity families. Evidence-wave
 > dispatch now runs under `corpus.dispatch_evidence_wave` with wave key
@@ -87,13 +87,16 @@ Working ladder for the warehouse contract:
   - stricter paper-level active universe inside corpus
   - owns heavier canonical fanout such as `paper_authors`,
     canonical `pubtator.entity_annotations`, canonical `pubtator.relations`,
-    and any citation-edge enrichment that downstream mapped waves actually need
+    and actual paper-to-paper citation edges in `paper_citations`
   - owns paper-level rollout behaviors such as graph/SPECTER2/UMAP and
     paper-grounded retrieval/indexing
+  - owns S2 TLDR and `embeddings-specter_v2` consumption for mapped papers
 - **evidence**
   - smaller subset inside mapped
   - owns full-text acquisition, chunking, grounding, and evidence-unit
-    downstream work
+    materialization
+  - owns `s2orc_v2` as a release-backed fallback input when the evidence wave
+    cannot use PMC BioC
 
 Mapped now absorbs what earlier drafts called "warm." The first-wave runtime
 now uses `evidence` naming for the evidence-acquisition lane.
@@ -248,15 +251,16 @@ This preserves the intended hierarchy:
 6. **Broad selected-corpus surfaces stop at paper/fact baseline.** The broad
    selected-corpus surfaces are paper metadata/text baseline plus the signal
    ledger that explains admission and promotion. Canonical PT3, author fanout,
-   citation-edge enrichment, full-text document spine, chunking, evidence
-   units, and OpenSearch evidence indexes are downstream mapped/evidence child
-   waves.
+   actual `paper_citations` edge enrichment, full-text document spine, chunking,
+   evidence units, and OpenSearch evidence indexes are downstream mapped/evidence
+   child waves.
 7. **Mapped rollout and evidence are child waves, not alternate corpus
    definitions.** Mapped owns the paper-level active universe. Paper-grounded
    retrieval/indexing/embedding is modeled as mapped rollout behavior, not a
-   separate warm status. Evidence is the smaller full-text
-   parsed/chunked/grounded child wave. Neither wave redefines corpus
-   membership.
+   separate warm status. S2 TLDRs and `embeddings-specter_v2` are mapped
+   rollout inputs. Evidence is the smaller full-text parsed/chunked/grounded
+   child wave, with `s2orc_v2` reserved for that evidence lane. Neither wave
+   redefines corpus membership.
 8. **The historical ~14 M backbone is an explicit result, not an import rule.**
    Reproducing that backbone is a valid target for this slice; silently treating
    "all raw S2 papers" as the selected corpus is forbidden.
@@ -747,7 +751,7 @@ warehouse.
 Mapped-owned surfaces behind the separate mapped-materialization phase:
 
 - `solemd.paper_authors`
-- `solemd.paper_citations` only if a mapped/graph wave truly needs edge rows
+- `solemd.paper_citations` for actual mapped paper-to-paper citation edges
 - `pubtator.entity_annotations`
 - `pubtator.relations`
 

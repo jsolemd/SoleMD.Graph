@@ -443,8 +443,8 @@ Current starting point:
   exist in `02` and are the right durable selection ledger.
 - The runtime now materializes explicit corpus baseline (`corpus`, `papers`,
   `paper_text`, selection audit surfaces) and mapped-owned heavy surfaces
-  (`paper_authors`, canonical PT3, and any citation-edge enrichment that
-  downstream mapped waves actually require) as separate phases.
+  (`paper_authors`, canonical PT3, and actual `paper_citations` edge
+  enrichment for mapped papers) as separate phases.
 - `paper_selection_summary` is now the stable warehouse-local ranking and
   audit surface for downstream waves. It already carries `publication_year`,
   `has_locator_candidate`, mapped-rule booleans, mapped-rule counts, and
@@ -464,8 +464,9 @@ Scope for the next agent:
 - Keep raw/stage ingest in `05` and keep downstream child waves in `05a` /
   `05f`; this follow-on should calibrate, not redefine, the locked corpus
   contract between them.
-- Treat the raw citation contract as paper-level aggregates before mapped, and
-  reserve full citation edges for mapped-owned or child-wave enrichment.
+- Treat the raw citation contract as paper-level aggregates before mapped.
+  Actual citation edges are mapped-owned `paper_citations`; evidence owns only
+  in-text `paper_citation_mentions`.
 - Build on the landed baseline-vs-mapped materialization split rather than
   reopening it.
 - Preview and tune cohort sizes over real warehouse releases so corpus breadth,

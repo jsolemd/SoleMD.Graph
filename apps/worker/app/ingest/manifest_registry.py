@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+from typing import Literal
 
 from app.config import Settings
 from app.ingest.models import FilePlan, SourceCode
@@ -13,12 +14,16 @@ class ManifestRegistryError(RuntimeError):
     pass
 
 
+SourceFamilyTier = Literal["raw", "mapped", "evidence"]
+
+
 @dataclass(frozen=True, slots=True)
 class SourceFamilySpec:
     family: str
     datasets: tuple[str, ...]
     required: bool = True
     enabled_by_default: bool = True
+    tier: SourceFamilyTier = "raw"
 
 
 S2_FAMILIES: tuple[SourceFamilySpec, ...] = (
@@ -26,9 +31,16 @@ S2_FAMILIES: tuple[SourceFamilySpec, ...] = (
     SourceFamilySpec("authors", ("authors",), required=False, enabled_by_default=False),
     SourceFamilySpec("papers", ("papers",)),
     SourceFamilySpec("abstracts", ("abstracts",)),
-    SourceFamilySpec("tldrs", ("tldrs",), required=False, enabled_by_default=False),
+    SourceFamilySpec("tldrs", ("tldrs",), required=False, enabled_by_default=False, tier="mapped"),
+    SourceFamilySpec(
+        "embeddings_specter_v2",
+        ("embeddings-specter_v2",),
+        required=False,
+        enabled_by_default=False,
+        tier="mapped",
+    ),
     SourceFamilySpec("citations", ("citations",)),
-    SourceFamilySpec("s2orc_v2", ("s2orc_v2",), required=False, enabled_by_default=False),
+    SourceFamilySpec("s2orc_v2", ("s2orc_v2",), required=False, enabled_by_default=False, tier="evidence"),
 )
 
 PT3_FAMILIES: tuple[SourceFamilySpec, ...] = (
@@ -156,6 +168,8 @@ def _content_kind_for_path(path: Path) -> str:
         return "sqlite"
     if name.endswith(".json"):
         return "manifest_json"
+    if name.endswith(".parquet"):
+        return "parquet"
     raise ManifestRegistryError(f"unsupported file type for {path}")
 
 

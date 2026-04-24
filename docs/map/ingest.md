@@ -23,20 +23,19 @@ See also: [`database.md`](database.md) for the authoritative schema,
                     --relations------->   pubtator.relations
                     --BioCXML full text-> paper_documents/sections/blocks
 
-  Semantic Scholar  --bulk papers----->   solemd.papers (metadata)
-                    --bulk paper-ids-->   solemd.papers (corpus_id <-> pmid)
-                    --batch API------->   solemd.papers (abstract, tldr,
-                                          embedding, authors, venue)
-                    --references[]---->   solemd.paper_references
-                                          -> solemd.citations
+  Semantic Scholar  --release papers-->   solemd.s2_papers_raw
+                    --abstracts------->   solemd.s2_papers_raw
+                    --citations------->   solemd.s2_paper_reference_metrics_raw
+                    --tldrs/embeds---->   mapped-tier paper_text + graph rows
+                    --s2orc_v2------->    evidence-tier document spine fallback
 ```
 
 ### Sources at a glance
 
 | Source | Datasets | Pull mode | Bulk size | Loader |
 |---|---|---|---|---|
-| PubTator3 | entities, relations, BioCXML | bulk TSV + per-PMID API | ~190 GB BioCXML | `engine/app/corpus/pubtator.py`, `engine/app/rag_ingest/biocxml_api_ingest.py` |
-| Semantic Scholar | paper-ids, papers, (batch) | bulk + batch API | ~53 GB bulk | `engine/app/corpus/s2_client.py` + `enrich.py` |
+| PubTator3 | entities, relations, BioCXML | release files + targeted PMC BioC API | ~190 GB BioCXML | `apps/worker/app/ingest/sources/pubtator.py`, `apps/worker/app/evidence/` |
+| Semantic Scholar | publication-venues, authors, papers, abstracts, citations, deferred tldrs/embeddings/s2orc_v2 | release files; live API only for targeted reconciliation | ~638 GB local release mirror | `apps/worker/app/ingest/sources/semantic_scholar.py`, `apps/worker/app/ingest/writers/s2.py` |
 
 ### PubTator3
 
@@ -50,29 +49,24 @@ inhibits, associates, positive_correlate, negative_correlate, cotreatment.
 
 ### Semantic Scholar
 
-**S2 is the canonical source for stable paper metadata, SPECTER2 embeddings,
-TLDRs, and citation edges.** The S2 API operational contract (endpoints,
-rate limits, nested field limitations, monthly diff workflow, time estimates)
-lives in the module docstring at:
+**S2 is the canonical source for stable paper metadata, citation aggregates,
+TLDRs, and SPECTER2 embeddings.** Current ingest is release-backed under
+`apps/worker/app/ingest/`, not the old live-API batch client. The Datasets API
+release mirror is the reproducible source for broad corpus work; the live Graph
+API is reserved for targeted enrichment or reconciliation where a bounded paper
+set and rate limits are acceptable.
 
-  `engine/app/corpus/s2_client.py`
+Tier ownership:
 
-That docstring is the single source of truth for S2 API usage. Do not
-duplicate it here -- read it before writing any code that calls S2.
-
-Key rules (abridged):
-
-| Rule | Value |
+| Dataset family | Tier |
 |---|---|
-| Rate limit | 1 req/sec, global per key |
-| Batch size | max 500 IDs per `/paper/batch` POST |
-| Retry | exponential backoff on 429 (1s, 2s, 4s, 8s, 16s) |
-| Parallelism | none -- 1 key = 1 req/sec |
-| Bulk datasets downloaded | only `paper-ids` + `papers`; everything else via batch |
-| Nested fields NOT supported | `citations.intents`, `citations.isInfluential`, `references.intents`, `references.isInfluential` |
+| `publication-venues`, `papers`, `abstracts`, `citations` aggregates | raw ingest |
+| `tldrs`, `embeddings-specter_v2` | mapped rollout |
+| `s2orc_v2` | evidence fallback/full-text lane |
 
-Incremental expansion strategy: 200K -> 500K -> 2M -> 5M corpus ids. Each
-phase reuses the same pipeline and UPSERTs into `solemd.papers`.
+Incremental expansion strategy now happens at the corpus/mapped tier: select the
+domain corpus from published raw releases, then promote mapped waves into
+canonical `solemd.papers`, `paper_text`, embeddings, and evidence inputs.
 
 ---
 
@@ -196,11 +190,11 @@ the bulk S2 shards to identify papers that match domain vocabulary.
 
 | Piece | Code | Notes |
 |---|---|---|
-| Vocab loader | `engine/app/corpus/vocab.py` | Reads `vocab_terms.tsv` -- curated UMLS-anchored terms |
-| Filter runner | `engine/app/corpus/filter.py` | DuckDB SQL over bulk shards |
-| Venue normalization | `engine/app/corpus/venues.py` | Journal/publication venue cleanup |
-| Enrichment orchestrator | `engine/app/corpus/enrich.py` | Drives S2 batch API calls for domain ids |
-| Citation derivation | `engine/app/corpus/citations.py` | Builds `solemd.citations` from batch reference fields |
+| Vocab loader | `apps/worker/app/corpus/assets.py` | Versions curated vocabulary assets into warehouse tables |
+| Selector runtime | `apps/worker/app/corpus/runtime.py` | Builds the selected corpus from published raw releases |
+| Venue normalization | `apps/worker/app/ingest/writers/s2.py` | Loads publication venues and normalizes duplicate upstream rows |
+| Mapped enrichment | `apps/worker/app/corpus/` | Promotes mapped child-wave surfaces from release-backed raw/stage data |
+| Citation derivation | `apps/worker/app/ingest/writers/s2.py` + mapped enrichment | Raw loads broad paper-level citation aggregates; actual `paper_citations` edges are mapped-wave enrichment |
 
 Base admission (which corpus papers become `graph_base_points`) is a separate
 decision and is documented in [`graph-build.md`](graph-build.md).
@@ -306,19 +300,12 @@ WHERE chunk_version_id = (SELECT id FROM paper_chunk_versions WHERE is_default);
 ## Module map
 
 ```
-engine/app/corpus/
-  s2_client.py          S2 API client (canonical S2 contract in docstring)
-  enrich.py             Bulk enrichment orchestrator
-  vocab.py              vocab_terms.tsv loader (3,361 curated terms)
-  filter.py             DuckDB domain filter
-  venues.py             Journal/venue normalization
-  entities.py           Entity rule materialization
-  citations.py          Citation edge derivation (from batch references[])
-  pubtator.py           PubTator3 TSV loader (entities + relations)
-  references.py         Reference normalization
-  openalex.py, ror.py,  Additional identifier/affiliation resolution
-  affiliations.py
-  verify_enrichment.py  Post-load coverage audit
+apps/worker/app/ingest/
+  sources/semantic_scholar.py  S2 release planning and streaming
+  writers/s2.py                S2 COPY writers and raw/evidence staging
+  sources/pubtator.py          PT3 release planning and streaming
+  writers/pubtator.py          PT3 COPY writers
+  source_retention.py          hot-storage retention planning
 
 engine/app/rag_ingest/
   orchestrator.py       Top-level RAG ingest entry
@@ -339,4 +326,4 @@ engine/app/rag_ingest/
 
 ---
 
-_Last verified against code: 2026-04-08_
+_Last verified against code: 2026-04-24_
