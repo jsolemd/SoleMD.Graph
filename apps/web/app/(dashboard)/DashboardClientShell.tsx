@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -34,7 +35,10 @@ import { installBlobMutationSubscriber } from "@/features/orb/bake/install-blob-
 import { useOrbGeometryMutationStore } from "@/features/orb/stores/geometry-mutation-store";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import { useShellVariant } from "@/features/graph/components/shell/use-shell-variant";
-import { useEffect } from "react";
+
+function resolveFieldMode(pathname: string | null): FieldMode {
+  return pathname === "/graph" ? "orb" : "landing";
+}
 
 /**
  * Layout-owned client shell for the (dashboard) route group.
@@ -58,7 +62,7 @@ export function DashboardClientShell({
 }) {
   const shellVariant = useShellVariant();
   const pathname = usePathname();
-  const fieldMode: FieldMode = pathname === "/graph" ? "orb" : "landing";
+  const fieldMode = resolveFieldMode(pathname);
 
   // sceneStateRef + sceneStore must survive route swaps. useMemo with an
   // empty dep array gives us layout-stable references as long as the
@@ -88,9 +92,10 @@ export function DashboardClientShell({
     [],
   );
 
-  // Only wire the orb → blob mutation bridge when /graph is active. On
-  // navigation back to landing, reset the store so stale chunks don't
-  // replay when the user returns to /graph without a full bundle refetch.
+  // Wire the orb → blob mutation bridge only while /graph is active.
+  // Resetting the store on transition back to landing prevents a stale
+  // chunk from replaying against a freshly-baked geometry when the user
+  // returns to /graph — the baker will re-stream on re-mount.
   const blobGeometrySubscriber =
     fieldMode === "orb" ? installBlobMutationSubscriber : undefined;
 
