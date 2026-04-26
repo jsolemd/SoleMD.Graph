@@ -9,13 +9,18 @@ paper-text acquisition lanes now live here:
   `enqueue-evidence-wave`, `run-evidence-wave-now`,
   `enqueue-evidence-text`, `run-evidence-text-now`).
 - `app/ingest_worker.py` is the dedicated Dramatiq worker root for the
-  `ingest` queue and binds only the `ingest_write` pool.
+  `ingest` and `ingest_file` queues and binds only the `ingest_write`
+  pool.
 - `app/actors/ingest.py` owns the release-level actor
-  `ingest.start_release`.
+  `ingest.start_release` plus the S2 citation file actor
+  `ingest.s2_citation_file`.
 - `app/ingest/` owns request validation, planning, runtime orchestration,
   source adapters, and bounded asyncpg COPY writers for Semantic Scholar
-  and PubTator. It also owns source-retention planning for hot-storage
-  cleanup after family-level ingest checkpoints are durable.
+  and PubTator. S2 citation files fan out through durable
+  `solemd.ingest_file_tasks` rows on the `ingest_file` queue before the
+  release actor performs the final aggregate merge. It also owns
+  source-retention planning for hot-storage cleanup after family-level
+  ingest checkpoints are durable.
 - `app/corpus_worker.py` is the dedicated Dramatiq worker root for the
   `corpus` queue and binds only the `ingest_write` pool.
 - `app/actors/corpus.py` owns the release-pair actor
@@ -46,14 +51,30 @@ uv run --project apps/worker python -m app.main enqueue-evidence-wave 2026-03-10
 uv run --project apps/worker python -m app.main run-evidence-wave-now 2026-03-10 2026-03-21 v1 --max-papers 100
 uv run --project apps/worker python -m app.main enqueue-evidence-text 123456 --requested-by operator
 uv run --project apps/worker python -m app.main run-evidence-text-now 123456 --force-refresh
-dramatiq_queue_prefetch=1 uv run --project apps/worker dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest
+dramatiq_queue_prefetch=1 POOL_INGEST_MIN=1 POOL_INGEST_MAX=8 INGEST_MAX_CONCURRENT_FILES=1 uv run --project apps/worker dramatiq app.ingest_worker --processes 8 --threads 1 --queues ingest ingest_file
 uv run --project apps/worker dramatiq app.corpus_worker --processes 1 --threads 1 --queues corpus
 uv run --project apps/worker dramatiq app.evidence_worker --processes 1 --threads 1 --queues evidence
 ```
 
 The `check` command verifies the current env contract can reach the local
-compose dependencies. `enqueue-release` and `dispatch-manifest` validate the
-same `StartReleaseRequest` payload shape before enqueueing.
+compose dependencies and that `/mnt/solemd-graph` is safe for warehouse writes.
+The warehouse storage preflight blocks `ingest_write` pool startup when the
+expected mount is missing, the filesystem is not `ext4`, the mount is not
+writable, the block device is offline or read-only, the fsync write probe fails,
+usage is above `WAREHOUSE_STORAGE_MAX_USED_PERCENT` (default `90`), or available
+space is below `WAREHOUSE_STORAGE_MIN_FREE_BYTES` (default `100 GiB`). Because
+WSL can report free space inside the VHD even when the Windows drive hosting the
+VHD is exhausted, the same check also requires the parent drive of
+`WAREHOUSE_STORAGE_HOST_PATH` (default `/mnt/e/wsl2-solemd-graph.vhdx`) to have
+at least `WAREHOUSE_STORAGE_HOST_MIN_FREE_BYTES` (default `100 GiB`) free.
+`enqueue-release` and `dispatch-manifest` validate the same `StartReleaseRequest`
+payload shape before enqueueing.
+S2 citation fanout is enabled by default with
+`INGEST_DISTRIBUTED_FILE_TASKS_ENABLED=true`; keep an `ingest_file` consumer
+running whenever the ingest worker is allowed to process S2 citations. File
+task recovery is controlled by `INGEST_FILE_TASK_MAX_ATTEMPTS`,
+`INGEST_FILE_TASK_STALE_AFTER_SECONDS`, and
+`INGEST_FILE_TASK_POLL_INTERVAL_SECONDS`.
 `source-retention` is dry-run by default. It acquires the same release-level
 advisory lock as ingest, reads `source_releases` / `ingest_runs`, and prints
 which S2 source directories are `keep`, `archive_candidate`,

@@ -12,6 +12,7 @@ from dramatiq.middleware import Middleware
 from redis import asyncio as redis_asyncio
 
 from app.config import DependencyTarget, Settings
+from app.warehouse_storage import require_warehouse_storage_ready
 
 
 PoolName = Literal["ingest_write", "warehouse_read", "serve_read", "admin"]
@@ -163,6 +164,8 @@ async def open_pools(
     if missing:
         joined = ", ".join(sorted(missing))
         raise RuntimeError(f"missing DSN configuration for pool(s): {joined}")
+    if "ingest_write" in pool_names:
+        require_warehouse_storage_ready(settings)
 
     pools: dict[PoolName, asyncpg.Pool] = {}
     try:
@@ -185,6 +188,8 @@ async def open_named_connection(
     specs = build_pool_specs(settings)
     if name not in specs:
         raise RuntimeError(f"missing DSN configuration for pool: {name}")
+    if name == "ingest_write":
+        require_warehouse_storage_ready(settings)
     connection = await open_connection(specs[name])
     try:
         yield connection

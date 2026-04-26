@@ -5,7 +5,7 @@ import "./field-hotspot-ring.css";
 
 // FieldHotspotRing — static Maze-parity template (SVG ring + dot).
 // Mounted inside `FieldHotspotPool`; projection (transform + opacity)
-// is applied imperatively by `BlobController.writeHotspotDom`.
+// is applied imperatively by blob hotspot projection.
 
 export type FieldHotspotVariant = "cyan" | "red";
 

@@ -44,8 +44,18 @@ export class ObjectFormationController extends FieldController {
     const { shader } = preset;
     const motionEnabled = sceneState.motionEnabled;
     const motionScale = motionEnabled ? 1 : 0.16;
+    // Slice B (orb-3d-physics-taxonomy.md §9.3): see BlobController for
+    // the rationale — pauseScale composes with motionScale, the user
+    // tempo rides `uTimeFactor` only, entropy rides amplitude/frequency.
+    const pauseScale = sceneState.motionPaused ? 0 : 1;
+    const timeMul = pauseScale * sceneState.motionSpeedMultiplier;
+    const rotMul =
+      pauseScale * motionScale * sceneState.rotationSpeedMultiplier;
+    const entropyMul = sceneState.ambientEntropy;
     const driftBlend = lerpFactor(dtSec, DECAY.standard);
     const timeFactor = this.getTimeFactor(motionEnabled);
+    // Slice B: integrate `uTime` (see BlobController for rationale).
+    this.accumulatedUTime += dtSec * timeMul;
     const visibility = itemState?.visibility ?? 0;
     const localProgress = itemState?.localProgress ?? 0;
 
@@ -68,14 +78,15 @@ export class ObjectFormationController extends FieldController {
       ? shader.sizeMobile ?? shader.size
       : shader.size;
 
-    uniforms.uTime.value = elapsedSec;
+    uniforms.uTime.value = this.accumulatedUTime;
     uniforms.uTimeFactor.value = timeFactor;
     uniforms.uPixelRatio.value = pixelRatio;
     uniforms.uIsMobile.value = isMobile;
     uniforms.uScale.value = 1 / baseScale;
     uniforms.uAlpha.value = shaderAlpha * visibility;
-    uniforms.uAmplitude.value = shader.amplitude * motionScale;
+    uniforms.uAmplitude.value = shader.amplitude * motionScale * entropyMul;
     uniforms.uDepth.value = shader.depth;
+    // Slice B: entropy is amplitude-only (see BlobController).
     uniforms.uFrequency.value = shader.frequency;
     uniforms.uSize.value = shaderSize;
     uniforms.uSpeed.value = shader.speed * motionScale;
@@ -93,7 +104,7 @@ export class ObjectFormationController extends FieldController {
     const targetRotationZ =
       preset.sceneRotation[2] + preset.scrollRotation[2] * localProgress;
     const idleRotationY =
-      elapsedSec * preset.rotationVelocity[1] * motionScale;
+      elapsedSec * preset.rotationVelocity[1] * rotMul;
 
     wrapper.visible = visibility > 0.01;
     wrapper.position.x +=

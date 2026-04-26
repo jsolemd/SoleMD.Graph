@@ -12,11 +12,10 @@ import { fieldBlobHotspots } from "./field-hotspot-overlay";
 
 // Static 41-node hotspot pool. Mirrors Maze's index.html:87-149 where the
 // full set of `.afr-hotspot` divs is pre-declared inside `.afr-stage`.
-// Projection (transform + opacity) is written imperatively by
-// `BlobController.writeHotspotDom`; per-hotspot CSS keyframes animate the
-// ring/dot via the `is-animating` class that the controller toggles per
-// phase. Per-hotspot `animationend` fires an independent reseed so each
-// hotspot's pulse cadence stays out of phase with its neighbors.
+// Blob hotspot projection writes transform + opacity imperatively; per-hotspot
+// CSS keyframes animate the ring/dot via the `is-animating` class that the
+// projector toggles per phase. Per-hotspot `animationend` fires an independent
+// reseed so each hotspot's pulse cadence stays out of phase with its neighbors.
 
 const POOL_SIZE = BLOB_HOTSPOT_COUNT;
 const CARD_SLOT_COUNT = 3;

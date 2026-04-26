@@ -1,9 +1,12 @@
 "use client";
 import { useCallback } from "react";
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmographInternal } from "@cosmograph/react";
 
 export function useGraphCamera() {
-  const { cosmograph } = useCosmograph();
+  // Null-tolerant: the throwing useCosmograph would crash renderer-clean
+  // surfaces (e.g. the 3D OrbSurface) that mount panels which transitively
+  // pull camera controls in. All callbacks below already guard via `?.`.
+  const cosmograph = useCosmographInternal()?.cosmograph;
 
   const fitView = useCallback((duration?: number, padding?: number) => {
     cosmograph?.fitView(duration, padding);

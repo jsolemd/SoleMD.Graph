@@ -8,18 +8,34 @@ SET ROLE engine_warehouse_admin;
 -- citing_paper). file_name + batch_ordinal disambiguate the producing worker
 -- slice; citing_paper_id is the per-row grain.
 
-ALTER TABLE solemd.s2_paper_reference_metrics_stage
-    ADD CONSTRAINT s2_paper_reference_metrics_stage_pk
-    PRIMARY KEY (
-        ingest_run_id,
-        source_release_id,
-        file_name,
-        batch_ordinal,
-        citing_paper_id
-    );
-
-COMMENT ON CONSTRAINT s2_paper_reference_metrics_stage_pk
-    ON solemd.s2_paper_reference_metrics_stage IS
-    'Prevents duplicate citation metric fragments from double-counting during the ordered merge. Grain: one row per citing paper per worker batch per file per release per ingest run.';
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'solemd.s2_paper_reference_metrics_stage'::regclass
+          AND contype = 'p'
+    ) THEN
+        ALTER TABLE solemd.s2_paper_reference_metrics_stage
+            ADD CONSTRAINT s2_paper_reference_metrics_stage_pk
+            PRIMARY KEY (
+                ingest_run_id,
+                source_release_id,
+                file_name,
+                batch_ordinal,
+                citing_paper_id
+            );
+    END IF;
+    IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = 'solemd.s2_paper_reference_metrics_stage'::regclass
+          AND conname = 's2_paper_reference_metrics_stage_pk'
+    ) THEN
+        COMMENT ON CONSTRAINT s2_paper_reference_metrics_stage_pk
+            ON solemd.s2_paper_reference_metrics_stage IS
+            'Prevents duplicate citation metric fragments from double-counting during the ordered merge. Grain: one row per citing paper per worker batch per file per release per ingest run.';
+    END IF;
+END $$;
 
 RESET ROLE;

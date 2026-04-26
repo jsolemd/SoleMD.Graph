@@ -3,10 +3,9 @@
 /**
  * GPU-ID picking for the field R3F surface (orb-mode).
  *
- * Salvaged from the /orb-dev prototype (features/graph/orb/render/picking.ts)
- * and generalized: the picking material is passed per-call so this module has
- * no hard dependency on any specific shader. Field-mode supplies its own
- * picking material that encodes `aIndex` the same way.
+ * The picking material is passed per-call so this module has no hard
+ * dependency on any specific shader. Field-mode supplies its own picking
+ * material that encodes `aIndex` the same way.
  *
  * Encoding contract (must match the picking fragment shader that populates
  * the render target):

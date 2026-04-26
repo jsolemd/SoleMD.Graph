@@ -605,7 +605,8 @@ The shared active-run gauges are there to answer the operator question
     `run_label`, current `phase`, and current `work_item`
 - `worker_active_run_progress_ratio`
   - latest overall completion ratio for the active run surface; for
-    ingest this advances on completed family/file boundaries
+    ingest this advances on completed family/file boundaries, while S2
+    citation fanout progress comes from `solemd.ingest_file_tasks`
 - `worker_active_run_progress_units`
   - latest live unit counters for the active run surface; currently
     used for:
@@ -633,6 +634,14 @@ should answer:
   current backlog dispatch
 - what run is active right now, in what phase, on what family/work item, and
   whether it is making live progress
+- for S2 citation fanout: how many `ingest_file` tasks are pending, running,
+  completed, or failed; how many attempts were retried after stale heartbeats;
+  completed stage rows and input bytes; and whether the final aggregate
+  replacement has run
+
+Grafana should prefer the `ingest_file_tasks` ledger for citation fanout
+panels. Avoid broad staging-table count sweeps in dashboards; those are
+operator/debug queries, not standing observability probes.
 
 Locked next-batch observability requirement:
 

@@ -443,7 +443,8 @@ examples elsewhere in this doc set.
 
 The shape is intentionally narrow:
 
-- queue: `ingest`
+- queues: `ingest` for release orchestration, `ingest_file` for
+  DB-backed file work that has a durable task row
 - entry actor: `ingest.start_release(source_code, release_tag, force_new_run=False)`
 - trigger: `ingest-poll-manifests` / external dispatcher hands off one
   new `(source_code, release_tag)` pair at a time from the warehouse
@@ -451,9 +452,10 @@ The shape is intentionally narrow:
 - pool: `ingest_write` only
 - lock scope: one per-release advisory lock held by the entry actor for
   the full run
-- in-actor decomposition: family loaders are regular async functions
-  inside the actor process, not separate Dramatiq messages for the same
-  release
+- in-actor decomposition: most family loaders are regular async functions
+  inside the actor process; S2 `citations` is the first exception because
+  every file task is durable in `solemd.ingest_file_tasks` and can be
+  retried without losing the family boundary
 
 This keeps one `ingest_runs` owner, one retry boundary, and one
 warehouse-local promotion lane. The detailed file split, retry shape,
@@ -510,10 +512,15 @@ selected universe rather than the full raw release breadth.
 persistence.** Largest dataset — 358 shards, ~330 GB compressed. Raw ingest
 writes paper-level aggregate metrics such as `reference_out_count`,
 `influential_reference_count`, and `linked_reference_count` to
-`s2_paper_reference_metrics_raw`. Actual paper-to-paper edges belong to mapped
-enrichment in `paper_citations`, scoped to mapped citing papers and resolving
-`cited_corpus_id` only when the cited paper is already canonical. Evidence owns
-only text-anchored citation mentions in `paper_citation_mentions`.
+`s2_paper_reference_metrics_raw`. The implemented path inserts one
+`solemd.ingest_file_tasks` row per citation file, sends file actors on the
+`ingest_file` queue, writes into `s2_paper_reference_metrics_stage`, validates
+completed files with `s2_paper_reference_metrics_file_checkpoints`, and then
+performs one set-based final replacement into the raw aggregate table. Actual
+paper-to-paper edges belong to mapped enrichment in `paper_citations`, scoped
+to mapped citing papers and resolving `cited_corpus_id` only when the cited
+paper is already canonical. Evidence owns only text-anchored citation mentions
+in `paper_citation_mentions`.
 
 **`abstracts`** remain raw text input until `05e` backfills
 `paper_text.abstract` for mapped papers. Storage remains `EXTERNAL` per
@@ -1073,9 +1080,12 @@ on local port `9464`.
 | `ingest_active_lock_age_seconds` | gauge | `source_code`, `release_tag` | `now() - lock_acquired_at`; alerts on long-held locks. |
 
 The ingest scope also carries Dramatiq middleware metrics for the
-`ingest` queue on the same multiprocess store. Earlier aspirational
-throughput / row-count / RSS gauges remain follow-on work and should not
-be documented as landed.
+`ingest` and `ingest_file` queues on the same multiprocess store. S2 citation
+file-task progress is durable in `solemd.ingest_file_tasks`; Grafana should
+query that table for pending/running/completed/failed counts, stale retries,
+completed stage rows, and bytes read instead of running broad count sweeps
+over staging data. Earlier aspirational throughput / RSS gauges remain
+follow-on work and should not be documented as landed.
 
 ### 12.3 Required structured log events
 
@@ -1164,10 +1174,12 @@ One release-level actor is the canonical boundary:
 - The actor acquires the per-release advisory lock, opens or resumes the
   `ingest_runs` row, builds and verifies `IngestPlan`, then executes the
   per-family loop inside the same actor invocation.
-- Do **not** create one Dramatiq message per shard or per partition.
-  Dramatiq owns job durability, retries, and crash recovery. Throughput
-  inside a family comes from async stream readers plus bounded asyncpg COPY
-  coroutines.
+- Do not create file-level Dramatiq messages unless there is a durable
+  database task ledger and an idempotent finalizer. S2 `citations` uses this
+  pattern: `ingest.start_release` owns release state and finalization, while
+  `ingest.s2_citation_file` consumes `solemd.ingest_file_tasks` rows on the
+  `ingest_file` queue. Throughput for smaller families still comes from async
+  stream readers plus bounded asyncpg COPY coroutines inside the release actor.
 - Post-publish follow-on work stays downstream: projection enqueue remains the
   handoff in §13, and chunking remains the `05a` lane. The raw ingest actor
   may enqueue those later actors when their inputs exist, but they are not a
@@ -1207,13 +1219,14 @@ Source-specific notes that should stay explicit:
 - Bound in-family concurrency with a small `asyncio.TaskGroup` or semaphore
   over partitions/shards. The concurrency knob is the number of concurrent
   COPY coroutines, not the Dramatiq thread count.
-- Start the raw ingest worker with low thread count and, for the current mixed
-  S2 + PT3 operator topology, two ingest processes
-  (`dramatiq_queue_prefetch=1 dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest`
-  or the equivalent wrapper). Dramatiq's AsyncIO middleware still schedules
-  async actors on each process event-loop thread; keep thread count low, keep
-  queue prefetch at 1, and scale message concurrency with worker processes only
-  when the release-level locks and warehouse pressure are understood.
+- Start the raw ingest worker with low thread count and `dramatiq_queue_prefetch=1`.
+  For S2 citation fanout on this workstation, use one ingest worker root over
+  both queues with process-level parallelism, for example:
+  `POOL_INGEST_MIN=1 POOL_INGEST_MAX=8 INGEST_MAX_CONCURRENT_FILES=1 dramatiq app.ingest_worker --processes 8 --threads 1 --queues ingest ingest_file`.
+  Dramatiq's AsyncIO middleware still schedules async actors on each process
+  event-loop thread; keep thread count low and scale message concurrency with
+  worker processes so file actors run in parallel without multiplying nested
+  per-process file fanout.
 - Deterministic bad-input failures such as `IngestAlreadyPublished`,
   `IngestAlreadyInProgress`, `PlanDrift`, or `SourceSchemaDrift` should be
   typed exceptions surfaced through actor `throws=` or explicit early exits so
@@ -1227,8 +1240,13 @@ Source-specific notes that should stay explicit:
   rewrite inside raw tables.
 - A forced replay of the same release uses `force_new_run=True` and mints a
   fresh `ingest_run_id` against the same immutable release directory.
-- Resume remains keyed to `families_loaded` within one `ingest_run_id`; do not
-  add a second shard-level checkpoint ledger in the first implementation.
+- Resume remains keyed to `families_loaded` for the family completion and
+  hot-source-retention boundary. Large families may also own a narrower
+  DB-backed work ledger when the implementation has idempotent stage writes
+  and a finalizer. Today that narrower ledger is S2 `citations`:
+  `solemd.ingest_file_tasks` tracks pending/running/completed/failed file
+  attempts, and `s2_paper_reference_metrics_file_checkpoints` validates only
+  completed files whose `UNLOGGED` stage rows still exist after a restart.
 - Keep raw and canonical promotion modular so a later diff-based S2 refresh can
   skip untouched families without changing the actor envelope.
 - Warehouse stays a separate cluster for the full path. The ingest worker never

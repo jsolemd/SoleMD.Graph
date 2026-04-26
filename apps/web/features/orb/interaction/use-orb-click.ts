@@ -5,6 +5,22 @@ import type { GraphBundleQueries, GraphLayer } from "@solemd/graph";
 
 import { useResolveAndSelectNode } from "@/features/graph/hooks/use-resolve-and-select-node";
 
+const PAPER_SAMPLE_TABLE = "paper_sample";
+
+function buildOrbParticleSelectionSql(particleIndex: number): string {
+  return `
+    SELECT id
+    FROM ${PAPER_SAMPLE_TABLE}
+    WHERE particleIdx = ${Math.trunc(particleIndex)}
+    LIMIT 1
+  `;
+}
+
+function readPointId(row: Record<string, unknown> | undefined): string | null {
+  const id = row?.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
 /**
  * Orb paper-selection handler.
  *
@@ -37,7 +53,14 @@ export function useOrbClick(
     (index: number | null) => {
       if (queries == null) return;
       if (index == null || index < 0) return;
-      void resolveAndSelect({ index });
+      void queries
+        .runReadOnlyQuery(buildOrbParticleSelectionSql(index))
+        .then((result) => {
+          const id = readPointId(result.rows[0]);
+          if (id == null) return;
+          return resolveAndSelect({ id });
+        })
+        .catch(() => {});
     },
     [queries, resolveAndSelect],
   );

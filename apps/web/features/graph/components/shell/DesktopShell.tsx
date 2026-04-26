@@ -1,35 +1,13 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { AnimatePresence } from "framer-motion";
-import { useEffect, type CSSProperties } from "react";
+import { useEffect } from "react";
 import { GraphCanvas } from "../canvas/GraphCanvas";
 import { Wordmark } from "../chrome/Wordmark";
 import { GraphBundleLoadingOverlay } from "./loading";
-import { promptSurfaceStyle } from "../panels/PanelShell";
 import { preloadChromeChunks } from "./preload-chrome-chunks";
 import { ShellPanels } from "./ShellPanels";
 import type { DashboardShellController } from "./use-dashboard-shell-controller";
-
-const promptPlaceholderStyle: CSSProperties = {
-  ...promptSurfaceStyle,
-};
-
-function PromptBoxLoadingPlaceholder() {
-  return (
-    <div className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2">
-      <div
-        className="h-14 w-[min(600px,90vw)] animate-pulse rounded-full backdrop-blur-xl"
-        style={promptPlaceholderStyle}
-      />
-    </div>
-  );
-}
-
-const PromptBox = dynamic(
-  () => import("../panels/PromptBox").then((mod) => mod.PromptBox),
-  { loading: () => <PromptBoxLoadingPlaceholder /> },
-);
 
 export function DesktopShell(state: DashboardShellController) {
   const {
@@ -39,7 +17,6 @@ export function DesktopShell(state: DashboardShellController) {
     isContinuousColor,
     isSelectionLocked,
     loading,
-    openPanels,
     panelsVisible,
     progress,
     queries,
@@ -47,7 +24,6 @@ export function DesktopShell(state: DashboardShellController) {
     showLoading,
     showSizeLegend,
     showTimeline,
-    tableOpen,
     uiHidden,
   } = state;
 
@@ -81,13 +57,11 @@ export function DesktopShell(state: DashboardShellController) {
             canvas={canvas}
             isContinuousColor={isContinuousColor}
             isSelectionLocked={isSelectionLocked}
-            openPanels={openPanels}
             panelsVisible={panelsVisible}
             queries={queries}
             showColorLegend={showColorLegend}
             showSizeLegend={showSizeLegend}
             showTimeline={showTimeline}
-            tableOpen={tableOpen}
             uiHidden={uiHidden}
           />
         </>
@@ -104,7 +78,6 @@ export function DesktopShell(state: DashboardShellController) {
       </AnimatePresence>
 
       {!showLoading && <Wordmark />}
-      {!uiHidden && <PromptBox bundle={bundle} queries={queries ?? null} />}
     </div>
   );
 }

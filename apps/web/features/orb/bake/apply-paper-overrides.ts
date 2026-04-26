@@ -6,6 +6,7 @@ import {
   type FieldSemanticBucket,
 } from "@/features/field/asset/field-attribute-baker";
 import type { PaperAttributesMap } from "./use-paper-attributes-baker";
+import type { PaperCorpusStats } from "../stores/geometry-mutation-store";
 
 /**
  * Paper-mode attribute override for the shared field geometry.
@@ -16,11 +17,22 @@ import type { PaperAttributesMap } from "./use-paper-attributes-baker";
  * a subset of those in place for every particle index present in
  * `paperAttributes`:
  *
- *   - aSpeed         → log-normalized citation proxy (high refs → slow)
- *   - aClickPack.w   → sizeFactor, entity-count-normalized, clamped [0.5, 2.0]
+ *   - aSpeed         → citation-derived noise multiplier in
+ *                      [PAPER_SPEED_FAST, PAPER_SPEED_SLOW] (high refs → slow)
+ *   - aClickPack.w   → sprite size factor in [PAPER_SIZE_MIN, PAPER_SIZE_MAX]
  *   - aBucket        → 0 (paper bucket)
  *   - aStreamFreq / aFunnelThickness / aFunnelNarrow /
  *     aFunnelStartShift / aFunnelEndShift → buckets[0] (paper) values
+ *
+ * Both citation and entity scalars use a log-space percentile-anchored
+ * mapping: log1p(value) is normalized against the corpus q05/q98 carried
+ * on `options.stats`, then `pow(_, gamma)` eases the curve so the
+ * mid-range of the corpus reads as visibly varied rather than collapsing
+ * to a floor. Anchors are corpus-wide and stable across the entire
+ * stream, so an already-painted particle never silently changes scale
+ * when later chunks arrive — a precondition for the future physics
+ * layer that will read these values. See
+ * docs/future/orb-mass-normalization-port.md for the design rationale.
  *
  * Paper identity (paperId ↔ particleIndex) is NOT written to a GPU
  * attribute — the mapping lives on the JS side in the `PaperAttributesMap`
@@ -35,6 +47,20 @@ import type { PaperAttributesMap } from "./use-paper-attributes-baker";
  * after this returns (or pass it via `options.invalidate`) — bumping
  * `needsUpdate` alone does not schedule a frame. The orb blob-geometry
  * subscriber batches chunks per subscription fire and invalidates once.
+ *
+ * ### Lane semantics — render vs physics
+ *
+ * The attributes this writes (`aSpeed`, `aClickPack.w`, `aBucket`,
+ * `aFunnel*`) are RENDER lanes, not physics state. `aSpeed` multiplies
+ * shader noise displacement (`field-vertex-motion.glsl.ts:232`);
+ * `aClickPack.w` is a sprite-size multiplier
+ * (`field-vertex-motion.glsl.ts:278`). When the physics layer lands
+ * (N-body, search excitation, drag, hover-zoom), it gets its own state
+ * — likely a sidecar texture or a separate attribute pass. Sprite size
+ * MAY render from intrinsic mass via a small mapping function, but
+ * the two values live in different buffers. This separation is the
+ * rule the larger Cosmograph→3D port follows: visual mappings live
+ * here; intrinsic properties live next to the simulation.
  *
  * Boundary rationale: the field baker is paper-unaware; paper semantics
  * live here so the substrate stays decoupled from orb product concerns.
@@ -55,24 +81,42 @@ import type { PaperAttributesMap } from "./use-paper-attributes-baker";
  * over-upload the gap, still cheaper than StaticDraw's full realloc.
  */
 
-const PAPER_SIZE_FACTOR_MIN = 0.5;
-const PAPER_SIZE_FACTOR_MAX = 2.0;
+// Visual size factor range. Wider than the prior [0.5, 2.0] so the
+// mid-range of the corpus is expressive instead of being pinned at
+// the floor. Picker hit-radius (field-picking-material.ts) and the
+// shader gl_PointSize math (field-vertex-motion.glsl.ts) both compose
+// this multiplicatively against base point size; widening to 2.6 stays
+// safely under the 64 px gl_PointSize clamp on the picking pass.
+const PAPER_SIZE_MIN = 0.8;
+const PAPER_SIZE_MAX = 2.6;
+const PAPER_SIZE_GAMMA = 0.65;
 
-// Papers with many citations drift slowly so they read as "gravitational
-// anchors". `(1 - log(1+r)/log(1+maxR))` maps highly-cited → 0 and
-// uncited → 1; scaled by PAPER_SPEED_SCALE to match the effective range
-// of lands-mode `random() * 1.0` aSpeed under typical aMove magnitudes.
-const PAPER_SPEED_SCALE = 3.0;
+// Speed factor range: never zero, never the hyperactive 3.0 of the
+// pre-port mapping. Highly-cited papers drift slowly enough to read as
+// gravitational anchors without freezing entirely; uncited papers move
+// at lands-mode-typical pace. Inverted relative to size — pow shape
+// applied to nRef, then mixed from FAST→SLOW.
+const PAPER_SPEED_FAST = 1.75;
+const PAPER_SPEED_SLOW = 0.55;
+const PAPER_SPEED_GAMMA = 0.8;
+
+const PERCENTILE_DENOM_EPS = 1e-6;
 
 export interface ApplyPaperOverridesOptions {
   /** Override bucket set. Defaults to SOLEMD_DEFAULT_BUCKETS. */
   buckets?: readonly FieldSemanticBucket[];
   /**
-   * Max values for normalization. When omitted the function derives them
-   * from `paperAttributes` itself. Pass-through when callers already have
-   * them (e.g. from `usePaperAttributesBaker.maxima`).
+   * Corpus-wide log-space percentile anchors for refCount and
+   * entityCount. Computed once before the stream opens (see
+   * `usePaperAttributesBaker`) and reused on every chunk.
+   *
+   * When omitted, the function falls back to per-call quantile-free
+   * normalization derived from `paperAttributes` itself: log1p
+   * transformed, min/max-anchored. This fallback is for unit tests
+   * and one-shot non-streaming uses; the streaming subscriber always
+   * passes `stats`.
    */
-  maxima?: { refCount: number; entityCount: number };
+  stats?: PaperCorpusStats;
   /**
    * R3F `invalidate()` for on-demand rendering. Optional because the
    * orb subscriber prefers to batch multiple chunks under one invalidate;
@@ -125,16 +169,16 @@ export function applyPaperAttributeOverrides(
   const funnelStartArr = aFunnelStartShift.array as Float32Array;
   const funnelEndArr = aFunnelEndShift.array as Float32Array;
 
-  let maxRef = options.maxima?.refCount ?? 0;
-  let maxEntity = options.maxima?.entityCount ?? 0;
-  if (!options.maxima) {
-    for (const attrs of paperAttributes.values()) {
-      if (attrs.refCount > maxRef) maxRef = attrs.refCount;
-      if (attrs.entityCount > maxEntity) maxEntity = attrs.entityCount;
-    }
-  }
-  const refDenom = Math.log(1 + Math.max(maxRef, 1));
-  const entityDenom = Math.max(maxEntity, 1);
+  // Resolve percentile anchors. Streaming callers pass `stats` from the
+  // pre-flight corpus query so every chunk normalizes against the same
+  // log-space q05/q98. Tests and one-shot callers omit it; we derive
+  // local log1p-anchored bounds from the supplied map as a fallback.
+  const stats = options.stats ?? deriveLocalStats(paperAttributes);
+  const refDenom = Math.max(stats.refHi - stats.refLo, PERCENTILE_DENOM_EPS);
+  const entityDenom = Math.max(
+    stats.entityHi - stats.entityLo,
+    PERCENTILE_DENOM_EPS,
+  );
 
   const particleCount = Math.floor(speedArr.length / 3);
   let minIdx = Number.POSITIVE_INFINITY;
@@ -146,18 +190,29 @@ export function applyPaperAttributeOverrides(
     if (i < minIdx) minIdx = i;
     if (i > maxIdx) maxIdx = i;
 
-    const refNorm = Math.log(1 + attrs.refCount) / refDenom;
-    const speedFactor = (1 - refNorm) * PAPER_SPEED_SCALE;
+    // Speed: log1p, percentile-anchored, inverted, gamma-eased so highly-
+    // cited papers anchor without freezing.
+    const nRef = clamp01(
+      (Math.log1p(attrs.refCount) - stats.refLo) / refDenom,
+    );
+    const speedFactor =
+      PAPER_SPEED_FAST +
+      (PAPER_SPEED_SLOW - PAPER_SPEED_FAST) *
+        Math.pow(nRef, PAPER_SPEED_GAMMA);
     speedArr[i * 3] = speedFactor;
     speedArr[i * 3 + 1] = speedFactor;
     speedArr[i * 3 + 2] = speedFactor;
 
-    const rawSize = attrs.entityCount / entityDenom;
+    // Size: same shape, gentler gamma, mapped into the wider visual
+    // range so the mid-corpus reads instead of pinning at the floor.
     // aClickPack.w lane holds sizeFactor; .xyz is written by orb physics.
-    clickPackArr[i * 4 + 3] = Math.max(
-      PAPER_SIZE_FACTOR_MIN,
-      Math.min(PAPER_SIZE_FACTOR_MAX, rawSize * PAPER_SIZE_FACTOR_MAX),
+    const nEntity = clamp01(
+      (Math.log1p(attrs.entityCount) - stats.entityLo) / entityDenom,
     );
+    clickPackArr[i * 4 + 3] =
+      PAPER_SIZE_MIN +
+      (PAPER_SIZE_MAX - PAPER_SIZE_MIN) *
+        Math.pow(nEntity, PAPER_SIZE_GAMMA);
 
     bucketArr[i] = 0;
     streamArr[i] = paperBucket.aStreamFreq;
@@ -194,6 +249,38 @@ function markRange(
   attr.clearUpdateRanges();
   attr.addUpdateRange(offset, count);
   attr.needsUpdate = true;
+}
+
+function clamp01(x: number): number {
+  if (x < 0) return 0;
+  if (x > 1) return 1;
+  return x;
+}
+
+// Test-and-one-shot fallback when a caller hasn't pre-computed corpus
+// percentiles. Uses log1p min/max over the supplied map; this is
+// strictly worse than the streaming path's q05/q98 anchors but keeps
+// the function callable in isolation (e.g. unit tests, ad-hoc tools).
+function deriveLocalStats(
+  paperAttributes: PaperAttributesMap,
+): PaperCorpusStats {
+  let refLo = Number.POSITIVE_INFINITY;
+  let refHi = Number.NEGATIVE_INFINITY;
+  let entityLo = Number.POSITIVE_INFINITY;
+  let entityHi = Number.NEGATIVE_INFINITY;
+  for (const attrs of paperAttributes.values()) {
+    const r = Math.log1p(attrs.refCount);
+    const e = Math.log1p(attrs.entityCount);
+    if (r < refLo) refLo = r;
+    if (r > refHi) refHi = r;
+    if (e < entityLo) entityLo = e;
+    if (e > entityHi) entityHi = e;
+  }
+  if (!Number.isFinite(refLo)) refLo = 0;
+  if (!Number.isFinite(refHi)) refHi = 0;
+  if (!Number.isFinite(entityLo)) entityLo = 0;
+  if (!Number.isFinite(entityHi)) entityHi = 0;
+  return { refLo, refHi, entityLo, entityHi };
 }
 
 export { ORB_PAPER_OVERRIDE_ATTRIBUTES };

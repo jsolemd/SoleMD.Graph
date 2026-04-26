@@ -4,7 +4,13 @@ export {
   selectBottomObstacles,
   useDashboardStore,
 } from './dashboard-store'
-export type { ActivePanel, PanelId, PromptMode, TableView } from './dashboard-store'
+export type {
+  ActivePanel,
+  PanelId,
+  PromptMode,
+  RendererMode,
+  TableView,
+} from './dashboard-store'
 export { useShellStore } from './shell-store'
 export type { LowPowerProfile, ShellState } from './shell-store'
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useMemo } from "react";
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmographInternal } from "@cosmograph/react";
 import {
   buildVisibilityScopeSqlExcludingSource,
   createSelectionSource,
@@ -18,12 +18,20 @@ import { resolveWidgetBaselineScope } from "./widget-baseline";
  * `currentScopeRevision` is deferred via `useDeferredValue` so that rapid
  * brush drags batch scoped highlight re-queries instead of firing per frame.
  * The canvas filtering via `pointsSelection.update()` still fires immediately.
+ *
+ * `cosmograph` is read via `useCosmographInternal()` (not the throwing
+ * `useCosmograph()`) so the hook stays mountable from renderer-clean
+ * surfaces — notably the 3D OrbSurface, which mounts FiltersPanel through
+ * `GraphPanelsLayer` without a CosmographProvider in the tree. When
+ * `cosmograph` is null, every widget consumer of this hook must early-
+ * return; both `FilterBarWidget` and `FilterHistogramWidget` already do
+ * (`if (!cosmograph) return;` in their layout effect).
  */
 export function useWidgetSelectors(
   sourcePrefix: "timeline" | "filter",
   column: string,
 ) {
-  const { cosmograph } = useCosmograph();
+  const cosmograph = useCosmographInternal()?.cosmograph ?? null;
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const currentScopeRevision = useDashboardStore(
     (s) => s.currentScopeRevision,

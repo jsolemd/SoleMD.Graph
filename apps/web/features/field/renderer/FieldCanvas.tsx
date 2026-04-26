@@ -1,6 +1,12 @@
 "use client";
 
-import { useRef, useState, type CSSProperties, type MutableRefObject } from "react";
+import {
+  useRef,
+  useState,
+  type CSSProperties,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import { PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import type { Camera } from "three";
@@ -43,6 +49,14 @@ interface FieldCanvasProps {
    * can render picking passes against the live renderer/scene/camera.
    */
   blobPointsSubscriber?: BlobPointsSubscriber;
+  /**
+   * Surface-level slot rendered inside the R3F `<Canvas>` after
+   * `<FieldScene>`. Surfaces can mount their own R3F children (camera
+   * controls, post-processing, debug helpers) without the substrate
+   * primitive needing to import them. The substrate stays surface-
+   * agnostic; surfaces compose into it.
+   */
+  canvasChildren?: ReactNode;
   className?: string;
   style?: CSSProperties;
 }
@@ -56,6 +70,7 @@ export function FieldCanvas({
   onControllerReady,
   blobGeometrySubscriber,
   blobPointsSubscriber,
+  canvasChildren,
   className,
   style,
 }: FieldCanvasProps) {
@@ -109,6 +124,7 @@ export function FieldCanvas({
           blobGeometrySubscriber={blobGeometrySubscriber}
           blobPointsSubscriber={blobPointsSubscriber}
         />
+        {canvasChildren}
       </Canvas>
     </div>
   );

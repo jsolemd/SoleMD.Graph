@@ -14,6 +14,11 @@ import {
   saveCameraState,
   useZoomLabels,
 } from "@solemd/graph/cosmograph";
+import {
+  applyViewportCamera,
+  getViewportTransform,
+} from "./cosmograph-viewport";
+import { createGraphKeyboardHandler } from "./cosmograph-keyboard-shortcuts";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import {
   BUDGET_FOCUS_SOURCE_ID,
@@ -28,78 +33,6 @@ import { usePointsFiltered } from "./hooks/use-points-filtered";
 import { usePanGuard } from "./hooks/use-pan-guard";
 import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
 
-interface ZoomTransformLike {
-  constructor: new (k: number, x: number, y: number) => ZoomTransformLike;
-  k: number;
-  x: number;
-  y: number;
-}
-
-interface CosmographInternalHandle {
-  _cosmos?: {
-    canvasD3Selection?: unknown;
-    zoomInstance?: {
-      behavior?: {
-        transform?: (selection: unknown, transform: ZoomTransformLike) => void;
-      };
-      eventTransform?: ZoomTransformLike;
-    };
-  };
-}
-
-function getViewportTransform(
-  cosmograph: CosmographRef | undefined | null,
-): CameraSnapshot | null {
-  if (!cosmograph) {
-    return null;
-  }
-
-  const internal = cosmograph as unknown as CosmographInternalHandle;
-  const transform = internal._cosmos?.zoomInstance?.eventTransform;
-  if (!transform) {
-    return null;
-  }
-
-  if (
-    !isFinite(transform.k) ||
-    !isFinite(transform.x) ||
-    !isFinite(transform.y)
-  ) {
-    return null;
-  }
-
-  return {
-    zoomLevel: transform.k,
-    transformX: transform.x,
-    transformY: transform.y,
-  };
-}
-
-function applyViewportCamera(
-  cosmograph: CosmographRef | undefined | null,
-  camera: CameraSnapshot,
-): boolean {
-  if (!cosmograph) {
-    return false;
-  }
-
-  const internal = cosmograph as unknown as CosmographInternalHandle;
-  const zoomInstance = internal._cosmos?.zoomInstance;
-  const selection = internal._cosmos?.canvasD3Selection;
-  const transformFn = zoomInstance?.behavior?.transform;
-  const Transform = zoomInstance?.eventTransform?.constructor;
-  if (!selection || !transformFn || !Transform) {
-    return false;
-  }
-
-  const transform = new Transform(
-    camera.zoomLevel,
-    camera.transformX,
-    camera.transformY,
-  );
-  transformFn.call(zoomInstance.behavior, selection, transform);
-  return true;
-}
 
 export default function CosmographRenderer({
   canvas,
@@ -176,6 +109,19 @@ export default function CosmographRenderer({
     }
   }, [focusedPointIndex, markCameraSettled, syncZoomState]);
 
+  // Window-level keyboard shortcuts for the 2D map. Mounted only while
+  // GraphRenderer is alive (which is precisely when the 2D Cosmograph
+  // is the active renderer), so no fieldMode gate is needed at the
+  // listener — unmount handles that. See `cosmograph-keyboard-shortcuts.ts`
+  // for the key→action map and the active-element guard.
+  useEffect(() => {
+    const handler = createGraphKeyboardHandler({
+      getCosmograph: () => cosmographRef.current,
+    });
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
   type ZoomCallback = Parameters<typeof panGuardOnZoom>;
 
   const handleZoomWithGuard = useCallback(
@@ -213,6 +159,7 @@ export default function CosmographRenderer({
       if (focusedPointIndex !== index) {
         setFocusedPointIndex(index);
       }
+      cosmographRef.current?.setFocusedPoint(index);
       if (selectedNode?.id === id && selectedNode.index === index) {
         return;
       }
@@ -227,6 +174,7 @@ export default function CosmographRenderer({
     if (focusedPointIndex != null) {
       setFocusedPointIndex(null);
     }
+    cosmographRef.current?.setFocusedPoint(undefined);
     if (selectedNode != null) {
       selectNode(null);
     }
@@ -305,6 +253,7 @@ export default function CosmographRenderer({
       if (focusedPointIndex !== index) {
         setFocusedPointIndex(index);
       }
+      cosmographRef.current?.setFocusedPoint(index);
       if (selectedNode?.index === index) {
         return;
       }
@@ -321,12 +270,14 @@ export default function CosmographRenderer({
     selectionRequestId.current += 1;
     if (isLocked) {
       setFocusedPointIndex(null);
+      cosmographRef.current?.setFocusedPoint(undefined);
       selectNode(null);
       return;
     }
 
     clearVisibilityFocus();
     setFocusedPointIndex(null);
+    cosmographRef.current?.setFocusedPoint(undefined);
     selectNode(null);
     // Explicitly clear programmatic selections (selectPoint calls)
     // that resetSelectionOnEmptyCanvasClick may not reach
@@ -424,6 +375,9 @@ export default function CosmographRenderer({
   // --graph-canvas-filter to the <canvas> only (not labels).  In light mode
   // the WebGL background is transparent so the filter only hits colored points;
   // the visible background lives on the sibling div behind the canvas.
+  const enableNativePointSelection =
+    !isLocked && config.hasLinks && connectedSelect;
+
   return (
     <div ref={wrapperRef} data-graph-canvas style={{ position: "relative", width: "100%", height: "100%" }}>
     <style data-graph-label-theme="native-adapter">
@@ -501,15 +455,14 @@ export default function CosmographRenderer({
       usePointColorStrategyForClusterLabels={config.pointClusterColumn != null}
       clusterLabelClassName={resolveClusterLabelClassName}
       selectClusterOnLabelClick={!isLocked}
-      selectPointOnClick={
-        isLocked ? false : config.hasLinks && connectedSelect ? true : "single"
-      }
-      selectPointOnLabelClick={
-        isLocked ? false : config.hasLinks && connectedSelect ? true : "single"
-      }
+      selectPointOnClick={enableNativePointSelection}
+      selectPointOnLabelClick={enableNativePointSelection}
       focusPointOnClick={!isLocked}
       focusPointOnLabelClick={!isLocked}
-      resetSelectionOnEmptyCanvasClick={!isLocked}
+      // Single-click inspection disables native point selection. Cosmograph's
+      // native empty-canvas reset treats point index 0 as falsy on that path,
+      // so app-owned background clearing below is the only reset lane.
+      resetSelectionOnEmptyCanvasClick={false}
       disableLogging
       onZoomStart={panGuardOnZoomStart}
       onZoom={handleZoomWithGuard}

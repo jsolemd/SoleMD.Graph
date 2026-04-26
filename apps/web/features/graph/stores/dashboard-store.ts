@@ -8,6 +8,7 @@ import { createLinksSlice } from './slices/links-slice'
 import { createVisibilitySlice } from './slices/visibility-slice'
 import { createSqlExplorerSlice } from './slices/sql-explorer-slice'
 import { createRagSlice } from './slices/rag-slice'
+import { createViewSlice } from './slices/view-slice'
 
 import type { PanelSlice } from './slices/panel-slice'
 import type { ConfigSlice } from './slices/config-slice'
@@ -17,6 +18,7 @@ import type { LinksSlice } from './slices/links-slice'
 import type { VisibilitySlice } from './slices/visibility-slice'
 import type { SqlExplorerSlice } from './slices/sql-explorer-slice'
 import type { RagSlice } from './slices/rag-slice'
+import type { ViewSlice } from './slices/view-slice'
 import {
   APP_CHROME_BASE_PX,
   APP_CHROME_PX,
@@ -38,6 +40,7 @@ import {
 
 export type { ActivePanel, PanelId, PromptMode } from './slices/panel-slice'
 export type { TableView } from './slices/config-slice'
+export type { RendererMode } from './slices/view-slice'
 
 /* ───── Composite state type ───── */
 
@@ -49,7 +52,8 @@ export type DashboardState =
   LinksSlice &
   VisibilitySlice &
   SqlExplorerSlice &
-  RagSlice
+  RagSlice &
+  ViewSlice
 
 /* ───── Clearance selectors ─────
  * Single source of truth for bottom/left space occupied by docked elements.
@@ -563,4 +567,5 @@ export const useDashboardStore = create<DashboardState>((...a) => ({
   ...createVisibilitySlice(...a),
   ...createSqlExplorerSlice(...a),
   ...createRagSlice(...a),
+  ...createViewSlice(...a),
 }))

@@ -21,6 +21,7 @@ import {
   Tag,
 } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
+import { RendererToggleButton } from "./RendererToggleButton";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { getLayerConfig } from "@/features/graph/lib/layers";
@@ -459,8 +460,12 @@ export function ChromeBar() {
         <ThemeToggle grouped />
       </div>
 
-      {/* Pill 2 — four grouped menu icons (same on mobile + desktop). */}
+      {/* Pill 2 — renderer toggle + four grouped menu icons (same on mobile + desktop). */}
       <div className="flex items-center gap-0.5 rounded-full" style={pillStyle}>
+        <RendererToggleButton isMobile={isMobile} grouped />
+
+        <SubgroupDivider />
+
         <PillButton
           isMobile={isMobile}
           icon={LocateFixed}

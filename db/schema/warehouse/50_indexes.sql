@@ -14,6 +14,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_ingest_runs_active_lock
 CREATE INDEX IF NOT EXISTS idx_ingest_runs_started_brin
     ON solemd.ingest_runs
     USING brin (started_at);
+CREATE INDEX IF NOT EXISTS idx_ingest_file_tasks_release_family_status
+    ON solemd.ingest_file_tasks (
+        source_release_id,
+        ingest_run_id,
+        family_name,
+        status,
+        updated_at
+    );
 
 CREATE INDEX IF NOT EXISTS idx_corpus_domain_status
     ON solemd.corpus (domain_status);

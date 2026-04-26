@@ -114,7 +114,7 @@ def test_prepare_worker_metrics_environment_restores_runtime_env(tmp_path: Path)
         assert os.environ["PROMETHEUS_MULTIPROC_DIR"] == str(metrics_dir)
         assert os.environ["prometheus_multiproc_dir"] == str(metrics_dir)
         assert os.environ["dramatiq_prom_db"] == str(metrics_dir)
-        assert os.environ["dramatiq_prom_host"] == "0.0.0.0"
+        assert os.environ["dramatiq_prom_host"] == "127.0.0.1"
         assert os.environ["dramatiq_prom_port"] == "9464"
         """
     )

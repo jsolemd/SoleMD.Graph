@@ -1,13 +1,4 @@
-import path from 'node:path'
-import { loadEnvConfig } from '@next/env'
 import type { NextConfig } from 'next'
-
-// Monorepo env loader: Next resolves `.env*` relative to this config file
-// (apps/web). The repo's canonical dev env lives at the workspace root so the
-// worker, API, and web all share it — point Next at that root explicitly.
-// See docs/rag/05b-graph-bundles.md §11.7 for the dev-fixture context.
-const MONOREPO_ROOT = path.resolve(__dirname, '..', '..')
-loadEnvConfig(MONOREPO_ROOT, process.env.NODE_ENV !== 'production')
 
 const DUCKDB_BROWSER_ENTRY = '@duckdb/duckdb-wasm/dist/duckdb-browser.mjs'
 // lottie-react's package.json `browser` field points at build/index.umd.js.

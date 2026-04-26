@@ -5,7 +5,7 @@ import { create } from "zustand";
  *
  * FieldScene's blob-points subscriber publishes a pickSync function when
  * the blob `<points>` and its ShaderMaterial are mounted; out-of-tree
- * surfaces (OrbClickCaptureLayer → useOrbClick) call it with
+ * surfaces (OrbInteractionSurface → useOrbClick) call it with
  * (clientX, clientY) and receive a particle index or PICK_NO_HIT.
  *
  * Crossing the R3F tree boundary:

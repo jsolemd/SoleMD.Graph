@@ -350,6 +350,35 @@ Indexes:
   operational lookups.
 - BRIN on `started_at` — analytical scans.
 
+#### `solemd.ingest_file_tasks`
+
+Durable DB-backed file work queue for ingest families that need safe
+intra-family fanout. Current landed use: S2 `citations`.
+
+Columns:
+- `ingest_run_id` UUID, FK → `ingest_runs`
+- `source_release_id` INTEGER, FK → `source_releases`
+- `family_name` TEXT
+- `file_name` TEXT
+- `file_path` TEXT
+- `file_byte_count` BIGINT default `0`
+- `status` SMALLINT (`1=pending`, `2=running`, `3=completed`,
+  `4=failed`)
+- `attempt_count` INTEGER default `0`
+- `input_bytes_read` BIGINT default `0`
+- `rows_written` BIGINT default `0`
+- `stage_row_count` INTEGER default `0`
+- `claim_token` UUID nullable — per-claim lease token; file workers must
+  present it before heartbeat, stage merge, checkpoint, complete, or fail
+  updates
+- `enqueued_at`, `started_at`, `completed_at`, `updated_at` TIMESTAMPTZ
+- `last_error` TEXT
+
+Keys / indexes:
+- PK `(ingest_run_id, family_name, file_name)`.
+- Btree `(source_release_id, ingest_run_id, family_name, status,
+  updated_at)` — fanout progress, stale reset, and operator inspection.
+
 #### `solemd.paper_text_acquisition_runs`
 
 One row per paper-level full-text acquisition attempt. Fillfactor 80.
@@ -423,6 +452,25 @@ and referenced by `manifest_uri` on `ingest_runs`.
 - This is the default broad raw citation surface under the locked stage
   contract. It supports corpus and mapped gating without forcing full
   citation-edge persistence before mapped.
+
+#### `solemd.s2_paper_reference_metrics_file_checkpoints`
+
+Durable per-file completion checkpoints for the S2 citation aggregate path.
+The aggregate stage table is `UNLOGGED`, so a checkpoint is trusted only when
+the matching stage rows still exist and match `stage_row_count`. If Postgres
+restarts and clears the stage, the worker deletes invalid checkpoints and
+reprocesses those files through `solemd.ingest_file_tasks`.
+
+Columns:
+- `ingest_run_id` UUID, FK → `ingest_runs`
+- `source_release_id` INTEGER, FK → `source_releases`
+- `file_name` TEXT
+- `file_byte_count` BIGINT default `0`
+- `stage_row_count` INTEGER default `0`
+- `completed_at` TIMESTAMPTZ default `now()`
+
+Key:
+- PK `(ingest_run_id, source_release_id, file_name)`.
 
 #### `solemd.s2_paper_references_raw`
 

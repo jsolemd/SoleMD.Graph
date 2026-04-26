@@ -1,6 +1,6 @@
 "use client";
 import { useCallback } from "react";
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmographInternal } from "@cosmograph/react";
 import { useGraphStore } from "@/features/graph/stores";
 import {
   buildSelectedPointBaselineSelectionClause,
@@ -9,7 +9,11 @@ import {
 } from "@/features/graph/lib/cosmograph-selection";
 
 export function useGraphSelection() {
-  const { cosmograph } = useCosmograph();
+  // Null-tolerant: the throwing useCosmograph would crash renderer-clean
+  // surfaces (e.g. the 3D OrbSurface) that transitively pull this hook in
+  // via shared controllers. All call sites below already null-guard the
+  // cosmograph reference.
+  const cosmograph = useCosmographInternal()?.cosmograph;
   const setFocusedPointIndex = useGraphStore((s) => s.setFocusedPointIndex);
 
   const selectPoint = useCallback((index: number, addToSelection?: boolean, expandLinks?: boolean) => {

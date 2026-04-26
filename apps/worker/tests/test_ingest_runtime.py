@@ -368,7 +368,7 @@ async def test_s2_publication_venues_tolerate_duplicate_issn_rows(
     runtime_settings = runtime_settings_factory(
         semantic_scholar_dir=s2_root,
         ingest_dsn=warehouse_dsns["ingest"],
-    )
+    ).model_copy(update={"ingest_max_concurrent_files": 1})
 
     pools = await open_pools(runtime_settings, names=("ingest_write",))
     try:
@@ -1557,7 +1557,7 @@ async def test_s2_citations_failed_stage_does_not_replace_final_metrics(
     runtime_settings = runtime_settings_factory(
         semantic_scholar_dir=s2_root,
         ingest_dsn=warehouse_dsns["ingest"],
-    )
+    ).model_copy(update={"ingest_max_concurrent_files": 1})
     request = StartReleaseRequest(
         source_code="s2",
         release_tag=release_tag,
@@ -1652,7 +1652,557 @@ async def test_s2_citations_failed_stage_does_not_replace_final_metrics(
         assert await admin_connection.fetchval(
             "SELECT count(*) FROM solemd.s2_paper_reference_metrics_stage WHERE ingest_run_id = $1",
             failed_run_id,
+        ) == 1
+        assert await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.s2_paper_reference_metrics_stage
+            WHERE ingest_run_id = $1
+              AND file_name = $2
+            """,
+            failed_run_id,
+            broken_citations_path.name,
         ) == 0
+        checkpoint_row = await admin_connection.fetchrow(
+            """
+            SELECT file_name, stage_row_count
+            FROM solemd.s2_paper_reference_metrics_file_checkpoints
+            WHERE ingest_run_id = $1
+            """,
+            failed_run_id,
+        )
+        assert checkpoint_row is not None
+        assert tuple(checkpoint_row.values()) == (citations_path.name, 1)
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_citations_resume_uses_file_checkpoints(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+    monkeypatch,
+) -> None:
+    release_tag = "2026-01-04"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path_0 = citations_dir / "citations-0000.jsonl.gz"
+    citations_path_1 = citations_dir / "citations-0001.jsonl.gz"
+    write_jsonl_gz(
+        citations_path_0,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            },
+            {
+                "citationid": 2,
+                "citingcorpusid": 101,
+                "citedcorpusid": 203,
+                "isinfluential": True,
+                "intents": ["background"],
+            },
+        ],
+    )
+    write_jsonl_gz(
+        citations_path_1,
+        [
+            {
+                "citationid": 3,
+                "citingcorpusid": 303,
+                "citedcorpusid": None,
+                "isinfluential": True,
+                "intents": None,
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path_0.name, citations_path_1.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    ).model_copy(update={"ingest_max_concurrent_files": 1})
+    request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("citations",),
+    )
+
+    from app.ingest.writers import s2_citation_stage
+
+    original_stage_file = s2_citation_stage.stage_citation_metrics_for_file
+    fail_second_file = True
+    stage_calls: list[str] = []
+
+    async def flaky_stage_file(*args, **kwargs):
+        nonlocal fail_second_file
+        file_path = kwargs["file_path"]
+        stage_calls.append(file_path.name)
+        if fail_second_file and file_path.name == citations_path_1.name:
+            raise RuntimeError("synthetic citation file failure")
+        return await original_stage_file(*args, **kwargs)
+
+    monkeypatch.setattr(
+        s2_citation_stage,
+        "stage_citation_metrics_for_file",
+        flaky_stage_file,
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        with pytest.raises(ExceptionGroup):
+            await run_release_ingest(
+                request,
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        failed_run_id = await admin_connection.fetchval(
+            """
+            SELECT ingest_run_id
+            FROM solemd.ingest_runs
+            WHERE status = 6
+            ORDER BY started_at DESC
+            LIMIT 1
+            """
+        )
+        assert failed_run_id is not None
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM solemd.s2_paper_reference_metrics_raw"
+        ) == 0
+        checkpoint_rows = await admin_connection.fetch(
+            """
+            SELECT file_name, stage_row_count
+            FROM solemd.s2_paper_reference_metrics_file_checkpoints
+            WHERE ingest_run_id = $1
+            ORDER BY file_name
+            """,
+            failed_run_id,
+        )
+        assert [tuple(row.values()) for row in checkpoint_rows] == [
+            (citations_path_0.name, 1)
+        ]
+    finally:
+        await admin_connection.close()
+
+    fail_second_file = False
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        resumed_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert resumed_run_id == str(failed_run_id)
+        assert stage_calls == [
+            citations_path_0.name,
+            citations_path_1.name,
+            citations_path_1.name,
+        ]
+        metric_rows = await admin_connection.fetch(
+            """
+            SELECT
+                citing_paper_id,
+                reference_out_count,
+                influential_reference_count,
+                linked_reference_count,
+                orphan_reference_count
+            FROM solemd.s2_paper_reference_metrics_raw
+            ORDER BY citing_paper_id
+            """
+        )
+        assert [tuple(row.values()) for row in metric_rows] == [
+            ("101", 2, 1, 2, 0),
+            ("303", 1, 1, 0, 1),
+        ]
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM solemd.s2_paper_reference_metrics_stage WHERE ingest_run_id = $1",
+            failed_run_id,
+        ) == 0
+        assert await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.s2_paper_reference_metrics_file_checkpoints
+            WHERE ingest_run_id = $1
+            """,
+            failed_run_id,
+        ) == 2
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_citations_distributed_file_tasks_finalize_metrics(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+    monkeypatch,
+) -> None:
+    release_tag = "2026-01-05"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path_0 = citations_dir / "citations-0000.jsonl.gz"
+    citations_path_1 = citations_dir / "citations-0001.jsonl.gz"
+    write_jsonl_gz(
+        citations_path_0,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": None,
+            },
+            {
+                "citationid": 2,
+                "citingcorpusid": 101,
+                "citedcorpusid": None,
+                "isinfluential": True,
+                "intents": None,
+            },
+        ],
+    )
+    write_jsonl_gz(
+        citations_path_1,
+        [
+            {
+                "citationid": 3,
+                "citingcorpusid": 303,
+                "citedcorpusid": 101,
+                "isinfluential": True,
+                "intents": ["methodology"],
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path_0.name, citations_path_1.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    ).model_copy(
+        update={
+            "ingest_file_task_poll_interval_seconds": 0.01,
+            "ingest_file_task_stale_after_seconds": 60.0,
+        }
+    )
+    request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("citations",),
+    )
+
+    from app.ingest.writers import s2_citations
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    worker_tasks: list[asyncio.Task] = []
+    dispatched_file_names: list[str] = []
+
+    def fake_send_citation_file_task(*, request, source_release_id, ingest_run_id, file_plan):
+        dispatched_file_names.append(file_plan.path.name)
+        worker_tasks.append(
+            asyncio.create_task(
+                s2_citations.load_citation_file_task(
+                    pools.get("ingest_write"),
+                    runtime_settings,
+                    request=request,
+                    source_release_id=source_release_id,
+                    ingest_run_id=ingest_run_id,
+                    file_plan=file_plan,
+                )
+            )
+        )
+
+    monkeypatch.setattr(
+        s2_citations,
+        "_send_citation_file_task",
+        fake_send_citation_file_task,
+    )
+
+    try:
+        ingest_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+            distributed_file_tasks=True,
+        )
+        await asyncio.gather(*worker_tasks)
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert sorted(dispatched_file_names) == [
+            citations_path_0.name,
+            citations_path_1.name,
+        ]
+        metric_rows = await admin_connection.fetch(
+            """
+            SELECT
+                citing_paper_id,
+                reference_out_count,
+                influential_reference_count,
+                linked_reference_count,
+                orphan_reference_count
+            FROM solemd.s2_paper_reference_metrics_raw
+            ORDER BY citing_paper_id
+            """
+        )
+        assert [tuple(row.values()) for row in metric_rows] == [
+            ("101", 2, 1, 1, 1),
+            ("303", 1, 1, 1, 0),
+        ]
+        task_rows = await admin_connection.fetch(
+            """
+            SELECT file_name, status, attempt_count, stage_row_count
+            FROM solemd.ingest_file_tasks
+            WHERE ingest_run_id = $1
+            ORDER BY file_name
+            """,
+            ingest_run_id,
+        )
+        assert [tuple(row.values()) for row in task_rows] == [
+            (citations_path_0.name, 3, 1, 1),
+            (citations_path_1.name, 3, 1, 1),
+        ]
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM solemd.s2_paper_reference_metrics_stage WHERE ingest_run_id = $1",
+            ingest_run_id,
+        ) == 0
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_citation_dispatch_redrives_stale_enqueued_pending_rows(
+    warehouse_dsns: dict[str, str],
+    tmp_path: Path,
+) -> None:
+    from app.ingest.writers import s2_citation_tasks
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        await init_connection(admin_connection)
+        source_release_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.source_releases (
+                source_name,
+                source_release_key,
+                release_status
+            )
+            VALUES ('s2', '2026-01-06', 'ingesting')
+            RETURNING source_release_id
+            """
+        )
+        ingest_run_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.ingest_runs (
+                advisory_lock_key,
+                source_release_id,
+                status
+            )
+            VALUES (123, $1, 2)
+            RETURNING ingest_run_id
+            """,
+            source_release_id,
+        )
+        await s2_citation_tasks.upsert_citation_file_tasks(
+            admin_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+            files=(
+                FilePlan(
+                    dataset="citations",
+                    path=tmp_path / "citations-old.jsonl.gz",
+                    byte_count=10,
+                    content_kind="jsonl_gz",
+                ),
+                FilePlan(
+                    dataset="citations",
+                    path=tmp_path / "citations-fresh.jsonl.gz",
+                    byte_count=10,
+                    content_kind="jsonl_gz",
+                ),
+            ),
+        )
+        await admin_connection.execute(
+            """
+            UPDATE solemd.ingest_file_tasks
+            SET enqueued_at = now() - interval '30 seconds'
+            WHERE ingest_run_id = $1
+              AND file_name = 'citations-old.jsonl.gz'
+            """,
+            ingest_run_id,
+        )
+        await admin_connection.execute(
+            """
+            UPDATE solemd.ingest_file_tasks
+            SET enqueued_at = now()
+            WHERE ingest_run_id = $1
+              AND file_name = 'citations-fresh.jsonl.gz'
+            """,
+            ingest_run_id,
+        )
+
+        dispatch_names = await s2_citation_tasks.claim_pending_citation_dispatches(
+            admin_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+            stale_after_seconds=1.0,
+        )
+        assert dispatch_names == ("citations-old.jsonl.gz",)
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_s2_citation_claim_token_blocks_stale_task_completion(
+    warehouse_dsns: dict[str, str],
+    tmp_path: Path,
+) -> None:
+    from app.ingest.writers import s2_citation_tasks
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        await init_connection(admin_connection)
+        source_release_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.source_releases (
+                source_name,
+                source_release_key,
+                release_status
+            )
+            VALUES ('s2', '2026-01-07', 'ingesting')
+            RETURNING source_release_id
+            """
+        )
+        ingest_run_id = await admin_connection.fetchval(
+            """
+            INSERT INTO solemd.ingest_runs (
+                advisory_lock_key,
+                source_release_id,
+                status
+            )
+            VALUES (124, $1, 2)
+            RETURNING ingest_run_id
+            """,
+            source_release_id,
+        )
+        file_name = "citations-0000.jsonl.gz"
+        await s2_citation_tasks.upsert_citation_file_tasks(
+            admin_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+            files=(
+                FilePlan(
+                    dataset="citations",
+                    path=tmp_path / file_name,
+                    byte_count=10,
+                    content_kind="jsonl_gz",
+                ),
+            ),
+        )
+
+        old_token = await s2_citation_tasks.claim_citation_file_task(
+            admin_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+            file_name=file_name,
+            max_attempts=3,
+        )
+        assert old_token is not None
+        await admin_connection.execute(
+            """
+            UPDATE solemd.ingest_file_tasks
+            SET updated_at = now() - interval '30 seconds'
+            WHERE ingest_run_id = $1
+            """,
+            ingest_run_id,
+        )
+        assert await s2_citation_tasks.reset_stale_citation_file_tasks(
+            admin_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+            stale_after_seconds=1.0,
+        ) == (file_name,)
+
+        new_token = await s2_citation_tasks.claim_citation_file_task(
+            admin_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+            file_name=file_name,
+            max_attempts=3,
+        )
+        assert new_token is not None
+        assert new_token != old_token
+
+        assert not await s2_citation_tasks.complete_citation_file_task(
+            admin_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+            file_name=file_name,
+            claim_token=old_token,
+            file_byte_count=10,
+            stage_row_count=99,
+        )
+        with pytest.raises(RuntimeError, match="stale S2 citation file task claim"):
+            await s2_citation_tasks.lock_citation_file_task_claim(
+                admin_connection,
+                source_release_id=source_release_id,
+                ingest_run_id=ingest_run_id,
+                file_name=file_name,
+                claim_token=old_token,
+            )
+        await s2_citation_tasks.lock_citation_file_task_claim(
+            admin_connection,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+            file_name=file_name,
+            claim_token=new_token,
+        )
+        task_row = await admin_connection.fetchrow(
+            """
+            SELECT status, attempt_count, stage_row_count, claim_token
+            FROM solemd.ingest_file_tasks
+            WHERE ingest_run_id = $1
+              AND file_name = $2
+            """,
+            ingest_run_id,
+            file_name,
+        )
+        assert task_row is not None
+        assert task_row["status"] == 2
+        assert task_row["attempt_count"] == 2
+        assert task_row["stage_row_count"] == 0
+        assert task_row["claim_token"] == new_token
     finally:
         await admin_connection.close()
 

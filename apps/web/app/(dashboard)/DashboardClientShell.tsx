@@ -32,13 +32,31 @@ import {
 } from "@/features/field/scroll/field-scene-store";
 import type { FieldController } from "@/features/field/controller/FieldController";
 import { installBlobMutationSubscriber } from "@/features/orb/bake/install-blob-mutation-subscriber";
+import { OrbCameraControls } from "@/features/orb/camera/OrbCameraControls";
 import { installBlobPointsSubscriber } from "@/features/orb/interaction/install-blob-points-subscriber";
+import {
+  OrbInteractionContext,
+  type OrbInteractionBridge,
+} from "@/features/orb/interaction/orb-interaction-context";
 import { useOrbGeometryMutationStore } from "@/features/orb/stores/geometry-mutation-store";
+import { useOrbScopeMutationStore } from "@/features/orb/stores/scope-mutation-store";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import { useShellVariant } from "@/features/graph/components/shell/use-shell-variant";
+import {
+  useDashboardStore,
+  useShellStore,
+  type RendererMode,
+} from "@/features/graph/stores";
 
-function resolveFieldMode(pathname: string | null): FieldMode {
-  return pathname === "/graph" ? "orb" : "landing";
+export function resolveFieldMode(
+  pathname: string | null,
+  rendererMode: RendererMode,
+): FieldMode {
+  // /graph in '3d' mode uses the field substrate as the orb. Toggling to
+  // '2d' (native Cosmograph) keeps the dashboard layout mounted but the
+  // field stays inert so blob mutation/picking subscribers don't run
+  // pointlessly under Cosmograph.
+  return pathname === "/graph" && rendererMode === "3d" ? "orb" : "landing";
 }
 
 /**
@@ -63,7 +81,8 @@ export function DashboardClientShell({
 }) {
   const shellVariant = useShellVariant();
   const pathname = usePathname();
-  const fieldMode = resolveFieldMode(pathname);
+  const rendererMode = useDashboardStore((s) => s.rendererMode);
+  const fieldMode = resolveFieldMode(pathname, rendererMode);
 
   // sceneStateRef + sceneStore must survive route swaps. useMemo with an
   // empty dep array gives us layout-stable references as long as the
@@ -83,6 +102,14 @@ export function DashboardClientShell({
   >({});
   const [controllerEpoch, setControllerEpoch] = useState(0);
   const [stageReady, setStageReady] = useState(false);
+  // Slice A0: the OrbInteractionSurface lives inside `{children}` (orb
+  // mode), but slice A1's `<CameraControls>` lives inside FieldCanvas
+  // which is its sibling. React context only flows downward, so the
+  // bridge is hoisted here above both subtrees. `surfaceElement` is
+  // reactive state (not a ref) so consumers can key effects on element
+  // identity changing across the 3D ↔ 2D toggle.
+  const [orbSurfaceElement, setOrbSurfaceElement] =
+    useState<HTMLDivElement | null>(null);
 
   const handleControllerReady = useCallback(
     (id: FieldStageItemId, controller: FieldController) => {
@@ -105,7 +132,32 @@ export function DashboardClientShell({
   useEffect(() => {
     if (fieldMode === "orb") return;
     useOrbGeometryMutationStore.getState().reset();
+    useOrbScopeMutationStore.getState().reset();
   }, [fieldMode]);
+
+  // Slice 9: OS reduced-motion bridge. Mirrors the media-query into
+  // useShellStore.prefersReducedMotion so consumers (OrbSurface,
+  // BlobController gate) can collapse the three orthogonal motion
+  // inputs (user-controlled pauseMotion, user/auto lowPowerProfile,
+  // system-controlled OS preference) into a single derived flag
+  // without each call site re-running window.matchMedia. Critical
+  // contract: we do NOT write into setPauseMotion here — the OS
+  // preference is a separate input so a future pause-motion UI
+  // toggle doesn't fight a system event.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const setPrefersReducedMotion =
+      useShellStore.getState().setPrefersReducedMotion;
+    setPrefersReducedMotion(media.matches);
+    const handler = (event: MediaQueryListEvent) => {
+      setPrefersReducedMotion(event.matches);
+    };
+    media.addEventListener("change", handler);
+    return () => {
+      media.removeEventListener("change", handler);
+    };
+  }, []);
 
   const bridge = useMemo<FieldRuntimeBridge>(
     () => ({
@@ -119,22 +171,35 @@ export function DashboardClientShell({
     [controllerEpoch, sceneStateRef, stageReady],
   );
 
+  const orbInteractionBridge = useMemo<OrbInteractionBridge>(
+    () => ({
+      surfaceElement: orbSurfaceElement,
+      registerSurface: setOrbSurfaceElement,
+    }),
+    [orbSurfaceElement],
+  );
+
   return (
     <ShellVariantProvider value={shellVariant}>
       <FieldModeProvider mode={fieldMode}>
         <FieldSceneStoreProvider store={sceneStore}>
           <FieldRuntimeContext.Provider value={bridge}>
-            <FieldCanvas
-              activeIds={FIELD_STAGE_ITEM_IDS}
-              blobGeometrySubscriber={blobGeometrySubscriber}
-              blobPointsSubscriber={blobPointsSubscriber}
-              cameraRef={cameraRef}
-              className="fixed inset-0"
-              onControllerReady={handleControllerReady}
-              sceneStateRef={sceneStateRef}
-              stageReady={stageReady}
-            />
-            {children}
+            <OrbInteractionContext.Provider value={orbInteractionBridge}>
+              <FieldCanvas
+                activeIds={FIELD_STAGE_ITEM_IDS}
+                blobGeometrySubscriber={blobGeometrySubscriber}
+                blobPointsSubscriber={blobPointsSubscriber}
+                cameraRef={cameraRef}
+                canvasChildren={
+                  fieldMode === "orb" ? <OrbCameraControls /> : null
+                }
+                className="fixed inset-0"
+                onControllerReady={handleControllerReady}
+                sceneStateRef={sceneStateRef}
+                stageReady={stageReady}
+              />
+              {children}
+            </OrbInteractionContext.Provider>
           </FieldRuntimeContext.Provider>
         </FieldSceneStoreProvider>
       </FieldModeProvider>

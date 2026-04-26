@@ -3,7 +3,6 @@
 /**
  * Deterministic position initializers for the field particle cloud.
  *
- * Salvaged from the /orb-dev prototype (features/graph/orb/render/point-buffers.ts).
  * The cluster-ball sampler produces visible 3D cluster structure with real
  * depth variation — not a flat unit-sphere-surface distribution. Fibonacci
  * gives an evenly distributed shell when cluster semantics aren't needed.

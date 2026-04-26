@@ -719,4 +719,70 @@ describe("useRagQuery", () => {
       evidenceOnlyGraphPaperRefs: [],
     });
   });
+
+  it("does not commit stale RAG answer selection store state after unmount", async () => {
+    const queries = createQueries();
+    const pendingSelectionWrite = deferred<void>();
+    queries.setSelectedPointIndices.mockReturnValue(pendingSelectionWrite.promise);
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
+    mockedSyncRagGraphSignals.mockResolvedValue({
+      availability: {
+        activeGraphPaperRefs: ["paper-11", "paper-22"],
+        universePointIdsByGraphPaperRef: {},
+        unresolvedGraphPaperRefs: [],
+      },
+      graphAvailabilitySummary: {
+        activeResolvedGraphPaperRefs: ["paper-11", "paper-22"],
+        overlayPromotedGraphPaperRefs: [],
+        evidenceOnlyGraphPaperRefs: [],
+      },
+      answerSelectedPointIndices: [7, 9],
+    });
+
+    const { result, unmount } = renderHook(() =>
+      useRagQuery({
+        bundle: { bundleChecksum: "bundle-checksum", runId: "run-id" } as GraphBundle,
+        queries,
+        isAsk: true,
+        selectedNode: null,
+        currentPointScopeSql: null,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
+        getPromptText: () => "working question",
+      }),
+    );
+
+    await act(async () => {
+      result.current.handleSubmit();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      chatOptions?.onData?.({
+        type: GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART,
+        data: {
+          client_request_id: 1,
+          response: createResponse("working question"),
+        },
+      } as never);
+      await flushMicrotasks();
+      await flushMicrotasks();
+    });
+
+    expect(queries.setSelectedPointIndices).toHaveBeenCalledWith([7, 9]);
+    setSelectedPointCount.mockClear();
+    setActiveSelectionSourceId.mockClear();
+
+    unmount();
+
+    await act(async () => {
+      pendingSelectionWrite.resolve(undefined);
+      await flushMicrotasks();
+    });
+
+    expect(setSelectedPointCount).not.toHaveBeenCalled();
+    expect(setActiveSelectionSourceId).not.toHaveBeenCalled();
+  });
 });

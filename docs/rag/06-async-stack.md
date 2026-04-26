@@ -731,15 +731,20 @@ Concrete tuning lives in `09-tuning.md`. **provisional**.
 The first production `apps/worker` ingest implementation should keep the
 runtime shape tighter than the eventual full worker fleet:
 
-- `ingest.start_release` runs as one async actor on queue `ingest`.
+- `ingest.start_release` runs as one async actor on queue `ingest` and owns
+  release/family state, advisory locks, and finalization.
+- `ingest.s2_citation_file` runs on queue `ingest_file` and consumes durable
+  `solemd.ingest_file_tasks` rows for S2 citation files. The release actor
+  polls those rows and finalizes aggregate citation metrics only after every
+  file task completes.
 - Worker boot for that process uses `pool_names=("ingest_write",)` only.
-- Start with low thread count and, for the current operator default, two ingest
-  processes
-  (`dramatiq_queue_prefetch=1 dramatiq app.ingest_worker --processes 2 --threads 1 --queues ingest`
-  or the equivalent wrapper). COPY fanout lives inside each actor via bounded
-  asyncpg coroutines; Dramatiq thread count is not the partition-concurrency
-  knob. Keep queue prefetch at 1 so one long release-level ingest does not
-  reserve another release message behind it inside the same worker process.
+- Start with low thread count, `dramatiq_queue_prefetch=1`, and process-level
+  parallelism over both queues:
+  `POOL_INGEST_MIN=1 POOL_INGEST_MAX=8 INGEST_MAX_CONCURRENT_FILES=1 dramatiq app.ingest_worker --processes 8 --threads 1 --queues ingest ingest_file`
+  or the equivalent wrapper. COPY fanout for normal families lives inside the
+  actor via bounded asyncpg coroutines; S2 citation file concurrency comes from
+  separate `ingest_file` messages. Dramatiq thread count is not the
+  partition-concurrency knob.
 - Duplicate manifest/manual triggers should resolve through typed early exits
   or actor `throws=` for `IngestAlreadyPublished` and
   `IngestAlreadyInProgress`, not through retry churn.

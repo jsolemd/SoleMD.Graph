@@ -21,6 +21,7 @@ const nativeButtonIdState = { emitId: true };
 
 jest.mock("@cosmograph/react", () => ({
   useCosmograph: () => ({ cosmograph: mockCosmograph }),
+  useCosmographInternal: () => ({ cosmograph: mockCosmograph }),
   CosmographButtonRectangularSelection: (props: Record<string, unknown>) => (
     <button
       data-testid="rect-btn"

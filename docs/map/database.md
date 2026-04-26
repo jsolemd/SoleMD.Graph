@@ -74,7 +74,7 @@ were superseded or never shipped; the canonical sequence skips those numbers.
 | 008 | S2 reference tracking | `papers.s2_references_checked_at`, `papers.s2_references_release_id` |
 | 009 | Graph build tables | `solemd.graph_runs`, `solemd.graph_points`, `solemd.graph_clusters` |
 | 010 | Citation enrichment history | Superseded by raw `s2_paper_reference_metrics_raw` plus mapped `paper_citations` |
-| 011 | Bulk citation checkpoints | `solemd.bulk_citation_ingest_batches` |
+| 011 | Ingest file-task fanout and citation checkpoints | `solemd.ingest_file_tasks`, `solemd.s2_paper_reference_metrics_file_checkpoints` |
 | 012 | Canonical entity records | `solemd.entities` |
 | 013 | PubTator tables set LOGGED | Convert `pubtator.*` from UNLOGGED -> LOGGED (fix for 342M row loss) |
 | 019 | Simplify base admission naming | Rename corpus_tier->layout_status, is_default_visible->is_in_current_base; create `solemd.base_journal_family`, `solemd.base_policy`; normalize journal families; drop legacy visibility tables |
@@ -522,23 +522,68 @@ WHERE c.layout_status = 'mapped'
   AND NOT (... quality exclusions ...);
 ```
 
-### `solemd.bulk_citation_ingest_batches`
+### `solemd.ingest_file_tasks`
 
-Persistent per-batch checkpoints for the Semantic Scholar bulk citations ingest.
-Enables resumable multi-shard loading.
+Durable DB-backed work ledger for large ingest families that need safe
+intra-family parallelism. The first landed use is Semantic Scholar
+`citations`: the release actor inserts one task per source file, Dramatiq
+workers consume those tasks on `ingest_file`, and the release actor performs
+one final set-based merge after every file task is complete.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| release_id | TEXT NOT NULL | S2 release identifier |
-| batch_index | INTEGER NOT NULL | Batch sequence number |
-| shard_names | JSONB | Ordered shard file names in batch |
-| shards_scanned | INTEGER | Shards processed so far |
-| total_domain_edges | BIGINT | Domain-domain edges found |
-| loaded_edges | BIGINT | Edges written to citations |
-| status | TEXT NOT NULL | `running`, `completed`, `failed` |
-| started_at | TIMESTAMPTZ | |
+| ingest_run_id | UUID FK->ingest_runs | Owning release run |
+| source_release_id | INTEGER FK->source_releases | Source release |
+| family_name | TEXT | First use: `citations` |
+| file_name | TEXT | Source file basename |
+| file_path | TEXT | Planned local source path |
+| file_byte_count | BIGINT | Planned compressed input bytes |
+| status | SMALLINT | `1=pending`, `2=running`, `3=completed`, `4=failed` |
+| attempt_count | INTEGER | File-worker claim attempts |
+| input_bytes_read | BIGINT | Best-effort heartbeat progress |
+| rows_written | BIGINT | Best-effort staged row progress |
+| stage_row_count | INTEGER | Exact completed stage rows |
+| claim_token | UUID | Per-claim lease token guarding heartbeat/merge/checkpoint/complete/fail |
+| enqueued_at / started_at / completed_at / updated_at | TIMESTAMPTZ | Operational timestamps |
+| last_error | TEXT | Last file-task failure |
+| **PK** | (`ingest_run_id`, `family_name`, `file_name`) | |
+
+### `solemd.s2_paper_reference_metrics_raw`
+
+Default broad S2 citation surface. It stores release-scoped paper-level
+aggregates, not actual citation edges: `reference_out_count`,
+`influential_reference_count`, `linked_reference_count`, and
+`orphan_reference_count`. Mapped `paper_citations` enrichment owns actual
+paper-to-paper edge materialization.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| source_release_id | INTEGER FK->source_releases | S2 release |
+| citing_paper_id | TEXT | S2 citing paper id |
+| reference_out_count | INTEGER | Total outgoing references seen |
+| influential_reference_count | INTEGER | S2 influential outgoing references |
+| linked_reference_count | INTEGER | References with upstream cited paper ids |
+| orphan_reference_count | INTEGER | References without a cited paper id |
+| last_seen_run_id | UUID FK->ingest_runs | Producing ingest run |
+| **PK** | (`source_release_id`, `citing_paper_id`) | |
+
+### `solemd.s2_paper_reference_metrics_file_checkpoints`
+
+Durable per-file checkpoints for the Semantic Scholar citation metric sweep.
+The citation metric stage table remains `UNLOGGED`, so the worker only trusts a
+checkpoint when the matching per-file stage rows are still present. If Postgres
+restarts and clears the unlogged stage, the files are reprocessed instead of
+being skipped.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| ingest_run_id | UUID FK->ingest_runs | Active or resumable ingest run |
+| source_release_id | INTEGER FK->source_releases | S2 release identifier |
+| file_name | TEXT | Source citation shard file |
+| file_byte_count | BIGINT | Planned compressed input bytes |
+| stage_row_count | INTEGER | Per-file stage rows at completion |
 | completed_at | TIMESTAMPTZ | |
-| **PK** | (`release_id`, `batch_index`) | |
+| **PK** | (`ingest_run_id`, `source_release_id`, `file_name`) | |
 
 ### `solemd.publication_venues`
 

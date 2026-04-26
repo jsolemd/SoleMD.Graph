@@ -6,11 +6,13 @@ import type {
   GraphBundleLoadProgress,
   GraphBundleQueries,
 } from "@solemd/graph";
+import type { GraphCanvasSource } from "@/features/graph/duckdb";
 import { useGraphBundle } from "./use-graph-bundle";
 
 export type GraphWarmupStatus = "ready" | "loading" | "unavailable";
 
 export interface GraphWarmupState {
+  canvas: GraphCanvasSource | null;
   connection: AsyncDuckDBConnection | null;
   graphError: Error | null;
   graphProgress: GraphBundleLoadProgress | null;
@@ -32,6 +34,7 @@ export function useGraphWarmup(bundle: GraphBundle | null): GraphWarmupState {
         : "loading";
 
   return {
+    canvas: graphReady ? canvas : null,
     connection: graphReady ? connection : null,
     graphError: error,
     graphProgress: progress,

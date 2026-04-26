@@ -14,8 +14,13 @@ import type { LayerUniforms } from "../controller/FieldController";
  *
  * The vertex shader composes from the same motion chunks as the display
  * shader (`field-vertex-motion.glsl.ts`) so the picked pixel precisely
- * matches the rendered pixel — no drift from paper-mode aSpeed (up to
- * 3.0) or aClickPack.w (size factor 0.5–2.0).
+ * matches the rendered pixel — no drift from paper-mode aSpeed (range
+ * [0.55, 1.75]) or aClickPack.w (size factor [0.8, 2.6]). Final
+ * gl_PointSize is the raw `computeFieldPointSize` value, matching the
+ * display shader's BASE point size at every zoom level. Display-only
+ * boosts (selection / focus / spotlight) intentionally do NOT propagate
+ * to the picker — picking should hit the visible base sprite, not an
+ * inflated halo. Hardware point-size caps apply equally to both passes.
  *
  * The fragment shader uses `precision highp float` so the 24-bit
  * vIndex → RGB encode survives mantissa rounding at the 16384 particle
@@ -50,8 +55,7 @@ void main() {
   vec3 displaced = computeFieldDisplacement(noise);
   vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
   gl_Position = projectionMatrix * mvPosition;
-  float size = computeFieldPointSize(mvPosition);
-  gl_PointSize = clamp(size, 2.0, 64.0);
+  gl_PointSize = computeFieldPointSize(mvPosition);
   vIndex = aIndex;
 }
 `;
@@ -102,6 +106,7 @@ const MOTION_UNIFORM_KEYS = [
   "uFunnelStartShift",
   "uFunnelEndShift",
   "uFunnelDistortion",
+  "uPointDepthAttenuation",
 ] as const;
 
 export function createFieldPickingMaterial(

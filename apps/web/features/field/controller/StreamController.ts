@@ -46,8 +46,18 @@ export class StreamController extends FieldController {
     const { shader } = preset;
     const motionEnabled = sceneState.motionEnabled;
     const motionScale = motionEnabled ? 1 : 0.16;
+    // Slice B (orb-3d-physics-taxonomy.md §9.3): see BlobController for
+    // the rationale — pauseScale composes with motionScale, the user
+    // tempo rides `uTimeFactor` only, entropy rides amplitude/frequency.
+    const pauseScale = sceneState.motionPaused ? 0 : 1;
+    const timeMul = pauseScale * sceneState.motionSpeedMultiplier;
+    const rotMul =
+      pauseScale * motionScale * sceneState.rotationSpeedMultiplier;
+    const entropyMul = sceneState.ambientEntropy;
     const driftBlend = lerpFactor(dtSec, DECAY.standard);
     const timeFactor = this.getTimeFactor(motionEnabled);
+    // Slice B: integrate `uTime` (see BlobController for rationale).
+    this.accumulatedUTime += dtSec * timeMul;
     const visibility = itemState?.visibility ?? 0;
     const chapterState = resolveLandingStreamChapterState(sceneState);
 
@@ -70,7 +80,7 @@ export class StreamController extends FieldController {
       ? shader.sizeMobile ?? shader.size
       : shader.size;
 
-    uniforms.uTime.value = elapsedSec;
+    uniforms.uTime.value = this.accumulatedUTime;
     uniforms.uTimeFactor.value = timeFactor;
     uniforms.uPixelRatio.value = pixelRatio;
     uniforms.uIsMobile.value = isMobile;
@@ -79,10 +89,12 @@ export class StreamController extends FieldController {
       (shaderAlpha * visibility * chapterState.alpha - uniforms.uAlpha.value) *
       driftBlend;
     uniforms.uAmplitude.value +=
-      (chapterState.amplitude * motionScale - uniforms.uAmplitude.value) *
+      (chapterState.amplitude * motionScale * entropyMul -
+        uniforms.uAmplitude.value) *
       driftBlend;
     uniforms.uDepth.value +=
       (chapterState.depth - uniforms.uDepth.value) * driftBlend;
+    // Slice B: entropy is amplitude-only (see BlobController).
     uniforms.uFrequency.value +=
       (chapterState.frequency - uniforms.uFrequency.value) * driftBlend;
     uniforms.uSize.value = shaderSize;
@@ -104,7 +116,7 @@ export class StreamController extends FieldController {
     const targetRotationY = preset.sceneRotation[1];
     const targetRotationZ = preset.sceneRotation[2];
     const idleRotationY =
-      elapsedSec * preset.rotationVelocity[1] * motionScale;
+      elapsedSec * preset.rotationVelocity[1] * rotMul;
 
     wrapper.visible = visibility > 0.01;
     wrapper.position.x +=

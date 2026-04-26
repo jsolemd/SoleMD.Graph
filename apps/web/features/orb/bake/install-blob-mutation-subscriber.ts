@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { BlobGeometrySubscriber } from "@/features/field/renderer/FieldScene";
 import { ORB_PAPER_OVERRIDE_ATTRIBUTES } from "@/features/field/asset/field-attribute-baker";
 import { useOrbGeometryMutationStore } from "../stores/geometry-mutation-store";
+import { useOrbScopeMutationStore } from "../stores/scope-mutation-store";
 import { applyPaperAttributeOverrides } from "./apply-paper-overrides";
 
 /**
@@ -53,7 +54,7 @@ export const installBlobMutationSubscriber: BlobGeometrySubscriber = ({
     for (let i = lastApplied; i < chunks.length; i += 1) {
       const chunk = chunks[i]!;
       applyPaperAttributeOverrides(geometry, chunk.attributes, {
-        maxima: chunk.maxima,
+        stats: chunk.stats,
       });
     }
     lastApplied = chunks.length;
@@ -64,9 +65,27 @@ export const installBlobMutationSubscriber: BlobGeometrySubscriber = ({
   // may start streaming before FieldScene's subscribe effect runs).
   applyPending();
 
-  const unsubscribe = useOrbGeometryMutationStore.subscribe(applyPending);
+  const unsubscribePapers = useOrbGeometryMutationStore.subscribe(applyPending);
+
+  // Slice 8: scope revision bridge. The resolver writes the
+  // particle-state texture data directly (module-level singleton);
+  // this hook only triggers an R3F invalidate() so frameloop="demand"
+  // picks up the texture upload. No vertex-attribute write here —
+  // scope membership lives in the sidecar texture sampled by aIndex.
+  let lastScopeRevision = useOrbScopeMutationStore.getState().scopeRevision;
+  const applyScope = () => {
+    const { scopeRevision } = useOrbScopeMutationStore.getState();
+    if (scopeRevision === lastScopeRevision) return;
+    lastScopeRevision = scopeRevision;
+    invalidate();
+  };
+
+  // Pick up any revision already published before subscription.
+  invalidate();
+  const unsubscribeScope = useOrbScopeMutationStore.subscribe(applyScope);
 
   return () => {
-    unsubscribe();
+    unsubscribePapers();
+    unsubscribeScope();
   };
 };

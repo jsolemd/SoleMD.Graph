@@ -665,6 +665,12 @@ Updated cutover verification after rotating the ingest worker:
   `server_settings.idle_in_transaction_session_timeout="900000"`,
   `tcp_keepalives_idle="60"`, `tcp_keepalives_interval="10"`,
   `tcp_keepalives_count="6"`.
+- S2 citation fanout is visible separately from release-level progress:
+  the `ingest_file` Dramatiq queue has live metrics, and
+  `solemd.ingest_file_tasks` exposes pending/running/completed/failed counts,
+  attempts, stale retries, bytes read, and completed stage rows.
+- Grafana panels must use the file-task ledger for citation progress and
+  should not run standing broad count sweeps over citation stage tables.
 
 The enforcing regression tests are
 `apps/worker/tests/test_ingest_runtime.py::test_writer_failure_releases_lock_and_records_family_failure`,

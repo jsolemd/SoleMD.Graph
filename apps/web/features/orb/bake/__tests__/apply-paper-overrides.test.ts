@@ -60,14 +60,17 @@ describe("applyPaperAttributeOverrides", () => {
 
     for (let i = 0; i < pointCount / 2; i += 1) {
       expect(aBucket[i]).toBe(0);
-      // aClickPack.w (every 4th float) holds sizeFactor, clamped [0.5, 2.0].
-      expect(aClickPack[i * 4 + 3]!).toBeGreaterThanOrEqual(0.5);
-      expect(aClickPack[i * 4 + 3]!).toBeLessThanOrEqual(2.0);
+      // aClickPack.w (every 4th float) holds sizeFactor, mapped into
+      // [0.8, 2.6] via log-percentile-pow shape.
+      expect(aClickPack[i * 4 + 3]!).toBeGreaterThanOrEqual(0.8);
+      expect(aClickPack[i * 4 + 3]!).toBeLessThanOrEqual(2.6);
       // All three axes share the same citation-derived speed.
       expect(aSpeed[i * 3]).toBe(aSpeed[i * 3 + 1]);
       expect(aSpeed[i * 3 + 1]).toBe(aSpeed[i * 3 + 2]);
-      expect(aSpeed[i * 3]!).toBeGreaterThanOrEqual(0);
-      expect(aSpeed[i * 3]!).toBeLessThanOrEqual(3);
+      // Speed factor is bounded into [0.55, 1.75] — never zero, never
+      // the hyperactive 3.0 of the pre-port mapping.
+      expect(aSpeed[i * 3]!).toBeGreaterThanOrEqual(0.55);
+      expect(aSpeed[i * 3]!).toBeLessThanOrEqual(1.75);
     }
     // Particles without paper data keep lands-mode defaults. aBucket
     // retains whatever lands-mode picked (one of 0..3).
@@ -110,18 +113,26 @@ describe("applyPaperAttributeOverrides", () => {
       [2, { paperId: "c", clusterId: 0, refCount: 100, entityCount: 1, relationCount: 0, year: null }],
       [3, { paperId: "d", clusterId: 0, refCount: 1000, entityCount: 1, relationCount: 0, year: null }],
     ]);
+    // Stats anchored at the supplied min/max in log space. The applier
+    // maps log1p(refCount) into [refLo, refHi] via gamma-eased pow.
     applyPaperAttributeOverrides(geometry, paperAttributes, {
-      maxima: { refCount: 1000, entityCount: 1 },
+      stats: {
+        refLo: Math.log1p(0),
+        refHi: Math.log1p(1000),
+        entityLo: Math.log1p(1),
+        entityHi: Math.log1p(1),
+      },
     });
     const aSpeed = geometry.getAttribute("aSpeed")!.array as Float32Array;
-    // Particle i's X speed lives at aSpeed[i * 3].
-    expect(aSpeed[0 * 3]!).toBeGreaterThan(aSpeed[3 * 3]!);
-    expect(aSpeed[1 * 3]!).toBeGreaterThan(aSpeed[3 * 3]!);
+    // Particle i's X speed lives at aSpeed[i * 3]. Higher refCount →
+    // lower speed factor (monotonic via the FAST→SLOW mix).
+    expect(aSpeed[0 * 3]!).toBeGreaterThan(aSpeed[1 * 3]!);
+    expect(aSpeed[1 * 3]!).toBeGreaterThan(aSpeed[2 * 3]!);
     expect(aSpeed[2 * 3]!).toBeGreaterThan(aSpeed[3 * 3]!);
-    // Most-cited paper (refCount == maxRef) gets near-zero speed.
-    expect(aSpeed[3 * 3]!).toBeCloseTo(0, 5);
-    // Uncited paper (refCount == 0) gets max speed (PAPER_SPEED_SCALE=3).
-    expect(aSpeed[0 * 3]!).toBeCloseTo(3, 5);
+    // Most-cited paper (refCount == refHi anchor) lands at the SLOW end.
+    expect(aSpeed[3 * 3]!).toBeCloseTo(0.55, 5);
+    // Uncited paper (refCount == refLo anchor) lands at the FAST end.
+    expect(aSpeed[0 * 3]!).toBeCloseTo(1.75, 5);
   });
 
   it("bumps BufferAttribute.version on mutated attributes so the GPU resyncs", () => {

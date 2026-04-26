@@ -23,6 +23,17 @@ import * as THREE from "three";
 // Some WebGL platforms expose fewer attribute slots than the v2 spec
 // floor of 16, so keeping the total flat is the safest design.
 //
+// Slice 8 (orb-field): scope membership is NOT a vertex attribute —
+// the program is at the WebGL attribute budget already, and adding a
+// 15th lane causes "Too many attributes" link failures on conforming
+// GPUs (one slot is reserved for `position`; some drivers reserve
+// more for varyings or transform feedback bookkeeping). Per-particle
+// scope state lives in a sidecar `THREE.DataTexture` keyed by
+// `aIndex`; see `renderer/field-particle-state-texture.ts`. Future
+// dynamic state (focus excitation, search pulse, band/stage/ring)
+// joins the same RGBA8 texture instead of growing the attribute set,
+// and migrates to a WebGPU storage buffer when TSL lands.
+//
 // Paper identity (paperId ↔ particleIndex) lives on the JS side — the
 // usePaperAttributesBaker hook emits a Map, and apply-paper-overrides
 // consumes it directly. Keeping paper id out of the vertex attribute

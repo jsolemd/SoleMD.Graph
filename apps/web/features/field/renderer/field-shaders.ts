@@ -40,6 +40,20 @@ ${FIELD_UNIFORM_DECLS}
 uniform float uAlpha;
 uniform float uSelection;
 
+// Slice 8: per-particle dynamic state texture, keyed by aIndex.
+// uScopeDimEnabled gates the dim multiplier so non-orb layers
+// (stream, objectFormation) skip the sampler read entirely. R lane
+// = filter / timeline scope membership in [0,1] (normalized texels).
+// uParticleStateTexSize is the side length in pixels (128 for the
+// 16k-particle baseline). R lane = scope; G lane = focus/hover
+// excitation. Lane defaults are R=1 and G/B/A=0, making the
+// resolver-idle path a bit-exact no-op.
+uniform sampler2D uParticleStateTex;
+uniform float uParticleStateTexSize;
+uniform float uScopeDimEnabled;
+uniform float uScopeDimFloor;
+uniform float uOrbFocusActive;
+
 // Phase A1 per-category selection floors + brighten/size boost.
 uniform float uPapersSelection;
 uniform float uEntitiesSelection;
@@ -163,6 +177,35 @@ void main() {
   // fbm pass above; amplifying it modulates brightness across soft
   // neighborhoods without introducing hard category-colored groups.
   vColor *= mix(1.0, 1.0 + 0.45 * (vNoise - 0.5), uClusterEmergence);
+
+  // Slice 8: out-of-scope dim, sampled from the particle-state
+  // sidecar texture. R lane carries scope membership (1 = in scope,
+  // 0 = out of scope). Stream / objectFormation pass a zero gate
+  // (uScopeDimEnabled = 0) so the sampler read is skipped and they
+  // render unaffected. Default texture is full white, making the
+  // resolver-idle path a bit-exact no-op for the orb layer too.
+  if (uScopeDimEnabled > 0.5) {
+    float sx = mod(aIndex, uParticleStateTexSize);
+    float sy = floor(aIndex / uParticleStateTexSize);
+    vec2 stateUv =
+      (vec2(sx, sy) + 0.5) / uParticleStateTexSize;
+    vec4 particleState = texture2D(uParticleStateTex, stateUv);
+    vAlpha *= mix(uScopeDimFloor, 1.0, particleState.r);
+
+    // Slice C: hover/click focus visualization. G carries normalized
+    // excitation: hover writes ~0.5, click spotlight writes 1.0. The
+    // scalar focus gate is intentionally separate because G=0 is also
+    // the resolver-idle lane default; without the gate the shader cannot
+    // distinguish "no focus yet" from "focus active and this particle is
+    // not focused".
+    float focusG = particleState.g;
+    if (uOrbFocusActive > 0.001) {
+      vAlpha *= mix(0.14, 1.0, focusG);
+    }
+    vAlpha *= mix(1.0, 1.9, focusG);
+    vColor = mix(vColor, vColor * 1.25, focusG);
+    gl_PointSize *= mix(1.0, 1.45, focusG);
+  }
 }
 `;
 

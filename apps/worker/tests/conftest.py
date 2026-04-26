@@ -64,6 +64,7 @@ def runtime_settings_factory():
                 "pubtator_dir": str(pubtator_dir or (REPO_ROOT / "data" / "pubtator")),
                 "ingest_max_concurrent_files": 2,
                 "ingest_copy_batch_rows": 64,
+                "warehouse_storage_check_enabled": False,
             }
         )
 

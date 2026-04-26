@@ -3,7 +3,7 @@
 // Both the display shader (`FIELD_VERTEX_SHADER`) and the orb picking
 // shader include these chunks so clicks hit pixels precisely matching
 // what the user sees — no position-only drift under paper-mode aSpeed
-// (up to 3.0) and aClickPack.w (size factor 0.5–2.0).
+// (range [0.55, 1.75]) and aClickPack.w (size factor [0.8, 2.6]).
 //
 // The extraction is mechanical: these chunks are the exact GLSL from
 // the pre-refactor FIELD_VERTEX_SHADER, re-emitted as named string
@@ -57,6 +57,14 @@ uniform float uFunnelNarrow;
 uniform float uFunnelStartShift;
 uniform float uFunnelEndShift;
 uniform float uFunnelDistortion;
+
+// Slice A1.1: point-size depth attenuation gate. Scales the
+// 100/dist screen-space falloff in computeFieldPointSize.
+//   1.0 = original landing behavior (size halves every 2x distance).
+//   0.0 = no depth scaling (constant screen size).
+//   ~0.2 = orb fly-through target -- particles parallax through the
+//          volume instead of inflating as the camera dollies in.
+uniform float uPointDepthAttenuation;
 `;
 
 export const FIELD_NOISE_HELPERS = /* glsl */ `
@@ -263,15 +271,43 @@ vec3 computeFieldDisplacement(out float outNoise) {
 }
 `;
 
-// Returns the unclamped base point size in pixels matching the current
-// display shader: uSize * (100 / viewZ) * uPixelRatio * aClickPack.w.
-// Display applies its selection-boost multiplier on top; picking clamps
-// the returned value.
+// Returns the unclamped base point size in pixels for both the display
+// and picker shaders. Display applies its selection-boost multiplier on
+// top; the picker shares the same base.
+//
+// Formulation: size *= 0.25 * pow(400/dist, uPointDepthAttenuation).
+//
+// At the reference camera distance d = 400 (FieldCanvas constructs the
+// perspective camera at z = 400, and BlobController freezes the orb
+// mode reference at the same value), the pow term collapses to 1.0
+// regardless of attenuation -- so every mode renders the SAME absolute
+// pixel size at the default framing. Attenuation only controls how
+// strongly the size responds as the camera dollies away from that
+// reference.
+//
+// Landing (uPointDepthAttenuation = 1):
+//   factor = 0.25 * (400/dist) = 100/dist  (bit-exact prior behavior)
+//
+// Orb fly-through (uPointDepthAttenuation = 0.2):
+//   factor = 0.25 * pow(400/dist, 0.2)
+//   - at dist 400: 0.25       (matches landing default size)
+//   - at dist 100: 0.33       (vs landing's 1.00 -- weaker dolly bloom)
+//   - at dist  50: 0.38       (vs landing's 2.00 -- particles parallax)
+//
+// Without anchoring to the reference distance, a 1.0 -> 0.2 attenuation
+// drop alone would multiply orb sizes by ~3x at the default framing
+// (the same dolly that compounds with the paper bake's aClickPack.w
+// up to 2.6x), which is the symptom the corrective slice surfaced.
 export const FIELD_POINT_SIZE_FN = /* glsl */ `
 float computeFieldPointSize(vec4 mvPosition) {
-  float dist = -mvPosition.z;
+  // Clamp dist >= 1.0 to keep the size formula well-defined when a
+  // particle ends up at or behind the near plane during fly-through.
+  // Without the clamp, pow(400/dist, attenuation) is NaN/Inf when
+  // dist <= 0, which cascades into gl_PointSize and produces
+  // asymmetric visual gaps that look like the axis is shifting.
+  float dist = max(-mvPosition.z, 1.0);
   float size = uSize;
-  size *= 100.0 / dist;
+  size *= 0.25 * pow(400.0 / dist, uPointDepthAttenuation);
   size *= uPixelRatio;
   // Paper-mode per-particle size modulation. aClickPack.w = 1.0 in
   // lands-mode so this multiply is a bit-exact no-op there.

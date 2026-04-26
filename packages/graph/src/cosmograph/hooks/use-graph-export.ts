@@ -1,9 +1,11 @@
 "use client";
 import { useCallback } from "react";
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmographInternal } from "@cosmograph/react";
 
 export function useGraphExport() {
-  const { cosmograph } = useCosmograph();
+  // Null-tolerant: see use-graph-camera.ts for rationale. captureScreenshot
+  // already guards via `?.`.
+  const cosmograph = useCosmographInternal()?.cosmograph;
 
   const captureScreenshot = useCallback((filename = "solemd-graph.png") => {
     cosmograph?.captureScreenshot(filename);

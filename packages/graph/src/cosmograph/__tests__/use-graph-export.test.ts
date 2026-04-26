@@ -10,6 +10,7 @@ const mockCosmograph = {
 
 jest.mock("@cosmograph/react", () => ({
   useCosmograph: () => ({ cosmograph: mockCosmograph }),
+  useCosmographInternal: () => ({ cosmograph: mockCosmograph }),
 }));
 
 import { useGraphExport } from "../hooks/use-graph-export";

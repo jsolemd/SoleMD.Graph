@@ -1263,14 +1263,19 @@ resolution mode:
   `manifest.json`.
 - Env loading: Next resolves `.env*` relative to `next.config.ts`
   (`apps/web/`), not the monorepo root. The dev fixture var is declared
-  in the repo-root `.env.local`, so `apps/web/next.config.ts` calls
-  `loadEnvConfig(path.resolve(__dirname, '..', '..'), dev)` from
-  `@next/env` at the top of the module. That populates `process.env`
-  before Next's own env loader runs, so the server sees every repo-root
-  var (`DATABASE_URL`, the fixture checksum, etc.) without a symlink.
-  This is the canonical Next monorepo pattern; remove the
-  `loadEnvConfig` call only if the repo-root env file moves into
-  `apps/web/` or a shared env loader replaces it.
+  in the repo-root `.env.local`, so `apps/web/instrumentation.ts`
+  calls `loadEnvConfig(path.resolve(__dirname, '..', '..'), dev,
+  undefined, true)` from `@next/env` inside its `register()` hook.
+  Next runs `register()` once per Node server process, in the same
+  runtime that handles requests, before the first request is dispatched.
+  The `forceReload: true` positional arg bypasses `@next/env`'s
+  `updateInitialEnv` cache (a prior `loadEnvConfig` call from
+  `next.config.ts` runs *after* Next has already snapshotted the app-dir
+  env, so it silently no-ops for any var not in that first load — which
+  is why the previous `next.config.ts`-based call was dead code). The
+  hook fails fast if `DATABASE_URL` is still unset after the call, so a
+  missing repo-root `.env.local` is loud, not silent. Edge runtime is
+  skipped (`@next/env` is Node-only).
 - Shim module:
   `apps/web/features/graph/lib/fetch/dev-fixture.ts`. Memoizes per
   checksum. Only runs when the env var is set.
@@ -1304,11 +1309,11 @@ this gap nor blocks the fix.
    `apps/web/features/graph/lib/fetch.ts` (`fetchActiveGraphBundle`).
 3. Remove `GRAPH_DEV_FIXTURE_BUNDLE_CHECKSUM` from `.env.local` and
    `.env.example`.
-4. Leave the `loadEnvConfig` call in `apps/web/next.config.ts` in
-   place. It is independently load-bearing — it is also how the dev
-   server sees `DATABASE_URL` and every other repo-root var during
-   `npm run dev`. Remove it only if the repo later moves env files
-   into `apps/web/` or introduces a different shared loader.
+4. Leave `apps/web/instrumentation.ts` in place. It is independently
+   load-bearing — it is also how the dev server sees `DATABASE_URL`
+   and every other repo-root var during `npm run dev`. Remove it only
+   if the repo later moves env files into `apps/web/` or introduces a
+   different shared loader.
 5. Remove this subsection and the corresponding Deferred row in `§N`.
 
 This shim has no corresponding `12 §9` ledger row because it never

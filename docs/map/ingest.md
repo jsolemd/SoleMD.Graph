@@ -25,7 +25,10 @@ See also: [`database.md`](database.md) for the authoritative schema,
 
   Semantic Scholar  --release papers-->   solemd.s2_papers_raw
                     --abstracts------->   solemd.s2_papers_raw
-                    --citations------->   solemd.s2_paper_reference_metrics_raw
+                    --citations------->   solemd.ingest_file_tasks
+                                             -> s2_paper_reference_metrics_stage
+                                             -> s2_paper_reference_metrics_raw
+                                      \->  per-file metric checkpoints
                     --tldrs/embeds---->   mapped-tier paper_text + graph rows
                     --s2orc_v2------->    evidence-tier document spine fallback
 ```
@@ -35,7 +38,7 @@ See also: [`database.md`](database.md) for the authoritative schema,
 | Source | Datasets | Pull mode | Bulk size | Loader |
 |---|---|---|---|---|
 | PubTator3 | entities, relations, BioCXML | release files + targeted PMC BioC API | ~190 GB BioCXML | `apps/worker/app/ingest/sources/pubtator.py`, `apps/worker/app/evidence/` |
-| Semantic Scholar | publication-venues, authors, papers, abstracts, citations, deferred tldrs/embeddings/s2orc_v2 | release files; live API only for targeted reconciliation | ~638 GB local release mirror | `apps/worker/app/ingest/sources/semantic_scholar.py`, `apps/worker/app/ingest/writers/s2.py` |
+| Semantic Scholar | publication-venues, authors, papers, abstracts, citations, deferred tldrs/embeddings/s2orc_v2 | release files; live API only for targeted reconciliation | ~638 GB local release mirror | `apps/worker/app/ingest/sources/semantic_scholar.py`, `apps/worker/app/ingest/writers/s2.py`, `apps/worker/app/ingest/writers/s2_citations.py` |
 
 ### PubTator3
 
@@ -194,7 +197,7 @@ the bulk S2 shards to identify papers that match domain vocabulary.
 | Selector runtime | `apps/worker/app/corpus/runtime.py` | Builds the selected corpus from published raw releases |
 | Venue normalization | `apps/worker/app/ingest/writers/s2.py` | Loads publication venues and normalizes duplicate upstream rows |
 | Mapped enrichment | `apps/worker/app/corpus/` | Promotes mapped child-wave surfaces from release-backed raw/stage data |
-| Citation derivation | `apps/worker/app/ingest/writers/s2.py` + mapped enrichment | Raw loads broad paper-level citation aggregates; actual `paper_citations` edges are mapped-wave enrichment |
+| Citation derivation | `apps/worker/app/ingest/writers/s2_citations.py` + mapped enrichment | Raw loads broad paper-level citation aggregates through DB-backed `ingest_file_tasks`, per-file stage/checkpoint validation, and one final set-based merge; actual `paper_citations` edges are mapped-wave enrichment |
 
 Base admission (which corpus papers become `graph_base_points`) is a separate
 decision and is documented in [`graph-build.md`](graph-build.md).
@@ -203,20 +206,22 @@ decision and is documented in [`graph-build.md`](graph-build.md).
 
 ## Operator commands
 
-All canonical ingest operators live in `engine/db/scripts/`. Use these
-directly -- do not write ad-hoc drivers.
+Raw release ingest now runs through `apps/worker`; do not revive the old
+`engine/db/scripts` refresh drivers for S2 or PubTator release loading.
 
 ### Routine refreshes
 
 ```bash
-# Monthly S2 + warehouse refresh
-cd engine && uv run python db/scripts/refresh_rag_warehouse.py
+# Start the release/file worker plane. One release actor uses one process;
+# S2 citation file work consumes the remaining processes through ingest_file.
+dramatiq_queue_prefetch=1 POOL_INGEST_MIN=1 POOL_INGEST_MAX=8 INGEST_MAX_CONCURRENT_FILES=1 \
+  uv run --project apps/worker dramatiq app.ingest_worker --processes 8 --threads 1 --queues ingest ingest_file
 
-# RAG source locator refresh (after new papers arrive)
-cd engine && uv run python db/scripts/refresh_rag_source_locator.py
+# Enqueue or resume the S2 release.
+uv run --project apps/worker python -m app.main enqueue-release s2 2026-03-10 --requested-by operator
 
-# S2 diff-based refresh campaign
-cd engine && uv run python db/scripts/run_s2_refresh_campaign.py
+# Source-retention dry run after family boundaries are durable.
+uv run --project apps/worker python -m app.main source-retention s2 2026-03-10
 ```
 
 ### BioCXML overlay operators
@@ -302,7 +307,10 @@ WHERE chunk_version_id = (SELECT id FROM paper_chunk_versions WHERE is_default);
 ```
 apps/worker/app/ingest/
   sources/semantic_scholar.py  S2 release planning and streaming
-  writers/s2.py                S2 COPY writers and raw/evidence staging
+  writers/s2.py                S2 family router and raw COPY writers
+  writers/s2_citations.py      S2 citation file-task fanout and finalization
+  writers/s2_citation_tasks.py DB-backed ingest_file task ledger
+  writers/s2_citation_stage.py Citation stage/checkpoint/final merge SQL
   sources/pubtator.py          PT3 release planning and streaming
   writers/pubtator.py          PT3 COPY writers
   source_retention.py          hot-storage retention planning

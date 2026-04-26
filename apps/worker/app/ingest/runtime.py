@@ -78,6 +78,22 @@ class SourceWriter:
         ],
         asyncio.Future | object,
     ]
+    load_family_distributed: Callable[
+        [
+            asyncpg.Pool,
+            Settings,
+            StartReleaseRequest,
+            IngestPlan,
+            str,
+            int,
+            UUID,
+            Callable[[Path, int], None] | None,
+            Callable[[Path, int], None] | None,
+            Callable[[Path, int], None] | None,
+            Callable[[Path, int], Awaitable[None]] | None,
+        ],
+        asyncio.Future | object,
+    ] | None = None
 
 
 SOURCE_ADAPTERS: dict[SourceCode, SourceAdapter] = {
@@ -92,7 +108,10 @@ SOURCE_ADAPTERS: dict[SourceCode, SourceAdapter] = {
 }
 
 SOURCE_WRITERS: dict[SourceCode, SourceWriter] = {
-    "s2": SourceWriter(load_family=s2_writer.load_family),
+    "s2": SourceWriter(
+        load_family=s2_writer.load_family,
+        load_family_distributed=s2_writer.load_family_distributed,
+    ),
     "pt3": SourceWriter(load_family=pubtator_writer.load_family),
 }
 
@@ -102,6 +121,7 @@ async def run_release_ingest(
     *,
     ingest_pool: asyncpg.Pool,
     runtime_settings: Settings = settings,
+    distributed_file_tasks: bool = False,
 ) -> str:
     adapter = SOURCE_ADAPTERS[request.source_code]
     writer = SOURCE_WRITERS[request.source_code]
@@ -286,8 +306,14 @@ async def run_release_ingest(
                                 total_units=0,
                             )
 
+                        family_loader = (
+                            writer.load_family_distributed
+                            if distributed_file_tasks
+                            and writer.load_family_distributed is not None
+                            else writer.load_family
+                        )
                         stats = await _load_family_with_abort_monitor(
-                            writer=writer,
+                            load_family=family_loader,
                             ingest_pool=ingest_pool,
                             runtime_settings=runtime_settings,
                             request=request,
@@ -829,7 +855,22 @@ async def _record_terminal_status_fresh(
 
 async def _load_family_with_abort_monitor(
     *,
-    writer: SourceWriter,
+    load_family: Callable[
+        [
+            asyncpg.Pool,
+            Settings,
+            StartReleaseRequest,
+            IngestPlan,
+            str,
+            int,
+            UUID,
+            Callable[[Path, int], None] | None,
+            Callable[[Path, int], None] | None,
+            Callable[[Path, int], None] | None,
+            Callable[[Path, int], Awaitable[None]] | None,
+        ],
+        asyncio.Future | object,
+    ],
     ingest_pool: asyncpg.Pool,
     runtime_settings: Settings,
     request: StartReleaseRequest,
@@ -845,7 +886,7 @@ async def _load_family_with_abort_monitor(
     on_batch_processed: Callable[[Path, int], Awaitable[None]] | None = None,
 ) -> CopyStats:
     family_task = asyncio.create_task(
-        writer.load_family(
+        load_family(
             ingest_pool,
             runtime_settings,
             request,

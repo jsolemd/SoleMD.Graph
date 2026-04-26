@@ -6,7 +6,7 @@
     "build": "next build",
     "build:webpack": "next build --webpack",
     "predev": "bash /workspaces/SoleMD.Infra/mcp/chrome-devtools-mcp/scripts/start-chrome-debug.sh 2>/dev/null || true",
-    "dev": "next dev",
+    "dev": "bash -c 'if [ -f ../../.env.local ]; then set -a; . ../../.env.local; set +a; fi; next dev --hostname 127.0.0.1'",
     "lint": "eslint .",
     "start": "next start",
     "storybook": "storybook dev -p 6006 -c .storybook",

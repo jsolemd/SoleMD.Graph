@@ -14,6 +14,7 @@ const mockCosmograph = {
 
 jest.mock("@cosmograph/react", () => ({
   useCosmograph: () => ({ cosmograph: mockCosmograph }),
+  useCosmographInternal: () => ({ cosmograph: mockCosmograph }),
 }));
 
 import { useGraphCamera } from "../hooks/use-graph-camera";

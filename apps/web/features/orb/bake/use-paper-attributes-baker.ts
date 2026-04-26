@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
-import { useOrbGeometryMutationStore } from "../stores/geometry-mutation-store";
+import {
+  useOrbGeometryMutationStore,
+  type PaperCorpusStats,
+} from "../stores/geometry-mutation-store";
 
 /**
  * Progressive paper-attribute streamer for the orb's paper-mode overlay
@@ -60,8 +63,12 @@ export interface PaperAttributesState {
   progress: number;
   /** Total particles sampled once streaming starts; null before. */
   count: number | null;
-  /** Running maxima across all batches received so far. */
-  maxima: { refCount: number; entityCount: number; relationCount: number } | null;
+  /**
+   * Corpus-wide log-space percentile anchors used to normalize size and
+   * speed. Computed once before streaming and reused for every chunk.
+   * Null until the pre-flight stats query resolves.
+   */
+  stats: PaperCorpusStats | null;
 }
 
 export interface UsePaperAttributesBakerOptions {
@@ -83,13 +90,53 @@ const DEFAULT_COUNT = 16_384;
 const DEFAULT_SEED = 20_260_418; // mirrors FIELD_SEED in point-source-registry
 
 interface PaperRow {
-  particle_idx: number;
-  paper_id: string;
-  cluster_id: number | null;
-  paper_reference_count: number | null;
-  paper_entity_count: number | null;
-  paper_relation_count: number | null;
+  particleIdx: number;
+  paperId: string;
+  clusterId: number | null;
+  paperReferenceCount: number | null;
+  paperEntityCount: number | null;
+  paperRelationCount: number | null;
   year: number | null;
+}
+
+interface QuantilePair {
+  // DuckDB's `quantile_cont(x, [0.05, 0.98])` returns a LIST<DOUBLE>
+  // exposed by Arrow as an array-like with .get(i) or numeric index
+  // depending on the runtime. Normalize via toArray() in the reader.
+  toArray?: () => number[];
+  [index: number]: number;
+}
+
+interface StatsRow {
+  refQuantiles: QuantilePair;
+  entityQuantiles: QuantilePair;
+}
+
+function toQuantilePair(value: unknown): [number, number] {
+  if (value && typeof (value as QuantilePair).toArray === "function") {
+    const arr = (value as QuantilePair).toArray!();
+    return [Number(arr[0] ?? 0), Number(arr[1] ?? 0)];
+  }
+  if (Array.isArray(value)) {
+    return [Number(value[0] ?? 0), Number(value[1] ?? 0)];
+  }
+  // Defensive: a malformed result shouldn't crash the baker. Returning
+  // a degenerate pair lets the applier fall back to a near-zero range
+  // (which the EPS guard handles) rather than throwing.
+  return [0, 0];
+}
+
+function readStatsFromArrowRow(table: {
+  toArray: () => unknown[];
+}): PaperCorpusStats {
+  const rows = table.toArray() as StatsRow[];
+  const row = rows[0];
+  if (!row) {
+    return { refLo: 0, refHi: 0, entityLo: 0, entityHi: 0 };
+  }
+  const [refLo, refHi] = toQuantilePair(row.refQuantiles);
+  const [entityLo, entityHi] = toQuantilePair(row.entityQuantiles);
+  return { refLo, refHi, entityLo, entityHi };
 }
 
 export function usePaperAttributesBaker(
@@ -107,7 +154,7 @@ export function usePaperAttributesBaker(
     error: null,
     progress: 0,
     count: null,
-    maxima: null,
+    stats: null,
   });
 
   useEffect(() => {
@@ -121,41 +168,63 @@ export function usePaperAttributesBaker(
 
     const run = async () => {
       try {
-        // Step 1: materialize the reservoir sample as a temp table.
-        // REPEATABLE makes the row set deterministic; ROW_NUMBER
-        // assigns stable particle indices we stream in order. Temp
-        // tables live on the connection, so re-runs on the same
-        // connection skip the sample cost — but CREATE OR REPLACE
-        // keeps the hook safe across remount.
+        // Step 1: pre-flight corpus-wide percentile anchors. Computed
+        // once on log1p-transformed counts so the heavy tail doesn't
+        // collapse the visual scale. q05/q98 anchors ignore pathological
+        // outliers. These same anchors are reused for every chunk, so
+        // an already-painted particle never silently changes scale when
+        // later chunks arrive — a precondition for the future physics
+        // layer. ~5–15ms over 16k rows in DuckDB-WASM.
+        const statsResult = await connection.query(
+          `SELECT
+             quantile_cont(LN(1 + paperReferenceCount), [0.05, 0.98]) AS refQuantiles,
+             quantile_cont(LN(1 + paperEntityCount),    [0.05, 0.98]) AS entityQuantiles
+           FROM base_points_web
+           WHERE paperId IS NOT NULL`,
+        );
+        if (cancelled) return;
+
+        const stats = readStatsFromArrowRow(statsResult);
+        setState((prev) => ({ ...prev, stats }));
+
+        // Step 2: materialize the reservoir sample as a temp table.
+        // REPEATABLE makes the row set deterministic; the ROW_NUMBER
+        // assigns stable particle indices we stream in order. ORDER BY
+        // id inside OVER() makes the index assignment durable across
+        // reloads of the same bundle — particle #N always corresponds
+        // to the same paper. Temp tables live on the connection, so
+        // re-runs on the same connection skip the sample cost — but
+        // CREATE OR REPLACE keeps the hook safe across remount.
         await connection.query(
           `CREATE OR REPLACE TEMP TABLE paper_sample AS
              WITH sampled AS (
                SELECT
-                 paper_id,
-                 cluster_id,
-                 paper_reference_count,
-                 paper_entity_count,
-                 paper_relation_count,
+                 id,
+                 paperId,
+                 clusterId,
+                 paperReferenceCount,
+                 paperEntityCount,
+                 paperRelationCount,
                  year
                FROM base_points_web
-               WHERE paper_id IS NOT NULL
+               WHERE paperId IS NOT NULL
                USING SAMPLE reservoir(${count} ROWS) REPEATABLE(${seed})
              )
              SELECT
-               (ROW_NUMBER() OVER ()) - 1 AS particle_idx,
+               (ROW_NUMBER() OVER (ORDER BY id)) - 1 AS particleIdx,
                *
              FROM sampled`,
         );
         if (cancelled) return;
 
-        // Step 2: open a streaming read in particle_idx order so each
+        // Step 3: open a streaming read in particleIdx order so each
         // batch is a contiguous chunk of particles.
         const reader = await connection.send(
-          `SELECT particle_idx, paper_id, cluster_id,
-                  paper_reference_count, paper_entity_count,
-                  paper_relation_count, year
+          `SELECT particleIdx, paperId, clusterId,
+                  paperReferenceCount, paperEntityCount,
+                  paperRelationCount, year
              FROM paper_sample
-             ORDER BY particle_idx`,
+             ORDER BY particleIdx`,
           true,
         );
         if (cancelled) {
@@ -166,9 +235,6 @@ export function usePaperAttributesBaker(
         setState((prev) => ({ ...prev, status: "streaming" }));
 
         let delivered = 0;
-        let maxRef = 0;
-        let maxEntity = 0;
-        let maxRelation = 0;
 
         for await (const batch of reader) {
           if (cancelled) {
@@ -177,8 +243,6 @@ export function usePaperAttributesBaker(
           }
 
           const attributes: PaperAttributesMap = new Map();
-          let chunkMaxRef = 0;
-          let chunkMaxEntity = 0;
 
           const rows = batch.toArray() as unknown as Array<
             PaperRow & { toJSON?: () => PaperRow }
@@ -186,21 +250,15 @@ export function usePaperAttributesBaker(
           for (let i = 0; i < rows.length; i += 1) {
             const raw = rows[i]!;
             const row = typeof raw.toJSON === "function" ? raw.toJSON() : raw;
-            const particleIdx = Number(row.particle_idx);
+            const particleIdx = Number(row.particleIdx);
             if (!Number.isFinite(particleIdx)) continue;
-            const refCount = Number(row.paper_reference_count ?? 0);
-            const entityCount = Number(row.paper_entity_count ?? 0);
-            const relationCount = Number(row.paper_relation_count ?? 0);
-
-            if (refCount > chunkMaxRef) chunkMaxRef = refCount;
-            if (entityCount > chunkMaxEntity) chunkMaxEntity = entityCount;
-            if (refCount > maxRef) maxRef = refCount;
-            if (entityCount > maxEntity) maxEntity = entityCount;
-            if (relationCount > maxRelation) maxRelation = relationCount;
+            const refCount = Number(row.paperReferenceCount ?? 0);
+            const entityCount = Number(row.paperEntityCount ?? 0);
+            const relationCount = Number(row.paperRelationCount ?? 0);
 
             attributes.set(particleIdx, {
-              paperId: String(row.paper_id),
-              clusterId: Number(row.cluster_id ?? 0) | 0,
+              paperId: String(row.paperId),
+              clusterId: Number(row.clusterId ?? 0) | 0,
               refCount,
               entityCount,
               relationCount,
@@ -210,25 +268,17 @@ export function usePaperAttributesBaker(
 
           if (attributes.size === 0) continue;
 
-          // Per-chunk maxima let the applier normalize without waiting
-          // for the whole stream to finish. Visual consistency: later
-          // chunks may contain higher-cited papers that shift the
-          // distribution, but that's the price of progressive delivery.
-          addChunk({
-            attributes,
-            maxima: { refCount: chunkMaxRef, entityCount: chunkMaxEntity },
-          });
+          // Same corpus stats on every chunk — already-painted
+          // particles never need re-normalization, and the future
+          // physics layer can read mass off these values without
+          // worrying about chunk-membership artifacts.
+          addChunk({ attributes, stats });
 
           delivered += attributes.size;
           setState((prev) => ({
             ...prev,
             count,
             progress: Math.min(1, delivered / count),
-            maxima: {
-              refCount: maxRef,
-              entityCount: maxEntity,
-              relationCount: maxRelation,
-            },
           }));
         }
 
@@ -248,7 +298,7 @@ export function usePaperAttributesBaker(
               : new Error("Failed to stream paper attributes from base_points_web"),
           progress: 0,
           count: null,
-          maxima: null,
+          stats: null,
         });
       }
     };

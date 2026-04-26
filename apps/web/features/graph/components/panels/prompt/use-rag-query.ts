@@ -16,6 +16,10 @@ import {
   getRagOverlayProducerId,
   RAG_ANSWER_SELECTION_SOURCE_ID,
 } from "@/features/graph/lib/overlay-producers";
+import {
+  clearOwnedSelectionState,
+  commitSelectionState,
+} from "@/features/graph/lib/graph-selection-state";
 import { useDashboardStore } from "@/features/graph/stores";
 import { useShallow } from "zustand/react/shallow";
 import type {
@@ -111,9 +115,13 @@ export function useRagQuery({
       return;
     }
 
-    void queries.setSelectedPointIndices([]);
-    setSelectedPointCount(0);
-    setActiveSelectionSourceId(null);
+    void clearOwnedSelectionState({
+      sourceId: RAG_ANSWER_SELECTION_SOURCE_ID,
+      activeSelectionSourceId: activeSelectionSourceIdRef.current,
+      queries,
+      setSelectedPointCount,
+      setActiveSelectionSourceId,
+    });
   }, [queries, setActiveSelectionSourceId, setSelectedPointCount]);
 
   const clearOwnedOverlay = useCallback((producerId?: OverlayProducerId | null) => {
@@ -238,13 +246,17 @@ export function useRagQuery({
         }
 
         setRagGraphAvailability(graphAvailabilitySummary);
-        void queries.setSelectedPointIndices(answerSelectedPointIndices);
-        setSelectedPointCount(answerSelectedPointIndices.length);
-        setActiveSelectionSourceId(
-          answerSelectedPointIndices.length > 0
-            ? RAG_ANSWER_SELECTION_SOURCE_ID
-            : null,
-        );
+        void commitSelectionState({
+          sourceId:
+            answerSelectedPointIndices.length > 0
+              ? RAG_ANSWER_SELECTION_SOURCE_ID
+              : null,
+          queries,
+          pointIndices: answerSelectedPointIndices,
+          setSelectedPointCount,
+          setActiveSelectionSourceId,
+          shouldCommitStore: () => !cancelled,
+        });
       })
       .catch((error: unknown) => {
         console.error("[useRagQuery] syncRagGraphSignals failed", error);

@@ -75,6 +75,15 @@ Rules:
 - PostgreSQL data binds to `/mnt/solemd-graph/pg-data`.
 - Published graph bundles live under `/mnt/solemd-graph/bundles`.
 - Model cache state belongs under `/mnt/solemd-graph/cache/huggingface`.
+- Worker `ingest_write` startup performs a warehouse storage preflight before
+  opening Postgres pools. It refuses to run when `/mnt/solemd-graph` is missing,
+  not mounted read-write, not `ext4`, backed by a non-running or read-only WSL
+  block device, failing a small fsync write probe, above
+  `WAREHOUSE_STORAGE_MAX_USED_PERCENT` (default `90`), or below
+  `WAREHOUSE_STORAGE_MIN_FREE_BYTES` (default `100 GiB`). It also checks the
+  Windows-side parent drive for `WAREHOUSE_STORAGE_HOST_PATH` (default
+  `/mnt/e/wsl2-solemd-graph.vhdx`) because WSL can report free space inside the
+  VHD while the host drive that must grow the VHD is already exhausted.
 - Current warehouse PG bind dedicates `/mnt/solemd-graph/pg-data` to one
   cluster. Before a second local PG cluster or replica ever shares that tree,
   move to a namespaced subdirectory such as
@@ -136,6 +145,25 @@ systemctl status solemd-graph-mount.service
 journalctl -u solemd-graph-mount.service --no-pager
 /usr/local/bin/ensure-solemd-graph-mount.sh   # safe to re-run; idempotent
 ```
+
+Troubleshooting when `dmesg` reports `Device offlined`, `I/O error, dev sdd`, or
+`EXT4-fs ... aborted journal` for the warehouse VHD:
+
+1. Stop all warehouse writers (`graph-db-warehouse`, worker processes,
+   `graph-worker`, and `tei` if mounted under `/mnt/solemd-graph`).
+2. Run `wsl.exe --shutdown` from Windows. A live `wsl.exe --unmount
+   E:\wsl2-solemd-graph.vhdx` can fail once the block device is already
+   offline.
+3. Reopen `NVIDIA-Workbench`; `solemd-graph-mount.service` should attach the VHD
+   and systemd should remount `LABEL=solemd-graph`.
+4. Run `uv run --project apps/worker python -m app.main check` before restarting
+   warehouse ingest.
+5. If the check still reports read-only or fsync/I/O errors, keep warehouse
+   writers stopped and repair the detached VHD from an elevated Windows shell
+   following Microsoft's WSL VHD repair flow (`wsl.exe --shutdown`, bare attach,
+   `wsl.exe lsblk`, `wsl.exe sudo e2fsck -f /dev/<device>`, then
+   `wsl.exe --unmount`). Never run `e2fsck` against a mounted
+   `/mnt/solemd-graph` filesystem.
 
 Swap policy: WSL2 swap uses the default Windows location (not `E:`). Do not set
 `swapFile=` in `C:\Users\Jon\.wslconfig` — the E: drive has shown I/O errors

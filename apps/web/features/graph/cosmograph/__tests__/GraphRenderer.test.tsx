@@ -24,6 +24,7 @@ const mockFitView = jest.fn();
 const mockApplyViewportTransform = jest.fn();
 const mockPointsSelectionUpdate = jest.fn();
 const mockUnselectAllPoints = jest.fn();
+const mockSetFocusedPoint = jest.fn();
 const mockCanvasSelection = {};
 
 class MockZoomTransform {
@@ -69,6 +70,7 @@ jest.mock("@cosmograph/react", () => {
           clauses: [],
           update: mockPointsSelectionUpdate,
         },
+        setFocusedPoint: mockSetFocusedPoint,
         unselectAllPoints: mockUnselectAllPoints,
       }));
       mockCosmographRender(props);
@@ -151,6 +153,9 @@ function renderRenderer() {
 beforeEach(() => {
   jest.clearAllMocks();
   sessionStorage.clear();
+  (QUERIES_STUB.resolvePointSelection as jest.Mock).mockResolvedValue(
+    SELECTED_POINT,
+  );
   mockZoomLabelsState.zoomedIn = false;
   useDashboardStore.setState(useDashboardStore.getInitialState());
   useGraphStore.setState(useGraphStore.getInitialState());
@@ -364,15 +369,37 @@ describe("GraphRenderer", () => {
     expect(props?.renderLinks).toBe(false);
   });
 
-  it("defaults point clicks to single-select unless connected-select is enabled", () => {
+  it("keeps point clicks as inspection-only unless connected-select is enabled", async () => {
+    const zeroIndexPoint = {
+      ...SELECTED_POINT,
+      index: 0,
+      id: "paper-0",
+      paperId: "paper-0",
+    };
+    (QUERIES_STUB.resolvePointSelection as jest.Mock).mockResolvedValueOnce(
+      zeroIndexPoint,
+    );
+
     renderRenderer();
 
     const props = mockCosmographRender.mock.lastCall?.[0] as
       | Record<string, unknown>
       | undefined;
 
-    expect(props?.selectPointOnClick).toBe("single");
-    expect(props?.selectPointOnLabelClick).toBe("single");
+    expect(props?.selectPointOnClick).toBe(false);
+    expect(props?.selectPointOnLabelClick).toBe(false);
+    expect(props?.resetSelectionOnEmptyCanvasClick).toBe(false);
+
+    await act(async () => {
+      (props?.onPointClick as ((index: number) => void) | undefined)?.(0);
+      await Promise.resolve();
+    });
+
+    expect(mockSetFocusedPoint).toHaveBeenCalledWith(0);
+    expect(QUERIES_STUB.resolvePointSelection).toHaveBeenCalledWith("corpus", {
+      index: 0,
+    });
+    expect(useGraphStore.getState().selectedNode).toEqual(zeroIndexPoint);
   });
 
   it("enables connected point selection only when the toggle is on", () => {
@@ -488,6 +515,7 @@ describe("GraphRenderer", () => {
 
     expect(useGraphStore.getState().selectedNode).toBeNull();
     expect(useGraphStore.getState().focusedPointIndex).toBeNull();
+    expect(mockSetFocusedPoint).toHaveBeenCalledWith(undefined);
     expect(mockUnselectAllPoints).toHaveBeenCalledTimes(1);
   });
 

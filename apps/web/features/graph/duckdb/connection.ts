@@ -1,6 +1,6 @@
 import 'client-only'
 
-import * as duckdb from '@duckdb/duckdb-wasm'
+import type * as duckdb from '@duckdb/duckdb-wasm'
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import { closePreparedStatements } from './queries/core'
@@ -8,6 +8,20 @@ import {
   canUsePersistentGraphDatabase,
   getPersistentGraphDatabasePath,
 } from './persistent-cache'
+
+// `@duckdb/duckdb-wasm`'s browser entry references `Worker` at top of module.
+// Next's Turbopack alias resolves the package to that browser entry in both
+// server and client bundles, so a static `import` crashes during SSR HTML
+// generation (SSR walks client-component import trees to produce initial
+// markup, regardless of `'use client'` or `'client-only'`). Defer the runtime
+// load until a connection is actually requested — which only happens in the
+// browser.
+let duckdbModulePromise: Promise<typeof import('@duckdb/duckdb-wasm')> | null =
+  null
+function loadDuckdbModule() {
+  duckdbModulePromise ??= import('@duckdb/duckdb-wasm')
+  return duckdbModulePromise
+}
 
 let selectedBundlePromise: Promise<duckdb.DuckDBBundle> | null = null
 const DUCKDB_MEMORY_LIMIT = '1500MB'
@@ -40,7 +54,8 @@ async function getSelectedDuckDBBundle() {
     // Keep DuckDB-Wasm on the app origin to avoid a CDN round-trip on every
     // cold start. The COI pthread bundle stays excluded because it is still
     // non-functional at runtime for our graph shell.
-    selectedBundlePromise = duckdb.selectBundle(LOCAL_DUCKDB_BUNDLES)
+    const dd = await loadDuckdbModule()
+    selectedBundlePromise = dd.selectBundle(LOCAL_DUCKDB_BUNDLES)
   }
 
   return selectedBundlePromise
@@ -64,8 +79,9 @@ async function openDuckDb(
   db: duckdb.AsyncDuckDB,
   persistentPath: string | null
 ) {
+  const dd = await loadDuckdbModule()
   const baseConfig: duckdb.DuckDBConfig = {
-    accessMode: duckdb.DuckDBAccessMode.READ_WRITE,
+    accessMode: dd.DuckDBAccessMode.READ_WRITE,
     maximumThreads: 1,
     filesystem: {
       // The graph runtime reads app-served Parquet assets repeatedly inside
@@ -94,6 +110,7 @@ async function openDuckDb(
 }
 
 export async function createConnection() {
+  const dd = await loadDuckdbModule()
   const bundle = await getSelectedDuckDBBundle()
 
   if (!bundle.mainWorker) {
@@ -113,7 +130,7 @@ export async function createConnection() {
     })
   )
   const worker = new Worker(workerUrl)
-  const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker)
+  const db = new dd.AsyncDuckDB(new dd.VoidLogger(), worker)
   const persistentPath = canUsePersistentGraphDatabase()
     ? getPersistentGraphDatabasePath()
     : null

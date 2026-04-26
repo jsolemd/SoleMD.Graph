@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { Group, PerspectiveCamera, ShaderMaterial } from "three";
+import { Group, PerspectiveCamera, ShaderMaterial, Texture } from "three";
 import { BlobController, BLOB_HOTSPOT_COUNT } from "../BlobController";
 import { visualPresets, createFieldSceneState } from "../../scene/visual-presets";
 import type { FieldPointSource } from "../../asset/point-source-types";
@@ -30,6 +30,7 @@ function makeFakePointSource(): FieldPointSource {
     buffers: {
       aAlpha: new Float32Array(pointCount),
       aBucket: new Float32Array(pointCount),
+      aClickPack: new Float32Array(pointCount * 4),
       aFunnelEndShift: new Float32Array(pointCount),
       aFunnelNarrow: new Float32Array(pointCount),
       aFunnelStartShift: new Float32Array(pointCount),
@@ -46,6 +47,41 @@ function makeFakePointSource(): FieldPointSource {
     id: "blob",
     pointCount,
   };
+}
+
+function tickBlobController({
+  controller,
+  scene,
+  uniforms,
+  dtSec = 1 / 60,
+  elapsedSec = 2,
+}: {
+  controller: BlobController;
+  scene: ReturnType<typeof createFieldSceneState>;
+  uniforms: ReturnType<BlobController["createLayerUniforms"]>;
+  dtSec?: number;
+  elapsedSec?: number;
+}) {
+  const camera = new PerspectiveCamera(45, 16 / 9, 80, 10000);
+  camera.position.z = 400;
+  const source = controller.pointSource;
+  if (!source) throw new Error("expected fake point source");
+
+  controller.tick({
+    camera,
+    dtSec,
+    elapsedSec,
+    isMobile: false,
+    itemState: scene.items.blob,
+    pixelRatio: 1,
+    sceneState: scene,
+    sourceBounds: source.bounds,
+    uniforms,
+    viewportHeight: 900,
+    viewportWidth: 1440,
+    wrapperInitialized: true,
+    markWrapperInitialized: () => {},
+  });
 }
 
 function makeAttachedController() {
@@ -145,12 +181,12 @@ describe("BlobController", () => {
     expect(controller.hotspotRuntime[0]!.candidateIndex).toBeNull();
   });
 
-  it("writeHotspotDom resets off-screen transforms when blob is invisible", () => {
+  it("resets hotspot DOM transforms when blob is invisible", () => {
     const controller = makeAttachedController();
     const camera = new PerspectiveCamera(45, 16 / 9, 80, 10000);
     camera.position.z = 400;
     const scene = createFieldSceneState();
-    scene.items.blob.visibility = 0; // force writeHotspotDom invisible path
+    scene.items.blob.visibility = 0;
 
     const nodes = Array.from({ length: BLOB_HOTSPOT_COUNT }, () => {
       const node = document.createElement("div");
@@ -164,6 +200,32 @@ describe("BlobController", () => {
     for (const node of nodes) {
       expect(node.style.transform).toContain("-9999px");
       expect(node.style.opacity).toBe("0");
+    }
+  });
+
+  it("turns manual twist into a transient orb burst", () => {
+    const controller = makeAttachedController();
+    const scene = createFieldSceneState();
+    scene.orbCameraActive = true;
+    scene.items.blob.visibility = 1;
+    const uniforms = controller.createLayerUniforms(false, new Texture());
+    if (controller.material) {
+      controller.material.uniforms = uniforms as ShaderMaterial["uniforms"];
+    }
+
+    try {
+      controller.addTwistImpulse(Math.PI / 18);
+      tickBlobController({ controller, scene, uniforms });
+
+      expect(uniforms.uFrequency.value).toBeGreaterThan(
+        visualPresets.blob.shader.frequency,
+      );
+      expect(uniforms.uAmplitude.value).toBeGreaterThan(
+        visualPresets.blob.shader.amplitude,
+      );
+      expect(uniforms.uSelectionBoostSize.value).toBeGreaterThan(1);
+    } finally {
+      controller.destroy();
     }
   });
 });

@@ -21,6 +21,10 @@ export function ensureGsapScrollTriggerRegistered(): void {
 }
 import { attachMouseParallax } from "../renderer/mouse-parallax-wrapper";
 import { projectToScreen } from "../overlay/field-anchor-projector";
+import {
+  getParticleStateTexture,
+  PARTICLE_STATE_TEXTURE_SIZE,
+} from "../renderer/field-particle-state-texture";
 import type {
   FieldSceneState,
   FieldStageItemId,
@@ -87,6 +91,20 @@ export interface LayerUniforms {
   uTime: { value: number };
   uTimeFactor: { value: number };
   uWidth: { value: number };
+  // Slice 8/C: per-particle dynamic state texture (R = scope, G =
+  // focus/hover excitation, B/A reserved). Bound to the same module-
+  // singleton DataTexture for every layer; only orb-mode layers gate
+  // the sampler on via uScopeDimEnabled.
+  uParticleStateTex: { value: Texture };
+  uParticleStateTexSize: { value: number };
+  uScopeDimEnabled: { value: number };
+  uScopeDimFloor: { value: number };
+  uOrbFocusActive: { value: number };
+  // Slice A1.1: gates the screen-space `100/dist` point-size falloff.
+  // Default 1.0 reproduces the prior landing behavior bit-exactly;
+  // BlobController blends it toward ~0.2 in orb mode so dollying
+  // through the field reads as parallax, not sprite zoom.
+  uPointDepthAttenuation: { value: number };
 }
 
 export interface FieldControllerAttachment {
@@ -176,6 +194,15 @@ export abstract class FieldController {
   visible = false;
   sceneUnits = 0;
   isMobile = false;
+  // Slice B (orb-3d-physics-taxonomy.md §6.3): per-controller accumulator
+  // for the `uTime` uniform. The shader samples noise at
+  // `uTime * uTimeFactor`, so freezing or rescaling motion has to happen
+  // by stopping or rescaling how fast `uTime` advances — NOT by zeroing
+  // `uTimeFactor`, which would jump the noise sample coordinate to the
+  // origin and produce a visible pop. Subclass tick() integrates this
+  // forward each frame as `dtSec * timeMul` where timeMul collapses pause
+  // and the user motion-speed multiplier.
+  protected accumulatedUTime = 0;
   protected mouseParallaxDisposer: (() => void) | null = null;
   protected scrollDisposer: (() => void) | null = null;
   private readonly attachmentReady: Promise<void>;
@@ -211,6 +238,7 @@ export abstract class FieldController {
     isMobile: boolean,
     pointTexture: Texture,
     lightMode = 0,
+    options: { scopeDimEnabled?: boolean } = {},
   ): LayerUniforms {
     const preset = this.params;
     const { shader } = preset;
@@ -258,6 +286,12 @@ export abstract class FieldController {
       uFunnelDistortion: { value: shader.funnelDistortion },
       uColorBase: { value: new Color(baseR / 255, baseG / 255, baseB / 255) },
       uColorNoise: { value: new Color(noiseR / 255, noiseG / 255, noiseB / 255) },
+      uParticleStateTex: { value: getParticleStateTexture() },
+      uParticleStateTexSize: { value: PARTICLE_STATE_TEXTURE_SIZE },
+      uScopeDimEnabled: { value: options.scopeDimEnabled ? 1 : 0 },
+      uScopeDimFloor: { value: 0.18 },
+      uOrbFocusActive: { value: 0 },
+      uPointDepthAttenuation: { value: 1 },
     };
   }
 

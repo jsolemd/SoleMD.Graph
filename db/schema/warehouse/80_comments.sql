@@ -11,6 +11,8 @@ COMMENT ON TABLE solemd.source_releases IS
     'One row per external source release loaded into the warehouse.';
 COMMENT ON TABLE solemd.ingest_runs IS
     'One row per ingest or rebuild cycle against a source release.';
+COMMENT ON TABLE solemd.ingest_file_tasks IS
+    'Durable DB-backed file work queue for parallel ingest families; workers claim idempotent source files and finalizers merge completed stage rows.';
 COMMENT ON TABLE solemd.corpus IS
     'Stable canonical paper identity inventory for the warehouse.';
 COMMENT ON TABLE solemd.venues IS
@@ -38,7 +40,9 @@ COMMENT ON TABLE solemd.s2_authors_raw IS
 COMMENT ON TABLE solemd.s2_paper_reference_metrics_raw IS
     'Release-scoped aggregate citation metrics used for corpus and mapped gates without materializing full reference edges.';
 COMMENT ON TABLE solemd.s2_paper_reference_metrics_stage IS
-    'Transient unlogged Semantic Scholar citation metric fragments before the single ordered final merge.';
+    'Transient unlogged Semantic Scholar citation metric fragments, one aggregate row per citing paper per completed source file.';
+COMMENT ON TABLE solemd.s2_paper_reference_metrics_file_checkpoints IS
+    'Durable Semantic Scholar citation file checkpoints that let long citation metric sweeps resume by file after worker failure.';
 COMMENT ON TABLE solemd.s2_paper_references_raw IS
     'Optional Semantic Scholar citation-edge staging rows retained outside the default corpus gate contract.';
 COMMENT ON TABLE solemd.s2_paper_assets_raw IS
@@ -60,6 +64,14 @@ COMMENT ON COLUMN solemd.ingest_runs.status IS
     'Ingest lifecycle code from db/schema/enum-codes.yaml.ingest_run_status.';
 COMMENT ON COLUMN solemd.ingest_runs.requested_status IS
     'Operator control code from db/schema/enum-codes.yaml.ingest_requested_status.';
+COMMENT ON COLUMN solemd.ingest_file_tasks.status IS
+    'File task lifecycle code: 1=pending, 2=running, 3=completed, 4=failed.';
+COMMENT ON COLUMN solemd.ingest_file_tasks.input_bytes_read IS
+    'Best-effort per-file byte progress reported by the worker heartbeat.';
+COMMENT ON COLUMN solemd.ingest_file_tasks.stage_row_count IS
+    'Exact completed stage row count recorded after a file reaches its durable checkpoint.';
+COMMENT ON COLUMN solemd.ingest_file_tasks.claim_token IS
+    'Per-claim lease token. File workers must present the current token before heartbeat, stage merge, checkpoint, complete, or fail updates.';
 COMMENT ON COLUMN solemd.corpus.domain_status IS
     'Human-readable curation status kept as TEXT for low-cardinality mapping review rows in the warehouse baseline.';
 COMMENT ON COLUMN solemd.paper_text.text_availability IS
@@ -78,6 +90,8 @@ COMMENT ON COLUMN solemd.s2_paper_reference_metrics_raw.source_release_id IS
     'Release whose aggregate citation metrics produced this per-paper row.';
 COMMENT ON COLUMN solemd.s2_paper_reference_metrics_stage.ingest_run_id IS
     'Ingest run whose parallel citation workers produced this staging fragment.';
+COMMENT ON COLUMN solemd.s2_paper_reference_metrics_file_checkpoints.stage_row_count IS
+    'Number of per-file citation metric stage rows present when the source file was marked complete.';
 COMMENT ON COLUMN solemd.s2_paper_references_raw.source_release_id IS
     'Release whose raw citation snapshot produced this edge row; one row per edge per source release.';
 COMMENT ON COLUMN solemd.s2_paper_references_raw.reference_checksum IS

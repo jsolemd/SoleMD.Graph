@@ -49,7 +49,7 @@ class Settings(BaseSettings):
         alias="WORKER_METRICS_ENABLED",
     )
     worker_metrics_host: str = Field(
-        default="0.0.0.0",
+        default="127.0.0.1",
         alias="WORKER_METRICS_HOST",
     )
     worker_metrics_port: int | None = Field(
@@ -74,6 +74,54 @@ class Settings(BaseSettings):
     warehouse_dsn_ingest: str | None = Field(default=None, alias="WAREHOUSE_DSN_INGEST")
     warehouse_dsn_read: str | None = Field(default=None, alias="WAREHOUSE_DSN_READ")
     warehouse_dsn_admin: str | None = Field(default=None, alias="WAREHOUSE_DSN_ADMIN")
+    warehouse_storage_check_enabled: bool = Field(
+        default=True,
+        alias="WAREHOUSE_STORAGE_CHECK_ENABLED",
+    )
+    warehouse_storage_path: str = Field(
+        default="/mnt/solemd-graph",
+        alias="WAREHOUSE_STORAGE_PATH",
+    )
+    warehouse_storage_mount_path: str = Field(
+        default="/mnt/solemd-graph",
+        alias="WAREHOUSE_STORAGE_MOUNT_PATH",
+    )
+    warehouse_storage_expected_fs_type: str | None = Field(
+        default="ext4",
+        alias="WAREHOUSE_STORAGE_EXPECTED_FS_TYPE",
+    )
+    warehouse_storage_require_device_running: bool = Field(
+        default=True,
+        alias="WAREHOUSE_STORAGE_REQUIRE_DEVICE_RUNNING",
+    )
+    warehouse_storage_fsync_check_enabled: bool = Field(
+        default=True,
+        alias="WAREHOUSE_STORAGE_FSYNC_CHECK_ENABLED",
+    )
+    warehouse_storage_host_check_enabled: bool = Field(
+        default=True,
+        alias="WAREHOUSE_STORAGE_HOST_CHECK_ENABLED",
+    )
+    warehouse_storage_host_path: str = Field(
+        default="/mnt/e/wsl2-solemd-graph.vhdx",
+        alias="WAREHOUSE_STORAGE_HOST_PATH",
+    )
+    warehouse_storage_host_min_free_bytes: int = Field(
+        default=100 * 1024 * 1024 * 1024,
+        alias="WAREHOUSE_STORAGE_HOST_MIN_FREE_BYTES",
+        ge=0,
+    )
+    warehouse_storage_max_used_percent: float = Field(
+        default=90.0,
+        alias="WAREHOUSE_STORAGE_MAX_USED_PERCENT",
+        ge=0.0,
+        le=100.0,
+    )
+    warehouse_storage_min_free_bytes: int = Field(
+        default=100 * 1024 * 1024 * 1024,
+        alias="WAREHOUSE_STORAGE_MIN_FREE_BYTES",
+        ge=0,
+    )
     pool_ingest_min: int = Field(default=8, alias="POOL_INGEST_MIN")
     pool_ingest_max: int = Field(default=64, alias="POOL_INGEST_MAX")
     pool_warehouse_read_min: int = Field(
@@ -117,6 +165,25 @@ class Settings(BaseSettings):
         default=4,
         alias="INGEST_MAX_CONCURRENT_FILES",
         ge=1,
+    )
+    ingest_distributed_file_tasks_enabled: bool = Field(
+        default=True,
+        alias="INGEST_DISTRIBUTED_FILE_TASKS_ENABLED",
+    )
+    ingest_file_task_poll_interval_seconds: float = Field(
+        default=5.0,
+        alias="INGEST_FILE_TASK_POLL_INTERVAL_SECONDS",
+        gt=0.0,
+    )
+    ingest_file_task_max_attempts: int = Field(
+        default=3,
+        alias="INGEST_FILE_TASK_MAX_ATTEMPTS",
+        ge=1,
+    )
+    ingest_file_task_stale_after_seconds: float = Field(
+        default=900.0,
+        alias="INGEST_FILE_TASK_STALE_AFTER_SECONDS",
+        gt=0.0,
     )
     ingest_write_command_timeout_seconds: float = Field(
         default=300.0,

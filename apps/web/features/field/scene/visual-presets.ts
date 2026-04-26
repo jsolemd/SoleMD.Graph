@@ -115,6 +115,58 @@ export interface FieldSceneState {
   heroProgress: number;
   items: Record<FieldStageItemId, FieldStageItemState>;
   motionEnabled: boolean;
+  /**
+   * Slice B: hard-pause flag mirrored from `useShellStore.pauseMotion`.
+   * Distinct from `motionEnabled` — when motionEnabled goes false, the
+   * controllers still drift at the reduced-motion floor (motionScale =
+   * 0.16). When `motionPaused` is true, controllers freeze time,
+   * rotation, and the color cycle to zero.
+   */
+  motionPaused: boolean;
+  /**
+   * Slice B: user-facing global ambient tempo. Drives the per-controller
+   * `uTime` accumulator and Blob's color-cycle GSAP `timeScale`.
+   * Baseline 1.5 — both landing and orb run at 1.5× the legacy
+   * elapsed-time rate; the slider scales around that (range [0.5, 3.0]).
+   */
+  motionSpeedMultiplier: number;
+  /**
+   * Slice B: user-facing rotation tempo. Multiplies orb wrapper auto-
+   * rotation only. Default 1.0; range [0.0, 2.0].
+   */
+  rotationSpeedMultiplier: number;
+  /**
+   * Slice B: user-facing entropy / randomness. Multiplies the
+   * `uAmplitude` blend target without re-seeding positions or flattening
+   * the color-distribution frequency.
+   * Default 1.0; range [0.0, 2.0]; capped at 1.0 under low-power.
+   */
+  ambientEntropy: number;
+  /**
+   * True while orb-mode camera is mounted (drei `<CameraControls>` active).
+   * BlobController reads this to:
+   *  - freeze galaxy world scale against a fixed reference camera distance
+   *    instead of live `camera.position.z`, so dollying through the volume
+   *    doesn't re-normalize the scene around the camera;
+   *  - blend the point-size depth attenuation toward the orb fly-through
+   *    target, making particles parallax instead of inflate;
+   *  - switch wrapper rotation from clock-driven to delta-accumulated, so
+   *    `orbInteracting` can pause it cleanly.
+   */
+  orbCameraActive: boolean;
+  /**
+   * True while the orb has a resolved clicked particle. G-lane texture values
+   * stay per-particle; this scalar tells the shader that G=0 now means
+   * "not focused" instead of the idle default.
+   */
+  orbFocusActive: boolean;
+  /**
+   * True between drei `<CameraControls>` `controlstart` and `controlend`
+   * (drag / pinch only — wheel does not emit these). BlobController uses
+   * this to suppress wrapper auto-rotation while the user is orbiting,
+   * so two rotations don't compound into a sliding-plane feel.
+   */
+  orbInteracting: boolean;
 }
 
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
@@ -323,6 +375,13 @@ export function createFieldSceneState(): FieldSceneState {
     chapters: {},
     heroProgress: 0,
     motionEnabled: true,
+    motionPaused: false,
+    motionSpeedMultiplier: 1.5,
+    rotationSpeedMultiplier: 1,
+    ambientEntropy: 1,
+    orbCameraActive: false,
+    orbFocusActive: false,
+    orbInteracting: false,
     items: {
       blob: createStageItemState(1, 0, 1),
       stream: createStageItemState(),

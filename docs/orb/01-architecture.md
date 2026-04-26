@@ -1,0 +1,222 @@
+# 01 — Architecture
+
+## Single source of truth, 3D-primary workspace
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  DuckDB-WASM bundle session (in browser)                         │
+│  ├─ base_points + release_points_3d (LEFT JOINed)                │
+│  ├─ release_evidence_members, release_cluster_centroids          │
+│  ├─ universe_links (citations) + orb_entity_edges_current (view) │
+│  ├─ paper_knn_<cluster_id>.parquet (per-cluster shards, OPFS)    │
+│  └─ shared selection / filter / timeline tables                  │
+└──────────────────────────────────────────────────────────────────┘
+        ▲                                                ▲
+        │                                                │
+   ┌────┴─────┐                                    ┌─────┴────┐
+	   │  /map    │   <─── visibility flip on the ───> │  /graph  │
+	   │ optional │      shared-shell, simultaneously  │ primary  │
+   │          │      mounted canvases              │          │
+   │ Renderer │                                    │ Renderer │
+   │   over   │                                    │   over   │
+   │ native   │                                    │   R3F    │
+   │Cosmograph│                                    │   +TSL   │
+   └──────────┘                                    └──────────┘
+        │                                                │
+        └───────── shared force vocabulary ──────────────┘
+                  (focus / scope / evidencePulse / ...)
+	                  applies to both surfaces. 3D expresses
+	                  through force motion and shape; 2D expresses
+	                  through native Cosmograph selection, filtering,
+	                  camera, and edge/list highlighting.
+```
+
+## State authority
+
+Per canonical correction 23: **`useDashboardStore` is the sole
+source of truth** for `{hoveredPaperId, focusedPaperId,
+hoveredClusterId, selectedPointIndices, activePanelPaperId}`.
+No local component state for any of these. Both renderers
+subscribe; both write through the same dispatchers.
+
+`useGraphStore` holds renderer-coupled state: camera-2D pose,
+camera-3D pose, rotation phase, mode (`'orb' | 'map'`).
+
+Prompt/search text, RAG answer state, ranked results, info-panel
+mode, and pinned wiki state are not renderer-coupled. They live in
+the dashboard/RAG/wiki state surfaces and render first in the 3D
+workspace. The 2D lens consumes the same state but does not fork it.
+
+DuckDB tables hold the SQL-projected truth: `selected_point_indices`,
+filter-clause projections, scope rev counter. Both renderers read
+the same `currentPointScopeSql`.
+
+## Render-vs-physics lane separation
+
+Codified at `apps/web/features/orb/bake/apply-paper-overrides.ts:51`,
+restated here as the *first* architectural rule:
+
+- **Render lanes** (existing): `aSpeed`, `aClickPack.{xyz, w}`,
+  `aBucket`, `aFunnel*`, `aColor` (planned). Written by surface code
+  (paper baker, click handler, lands-mode field baker). Cheap to
+  rewrite via `addUpdateRange` + `bufferSubData`. Visual output
+  only.
+- **Physics lanes** (new): `posTex`, `velTex`, `massTex`,
+  `selectionMask`, `filterMask`, `excitationTex` (intensity +
+  decayStart), `pinMask`, plus foundational effect lanes:
+  `relationClassTex`, `radialBandTex`, `effectStageTex`,
+  `orbitPhaseTex`, and `residentReason`. Written by simulation pass /
+  interaction stores. Sidecar GPGPU textures, storage buffers, or
+  DataTextures. **Never** conflated with render attributes.
+
+Adding a feature = naming its lane + wiring its writer + wiring
+its reader. No glue layers. No lane overloads.
+
+See [reference/lane-rule.md](reference/lane-rule.md) for full
+quotation of the codified contract.
+
+## Resident LOD
+
+Mechanism that resolves the scope-collapse vs hairball tension:
+
+- **Logical scope**: the active filter/timeline/selection set,
+  arbitrary size (1 → corpus). Read from the same `currentPointScopeSql`
+  the 2D map uses.
+- **Resident set**: deterministic sub-sample of the scope, sized to
+  ≤ 16K (mobile) or ≤ 30K (desktop) particles. Sampling starts with
+  a focus override reserve, then fills remaining slots by
+  cluster-aware / quantile-stratified `paperReferenceCount`.
+- **Focus override reserve**: selected paper, 1-hop citation
+  neighbors, top semantic kNN neighbors, active RAG/search result
+  members, and pinned wiki references are resident before generic
+  sampling. This is required for orbital belts, citation cascades,
+  and RAG narrative physics to remain honest.
+- **Render + physics + picking** all operate on the resident set.
+- **Selection model** operates on the whole scope (filter SQL).
+- **UI banner** when scope > resident: *"showing 16K of 87K — zoom
+  or narrow scope for full"*. Banner action: open filter UI.
+
+Resident set rebuilds on:
+- Scope change (filter, timeline, selection).
+- Device class change (mobile/desktop, low-power toggle).
+- Cluster focus (resident becomes cluster-stratified for that
+  focus).
+
+The ambient render canvas (`apps/web/features/field/asset/point-source-registry.ts:22`,
+16,384 points) is the substrate; resident LOD writes new
+`paperId↔particleIdx` mappings into it via the
+`apply-paper-overrides` hot path.
+
+See [milestones/M1-canonical-views-and-mask-writer.md](milestones/M1-canonical-views-and-mask-writer.md)
+for the `paperId↔particleIdx` mask writer that makes resident-LOD
+filter parity with `/map` work.
+
+## Force kernel contract (semantic schedule, native backends)
+
+```
+interface ForceKernel {
+  init(opts: { capacity: number; renderer: WebGLRenderer | WebGPURenderer }): void
+  step(input: ForceKernelInput): ForceKernelOutput
+  dispose(): void
+}
+
+type ForceKernelInput = {
+  pos: GpuParticleBuffer
+  vel: GpuParticleBuffer
+  mass: GpuScalarBuffer
+  edges: EdgeBuffers    // citation + entity, with weights
+  masks: MaskBuffers    // filter, selection, pin, residentReason
+  effectLanes: EffectLaneBuffers
+  schedule: ForceEffectSchedule
+  alpha: number
+  dt: number
+}
+
+type ForceEffectSchedule = Array<{
+  id: string
+  generation: number
+  layer: 'scope' | 'spatial' | 'overlay' | 'direct'
+  mode: 'focus' | 'clusterFocus' | 'entityFocus' | 'evidencePulse' | 'scope' | 'tug' | 'pulseImpulse'
+  startMs: number
+  durationMs: number
+  easing: 'linear' | 'smoothstep' | 'spring'
+  payloadRef: string
+}>
+
+type ForceKernelOutput = {
+  posTex: Texture       // new positions
+  velTex: Texture       // new velocities
+  residualDisplacement: number  // for sleep heuristic
+}
+```
+
+- M2 ships a `ForceKernelRouter` with WebGPU/TSL as the preferred
+  backend where available and WebGL2 `GPUComputationRenderer`
+  compatibility where it is not.
+- The router owns capability selection only. It must not allocate
+  payload objects or rebuild pipelines inside the frame loop.
+- The WebGPU backend uses three.js WebGPU/TSL compute, storage
+  buffers, storage-buffer attributes, and a small number of dispatches
+  per tick. The WebGL2 backend uses ping-pong position/velocity
+  textures. Both read the same effect schedule, but kernels are
+  backend-native rather than source-shared.
+- Runtime swaps based on `navigator.gpu`, `WebGPURenderer`
+  initialization, measured capability, and a feature flag. WebGL2
+  remains a compatibility path until telemetry supports retirement.
+
+Layer 2 remains exclusive at the product level, but staged effects
+such as RAG narrative physics are represented as multiple scheduled
+writes/ramp windows under one generation.
+
+See [03-physics-model.md](03-physics-model.md) for the equations,
+[milestones/M2-orb-renderer-hybrid-physics.md](milestones/M2-orb-renderer-hybrid-physics.md)
+for the M2 implementation, [milestones/M7-webgpu-port.md](milestones/M7-webgpu-port.md)
+for WebGPU hardening and fallback-retirement gates.
+
+## Disposal
+
+Per canonical correction 22: disposal applies on **session exit**,
+not surface toggle. `<GraphShell>` outlives individual route
+renders. On surface toggle (orb ↔ map), both canvases stay mounted;
+only `visibility` flips. On low-power toggle or session leave,
+each subsystem exposes `dispose()`:
+
+- WebGL render targets, GPU buffers, picking offscreen target.
+- `<CameraControls>` (yomotsu).
+- drei `<Html>` portals.
+- `ForceKernel` instance + typed-array buffers.
+- Lazy-attached DuckDB views (orb-specific).
+- OPFS-cached kNN shards (kept across sessions; cleared on cap
+  exceeded via LRU).
+
+`GraphShell` orchestrates. No implicit React-unmount cleanup.
+
+## Owns / doesn't own
+
+This file owns the **architectural skeleton** (where state lives,
+how surfaces compose, the lane rule, resident LOD, force kernel
+contract).
+
+Doesn't own:
+- Specific render shaders → [04-renderer.md](04-renderer.md).
+- Specific force equations → [03-physics-model.md](03-physics-model.md).
+- Specific milestones -> [milestones/](milestones/).
+- 2D lens runtime posture -> [13-2d-map-vendor-replacement.md](13-2d-map-vendor-replacement.md).
+
+## Prerequisites
+
+[00-product-framing.md](00-product-framing.md).
+
+## Consumers
+
+Every implementation file. The lane rule, resident LOD concept, and
+force kernel contract are load-bearing for milestones M1–M7.
+
+## Invalidation
+
+- Lane rule overridden → physics state flows through render lanes →
+  invalidates M2's GPGPU design and the canonical's correction 51.
+- Resident LOD removed → reverts to scope = render set → caps the
+  product at evidence-subset scale or risks hairball.
+- Single-source-of-truth-in-store fragmented → desync hell across
+  the two renderers.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useViewportSize } from "@mantine/hooks";
+import { useMounted, useViewportSize } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 
 export type ShellVariant = "mobile" | "desktop";
@@ -24,20 +24,20 @@ export function resolveShellVariant({
 }
 
 export function useShellVariant(): ShellVariant {
+  // First client paint must mirror the SSR fallback (desktop) — reading
+  // window.matchMedia / innerWidth synchronously here would diverge from
+  // the server tree on phones and trip every consumer that branches on
+  // the variant (Mantine ActionIcon size, etc.). useMounted defers the
+  // real measurement to the post-hydration render.
+  const mounted = useMounted();
   const { width } = useViewportSize();
-  const [pointerState, setPointerState] = useState(() => (
-    typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? {
-          hasCoarsePointer: window.matchMedia("(pointer: coarse)").matches,
-          hasHover: window.matchMedia("(hover: hover)").matches,
-        }
-      : {
-          hasCoarsePointer: false,
-          hasHover: true,
-        }
-  ));
-  const viewportWidth =
-    width || (typeof window === "undefined" ? MOBILE_SHELL_MAX_WIDTH + 1 : window.innerWidth);
+  const [pointerState, setPointerState] = useState({
+    hasCoarsePointer: false,
+    hasHover: true,
+  });
+  const viewportWidth = mounted
+    ? width || window.innerWidth
+    : MOBILE_SHELL_MAX_WIDTH + 1;
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {

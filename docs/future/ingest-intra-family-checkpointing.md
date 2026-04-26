@@ -1,7 +1,15 @@
 # Intra-family file-level checkpointing for ingest
 
-Status: proposed
+Status: superseded / partially implemented
 Author: Jon (drafted during 2026-04-21 s2:2026-03-10 recovery)
+
+Implementation update, 2026-04-25: S2 `citations` now uses the durable
+file-task pattern described here, but with the actual table
+`solemd.ingest_file_tasks` instead of the proposed `solemd.ingest_run_files`.
+The release actor owns `families_loaded` and finalization; file actors consume
+`ingest_file` queue messages keyed to DB task rows. Citation-specific
+`s2_paper_reference_metrics_file_checkpoints` validate completed file stage
+rows because the aggregate stage table is `UNLOGGED`.
 
 ## Why this exists
 
@@ -42,51 +50,62 @@ so we replay them all.
 
 ## Proposed change
 
-Track per-file completion in a new table, consulted at family start, and
-updated as each file's loader finishes.
+Track per-file completion in a task table, consulted at family start, and
+updated as each file's loader finishes. The landed S2 citation implementation
+uses `solemd.ingest_file_tasks` with status codes
+`1=pending, 2=running, 3=completed, 4=failed`, attempt counts, heartbeat
+progress, and a per-claim `claim_token`.
 
 ### Schema (new migration)
 
 ```sql
-CREATE TABLE solemd.ingest_run_files (
+CREATE TABLE solemd.ingest_file_tasks (
     ingest_run_id     uuid        NOT NULL REFERENCES solemd.ingest_runs(ingest_run_id) ON DELETE CASCADE,
+    source_release_id integer     NOT NULL REFERENCES solemd.source_releases(source_release_id) ON DELETE RESTRICT,
     family_name       text        NOT NULL,
     file_name         text        NOT NULL,
-    row_count         bigint      NOT NULL DEFAULT 0,
-    byte_count        bigint      NOT NULL DEFAULT 0,
-    started_at        timestamptz NOT NULL DEFAULT now(),
+    file_path         text        NOT NULL,
+    file_byte_count   bigint      NOT NULL DEFAULT 0,
+    status            smallint    NOT NULL DEFAULT 1,
+    attempt_count     integer     NOT NULL DEFAULT 0,
+    input_bytes_read  bigint      NOT NULL DEFAULT 0,
+    rows_written      bigint      NOT NULL DEFAULT 0,
+    stage_row_count   integer     NOT NULL DEFAULT 0,
+    claim_token       uuid,
+    enqueued_at       timestamptz,
+    started_at        timestamptz,
     completed_at      timestamptz,
+    updated_at        timestamptz NOT NULL DEFAULT now(),
+    last_error        text,
     PRIMARY KEY (ingest_run_id, family_name, file_name)
 );
-CREATE INDEX ix_ingest_run_files_family
-    ON solemd.ingest_run_files (ingest_run_id, family_name)
-    WHERE completed_at IS NOT NULL;
+CREATE INDEX idx_ingest_file_tasks_release_family_status
+    ON solemd.ingest_file_tasks (source_release_id, ingest_run_id, family_name, status, updated_at);
 ```
 
 - `(ingest_run_id, family_name, file_name)` PK is idempotent-safe. A retry
   that tries to re-insert a completed file row hits ON CONFLICT DO NOTHING.
-- `completed_at IS NULL` on replay means "started but unverified" — loader
-  should just re-run that file (already idempotent).
-- Partial index keeps the fast-path query ("which files are done for this
-  family?") cheap.
+- `status` and `claim_token` make file attempts recoverable: stale
+  `running` rows return to `pending`, old workers cannot heartbeat/complete
+  after their claim token is superseded, and stale `pending` rows with lost
+  Redis sends are redispatched after the stale window.
 
 ### Runtime integration
 
 Two injection points in `run_release_ingest`:
 
 1. **At family start** (after the `if family_name in run.families_loaded:
-   continue` check, before the file TaskGroup). Load the set of
-   `file_name`s where `completed_at IS NOT NULL` for this
-   `(ingest_run_id, family_name)`. Pass the set into
-   `writer.load_family(...)` as a new `completed_files` arg.
+   continue` check). Insert or refresh one `ingest_file_tasks` row per planned
+   file. For S2 citations, load completed files from
+   `s2_paper_reference_metrics_file_checkpoints` only when matching stage rows
+   still exist; reset every other file task to `pending`.
 
-2. **Inside each per-file worker** (the `async def worker(file_path: Path)` in
-   writers/s2.py and writers/pubtator.py). At entry, skip if
-   `file_path.name in completed_files`. On natural completion, inside the
-   same connection's transaction that commits the last batch (or a separate
-   one), `INSERT INTO solemd.ingest_run_files (...) ON CONFLICT DO NOTHING`.
-   Emit via an `on_file_completed_persist` hook so the runtime owns the SQL,
-   not the writers.
+2. **Inside each per-file worker** (`ingest.s2_citation_file`). Claim the DB
+   row, receive a `claim_token`, reset that file's stage rows, stream and
+   merge batches while presenting the token, then checkpoint and complete the
+   task. Stale pending rows can be redispatched, and stale running rows can be
+   returned to pending without allowing the old worker to complete over the new
+   claim.
 
 ### Why "inside the last batch's transaction" matters
 
@@ -123,10 +142,9 @@ if on_file_completed_persist is not None:
     await on_file_completed_persist(file_path)
 ```
 
-`on_file_completed_persist` is supplied by the runtime and writes the
-`INSERT ... ON CONFLICT DO NOTHING` using the control pool (not the
-file-worker's connection — avoids pool pressure during high-concurrency
-loads).
+The landed S2 citation path does not use this exact callback shape. The same
+principle is implemented with `ingest_file_tasks` ownership and
+`s2_paper_reference_metrics_file_checkpoints`.
 
 ### Telemetry
 
@@ -134,11 +152,12 @@ Add a gauge:
 
 - `ingest_family_files_remaining{source_code, family}` = total - completed
   at family start. Drains to 0 as files finish. Makes "how close to done is
-  this family" observable without scraping `ingest_run_files`.
+  this family" observable without scraping broad stage tables. Current S2
+  citation progress is visible from `solemd.ingest_file_tasks`.
 
 ### Backwards compatibility
 
-- Existing runs without `ingest_run_files` rows resume exactly as they do
+- Existing runs without `ingest_file_tasks` rows resume exactly as they do
   today: `completed_files` is empty → every file runs again. The
   per-file COPY/INSERT paths are already idempotent, so this is safe.
 - Once the migration lands, new runs start writing rows. On next
@@ -164,17 +183,12 @@ Add a gauge:
 
 ## Work breakdown
 
-1. Migration file adds `solemd.ingest_run_files`.
-2. `apps/worker/app/ingest/runtime.py`:
-   - new `_load_completed_files(connection, ingest_run_id, family_name)`
-     returning `frozenset[str]`.
-   - new `_record_file_completed(pool, ingest_run_id, family_name, file_name,
-     row_count, byte_count)` using a short-lived connection.
-   - thread both into `writer.load_family(...)` and the per-writer `worker`
-     closures.
-3. Both `writers/s2.py` and `writers/pubtator.py`: accept `completed_files`,
-   skip known files; call `on_file_completed_persist(file_path)` at natural
-   completion.
+1. Migration file adds `solemd.ingest_file_tasks`.
+2. `apps/worker/app/ingest/runtime.py` routes sources with a
+   `load_family_distributed` implementation to the distributed loader.
+3. S2 citations own the first implementation:
+   `s2_citations.py`, `s2_citation_tasks.py`, and
+   `s2_citation_stage.py`.
 4. Tests:
    - Unit: `_load_completed_files` returns the partial-index set it should.
    - Integration: run an ingest, kill it mid-family, resume; assert the
@@ -201,7 +215,7 @@ Add a gauge:
   whole family on first file exception. With per-file checkpointing we
   could be more tolerant: log the failing file, continue the other files,
   retry only the failed ones on the next attempt. Worth scoping separately.
-- **Cleanup.** `ingest_run_files` will grow. Either a periodic delete for
+- **Cleanup.** `ingest_file_tasks` will grow. Either a periodic delete for
   rows whose `ingest_run_id` is PUBLISHED > N days, or rely on `ON DELETE
   CASCADE` when a historical run is pruned.
 - **Corpus/evidence parallel.** `corpus/selection_runtime.py` and

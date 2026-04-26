@@ -18,6 +18,7 @@ from app.db import (
     probe_redis_target,
 )
 from app.telemetry.bootstrap import prepare_worker_metrics_environment
+from app.warehouse_storage import check_warehouse_storage
 
 
 prepare_worker_metrics_environment(settings, scope="cli", clean_on_boot=False)
@@ -76,7 +77,7 @@ async def run_startup_check() -> int:
             settings.serve_dsn_admin,
             pool_specs["admin"].statement_cache_size,
         )
-    checks = await asyncio.gather(
+    dependency_checks = await asyncio.gather(
         *(
             probe_redis_target(
                 target,
@@ -93,6 +94,7 @@ async def run_startup_check() -> int:
             for target in settings.startup_targets
         )
     )
+    checks = [check_warehouse_storage(settings).as_probe_check(), *dependency_checks]
     status = "ready" if all(check["ok"] for check in checks) else "not_ready"
     payload = {
         "status": status,

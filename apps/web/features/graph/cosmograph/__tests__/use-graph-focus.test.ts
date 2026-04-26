@@ -12,6 +12,7 @@ const mockCosmograph = {
 
 jest.mock("@cosmograph/react", () => ({
   useCosmograph: () => ({ cosmograph: mockCosmograph }),
+  useCosmographInternal: () => ({ cosmograph: mockCosmograph }),
 }));
 
 jest.mock("../hooks/use-graph-selection", () => ({

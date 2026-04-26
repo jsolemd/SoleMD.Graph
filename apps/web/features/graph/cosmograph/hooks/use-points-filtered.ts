@@ -12,6 +12,7 @@ import {
   isBudgetScopeSelectionSourceId,
   isVisibilitySelectionSourceId,
 } from "@/features/graph/lib/cosmograph-selection";
+import { commitSelectionState } from "@/features/graph/lib/graph-selection-state";
 import { isSelectedPointBaselineSelectionSourceId } from "@/features/graph/lib/overlay-producers";
 import type { GraphBundleQueries, GraphVisibilityBudget, GraphLayer } from "@solemd/graph";
 import type { VisibilityFocus } from "@/features/graph/stores/slices/visibility-slice";
@@ -92,7 +93,6 @@ export function usePointsFiltered(deps: {
 
     // --- Main handler logic ---
     const pointsSelection = deps.cosmographRef.current?.pointsSelection ?? null;
-    const selectedCount = callbackSelectedPointIndices?.length ?? 0;
     const sourceId = deps.cosmographRef.current?.getActiveSelectionSourceId() ?? null;
     const isVisibilitySource = isVisibilitySelectionSourceId(sourceId);
     const hasIntentClauses = intentClauseIds.length > 0;
@@ -117,7 +117,6 @@ export function usePointsFiltered(deps: {
     // selection visual on 1M+ points.
     const persistSelectionIntent = (args: {
       pointIndices: number[];
-      selectedCount: number;
       selectionSourceId: string | null;
       clearNode: boolean;
     }) => {
@@ -128,19 +127,18 @@ export function usePointsFiltered(deps: {
       deferredWriteHandle.current = requestAnimationFrame(() => {
         const requestId = ++selectionWriteRequestId.current;
 
-        void deps.queries.setSelectedPointIndices(args.pointIndices).then(() => {
-          if (requestId !== selectionWriteRequestId.current) {
-            return;
-          }
-
-          // Batch all store updates in one synchronous block so React
-          // renders once, firing one info-panel query cycle instead of two.
-          deps.setCurrentPointScopeSql(currentPointScopeSql);
-          deps.setSelectedPointCount(args.selectedCount);
-          deps.setActiveSelectionSourceId(args.selectionSourceId);
-          if (args.clearNode) {
-            deps.selectNode(null);
-          }
+        void commitSelectionState({
+          queries: deps.queries,
+          pointIndices: args.pointIndices,
+          sourceId: args.selectionSourceId,
+          setSelectedPointCount: deps.setSelectedPointCount,
+          setActiveSelectionSourceId: deps.setActiveSelectionSourceId,
+          scopeUpdate: {
+            currentPointScopeSql,
+            setCurrentPointScopeSql: deps.setCurrentPointScopeSql,
+          },
+          shouldCommitStore: () => requestId === selectionWriteRequestId.current,
+          clearNode: args.clearNode ? () => deps.selectNode(null) : undefined,
         }).catch((error: unknown) => {
           // Superseded writes (requestId mismatch) resolve on the then()
           // branch, so any rejection here is a real DuckDB write failure
@@ -200,7 +198,6 @@ export function usePointsFiltered(deps: {
     if (!hasIntentClauses) {
       persistSelectionIntent({
         pointIndices: [],
-        selectedCount: 0,
         selectionSourceId: null,
         clearNode: true,
       });
@@ -218,7 +215,6 @@ export function usePointsFiltered(deps: {
 
     void persistSelectionIntent({
       pointIndices,
-      selectedCount,
       selectionSourceId: sourceId,
       clearNode: false,
     });
