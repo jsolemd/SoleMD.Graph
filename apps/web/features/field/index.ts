@@ -23,6 +23,19 @@ export {
   LANDING_RAINBOW_RGB,
   SOLEMD_BURST_COLORS,
 } from "./scene/accent-palette";
+export {
+  BLOB_AMPLITUDE,
+  BLOB_DEPTH,
+  BLOB_FREQUENCY,
+  BLOB_TIME_FACTOR,
+  BLOB_WAVE_SPEED,
+  LANDING_BASE_BLUE_RGB,
+  LANDING_RAINBOW_PERIOD_SECONDS,
+  LANDING_RAINBOW_STOP_SECONDS,
+  ROTATION_DRAG_GRACE_MS,
+  ROTATION_RUNNING_RPS,
+  rgb255ToUnit,
+} from "./shared/landing-feel-constants";
 
 // Asset / point-source primitives
 export {

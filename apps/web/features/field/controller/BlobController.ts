@@ -26,15 +26,17 @@ import {
   type BlobHotspotRuntime,
   type BlobHotspotState,
 } from "./blob-hotspot-runtime";
+import {
+  INTRO_DEPTH_BOOST,
+  INTRO_DURATION_SECONDS,
+} from "../shared/landing-feel-constants";
 
 // BlobController mirrors Maze's `mm` at scripts.pretty.js:43257-43526.
 
 // Intro: kill the globe-expand by snapping to baseScale on first frame
-// and ramp uDepth down from a boost multiplier over 1.4s so particles
-// start scattered along aMove axes and converge onto the sphere. Matches
-// Maze's animateIn duration at scripts.pretty.js:43129-43130.
-export const INTRO_DURATION_SECONDS = 1.4;
-export const INTRO_DEPTH_BOOST = 2.6;
+// and ramp uDepth down from a boost multiplier so particles start
+// scattered along aMove axes and converge onto the sphere. Matches Maze's
+// animateIn duration at scripts.pretty.js:43129-43130.
 
 // Slice A1.1: orb-mode reference camera distance for sceneUnits. Matches
 // the initial Z FieldCanvas constructs the perspective camera with
@@ -77,6 +79,10 @@ const ORB_INTERACTION_BURST_TWIST_GAIN = 2.6;
 
 export type { FieldHotspotFrame, BlobHotspotState } from "./blob-hotspot-runtime";
 export { BLOB_COLOR_CYCLE_PER_STOP_SECONDS } from "./blob-color-cycle";
+export {
+  INTRO_DEPTH_BOOST,
+  INTRO_DURATION_SECONDS,
+} from "../shared/landing-feel-constants";
 export {
   BLOB_HOTSPOT_CARD_COUNT,
   BLOB_HOTSPOT_COUNT,

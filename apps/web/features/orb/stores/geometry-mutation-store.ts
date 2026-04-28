@@ -38,6 +38,14 @@ export interface PaperCorpusStats {
   entityLo: number;
   /** quantile_cont(LN(1 + paperEntityCount), 0.98) */
   entityHi: number;
+  /** minimum finite x coordinate in base_points_web */
+  xMin?: number;
+  /** maximum finite x coordinate in base_points_web */
+  xMax?: number;
+  /** minimum finite y coordinate in base_points_web */
+  yMin?: number;
+  /** maximum finite y coordinate in base_points_web */
+  yMax?: number;
 }
 
 export interface PaperChunk {

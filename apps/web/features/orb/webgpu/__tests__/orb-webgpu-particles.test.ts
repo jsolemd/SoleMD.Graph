@@ -53,12 +53,18 @@ describe("orb WebGPU particle packing", () => {
     });
 
     expect(arrays.count).toBe(8);
-    expect(arrays.positions[1 * 4]).toBeGreaterThan(0);
-    expect(arrays.positions[1 * 4 + 1]).toBeLessThan(0);
+    expect(
+      Math.hypot(
+        arrays.positions[1 * 4]!,
+        arrays.positions[1 * 4 + 1]!,
+        arrays.positions[1 * 4 + 2]!,
+      ),
+    ).toBeGreaterThan(0.4);
+    expect(Math.abs(arrays.velocities[1 * 4]!)).toBeGreaterThan(0);
     expect(arrays.positions[1 * 4 + 3]).toBeGreaterThan(0.0065);
     expect(arrays.attributes[1 * 4]).toBeGreaterThan(0);
-    expect(arrays.attributes[1 * 4 + 3]).toBeGreaterThanOrEqual(0.55);
-    expect(arrays.attributes[1 * 4 + 3]).toBeLessThanOrEqual(1.75);
+    expect(arrays.attributes[1 * 4 + 3]).toBeGreaterThanOrEqual(0.2);
+    expect(arrays.attributes[1 * 4 + 3]).toBeLessThanOrEqual(1);
   });
 
   it("packs focus, hover, evidence, scope, selection, and neighbor flags", () => {

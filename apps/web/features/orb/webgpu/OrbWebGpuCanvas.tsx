@@ -7,6 +7,10 @@ import { useOrbPickerStore, type OrbPickerHandle } from "../interaction/orb-pick
 import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
 import { useOrbGeometryMutationStore } from "../stores/geometry-mutation-store";
 import {
+  useOrbSnapshotStore,
+  type OrbSnapshotHandle,
+} from "../stores/snapshot-store";
+import {
   buildOrbWebGpuFlagArray,
   buildOrbWebGpuParticleArrays,
 } from "./orb-webgpu-particles";
@@ -111,13 +115,20 @@ export function OrbWebGpuCanvas({
       motionSpeedMultiplier,
       pauseMotion: pauseMotion || prefersReducedMotion,
       rotationSpeedMultiplier,
+      selectionActive:
+        focusIndex != null ||
+        selectionIndices.length > 0 ||
+        scopeIndices.length > 0,
     }),
     [
       ambientEntropy,
+      focusIndex,
       motionSpeedMultiplier,
       pauseMotion,
       prefersReducedMotion,
       rotationSpeedMultiplier,
+      scopeIndices,
+      selectionIndices,
     ],
   );
 
@@ -132,6 +143,7 @@ export function OrbWebGpuCanvas({
     let cancelled = false;
     let handle: OrbPickerHandle | null = null;
     let controlHandle: OrbWebGpuControlHandle | null = null;
+    let snapshotHandle: OrbSnapshotHandle | null = null;
 
     const publishStatus = (next: OrbWebGpuCanvasStatus) => {
       if (!cancelled) setStatus(next);
@@ -157,6 +169,9 @@ export function OrbWebGpuCanvas({
             useOrbWebGpuRuntimeStore
               .getState()
               .clearHandleIfMatches(controlHandle);
+          }
+          if (snapshotHandle) {
+            useOrbSnapshotStore.getState().clearHandleIfMatches(snapshotHandle);
           }
           runtimeRef.current?.destroy();
           runtimeRef.current = null;
@@ -188,8 +203,14 @@ export function OrbWebGpuCanvas({
           applyTwist: (deltaRadians) =>
             runtimeRef.current?.applyTwist(deltaRadians),
         };
+        snapshotHandle = {
+          captureSnapshot: () => {
+            void captureOrbWebGpuSnapshot(runtimeRef.current);
+          },
+        };
         useOrbPickerStore.getState().setHandle(handle);
         useOrbWebGpuRuntimeStore.getState().setHandle(controlHandle);
+        useOrbSnapshotStore.getState().setHandle(snapshotHandle);
         nextRuntime.start();
         publishStatus({ kind: "running", profile: gpu.profile });
       } catch (error) {
@@ -197,6 +218,7 @@ export function OrbWebGpuCanvas({
           publishStatus({ kind: "unsupported", reason: error.reason });
           return;
         }
+        console.error("[OrbWebGPU] runtime initialization failed", error);
         publishStatus({
           kind: "error",
           message:
@@ -218,6 +240,9 @@ export function OrbWebGpuCanvas({
         useOrbWebGpuRuntimeStore
           .getState()
           .clearHandleIfMatches(controlHandle);
+      }
+      if (snapshotHandle) {
+        useOrbSnapshotStore.getState().clearHandleIfMatches(snapshotHandle);
       }
       runtimeRef.current?.destroy();
       runtimeRef.current = null;
@@ -244,11 +269,26 @@ export function OrbWebGpuCanvas({
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0 h-full w-full"
       />
-      {status.kind === "unsupported" || status.kind === "device-lost" ? (
+      {status.kind === "unsupported" ||
+      status.kind === "device-lost" ||
+      status.kind === "error" ? (
         <OrbWebGpuStatusOverlay status={status} />
       ) : null}
     </>
   );
+}
+
+async function captureOrbWebGpuSnapshot(
+  runtime: OrbWebGpuRuntime | null,
+): Promise<void> {
+  const blob = await runtime?.captureSnapshot();
+  if (!blob) return;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `solemd-orb-${new Date().toISOString().replaceAll(":", "-")}.png`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function OrbWebGpuStatusOverlay({
@@ -256,12 +296,15 @@ function OrbWebGpuStatusOverlay({
 }: {
   status:
     | { kind: "unsupported"; reason: OrbWebGpuUnavailableReason }
-    | { kind: "device-lost"; message: string };
+    | { kind: "device-lost"; message: string }
+    | { kind: "error"; message: string };
 }) {
   const message =
     status.kind === "unsupported"
       ? `WebGPU unavailable: ${status.reason}`
-      : `WebGPU device lost: ${status.message}`;
+      : status.kind === "device-lost"
+        ? `WebGPU device lost: ${status.message}`
+        : `WebGPU error: ${status.message}`;
 
   return (
     <div

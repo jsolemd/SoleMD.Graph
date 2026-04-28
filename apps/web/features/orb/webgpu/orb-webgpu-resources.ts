@@ -3,22 +3,24 @@
 import type { OrbWebGpuDeviceContext } from "./orb-webgpu-gate";
 import {
   COMPUTE_ATTRIBUTE_INDEX,
+  COMPUTE_DISPLAY_INDEX,
   COMPUTE_FRAME_INDEX,
+  COMPUTE_FLAG_INDEX,
   COMPUTE_POSITION_INDEX,
   COMPUTE_VELOCITY_INDEX,
+  DISPLAY_PARTICLE_BYTES,
   FRAME_UNIFORM_BYTES,
-  PICK_FRAME_INDEX,
+  PICK_DISPLAY_INDEX,
   PICK_PARAM_BYTES,
   PICK_PARAM_INDEX,
-  PICK_POSITION_INDEX,
   PICK_RESULT_INDEX,
   RECT_PARAM_BYTES,
   RECT_PARAM_INDEX,
   RECT_RESULT_INDEX,
-  RENDER_ATTRIBUTE_INDEX,
-  RENDER_FLAG_INDEX,
+  RENDER_DISPLAY_INDEX,
   RENDER_FRAME_INDEX,
-  RENDER_POSITION_INDEX,
+  RENDER_SPRITE_SAMPLER_INDEX,
+  RENDER_SPRITE_TEXTURE_INDEX,
   U32_BYTES,
   VEC4_BYTES,
   createBuffer,
@@ -33,6 +35,7 @@ export interface OrbWebGpuRuntimeResources {
   computePipeline: GPUComputePipeline;
   context: GPUCanvasContext;
   device: GPUDevice;
+  displayBuffer: GPUBuffer;
   flagsBuffer: GPUBuffer;
   format: GPUTextureFormat;
   frameUniformBuffer: GPUBuffer;
@@ -50,6 +53,7 @@ export interface OrbWebGpuRuntimeResources {
   rectStagingBuffer: GPUBuffer;
   renderBindGroup: GPUBindGroup;
   renderPipeline: GPURenderPipeline;
+  spriteTexture: GPUTexture;
   velocitiesBuffer: GPUBuffer;
 }
 
@@ -85,6 +89,12 @@ export async function createOrbWebGpuResources(
     GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     "orb.flags",
   );
+  const displayBuffer = createBuffer(
+    device,
+    maxParticles * DISPLAY_PARTICLE_BYTES,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    "orb.display-state",
+  );
   const frameUniformBuffer = createBuffer(
     device,
     FRAME_UNIFORM_BYTES,
@@ -100,7 +110,7 @@ export async function createOrbWebGpuResources(
   const pickResultBuffer = createBuffer(
     device,
     U32_BYTES,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     "orb.pick-result",
   );
   const pickStagingBuffer = createBuffer(
@@ -119,7 +129,7 @@ export async function createOrbWebGpuResources(
   const rectResultBuffer = createBuffer(
     device,
     rectResultBytes,
-    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
     "orb.rect-result",
   );
   const rectStagingBuffer = createBuffer(
@@ -128,6 +138,12 @@ export async function createOrbWebGpuResources(
     GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     "orb.rect-staging",
   );
+  const spriteTexture = await createOrbSpriteTexture(device);
+  const spriteSampler = device.createSampler({
+    label: "orb.sprite-sampler",
+    magFilter: "linear",
+    minFilter: "linear",
+  });
 
   device.pushErrorScope("validation");
   const shaderModule = device.createShaderModule({
@@ -152,30 +168,39 @@ export async function createOrbWebGpuResources(
         visibility: GPUShaderStage.COMPUTE,
         buffer: { type: "uniform" },
       },
+      storageEntry(
+        COMPUTE_FLAG_INDEX,
+        GPUShaderStage.COMPUTE,
+        "read-only-storage",
+      ),
+      storageEntry(COMPUTE_DISPLAY_INDEX, GPUShaderStage.COMPUTE, "storage"),
     ],
     label: "orb.compute-bind-group-layout",
   });
   const renderBindGroupLayout = device.createBindGroupLayout({
     entries: [
-      storageEntry(RENDER_POSITION_INDEX, GPUShaderStage.VERTEX, "read-only-storage"),
-      storageEntry(RENDER_ATTRIBUTE_INDEX, GPUShaderStage.VERTEX, "read-only-storage"),
-      storageEntry(RENDER_FLAG_INDEX, GPUShaderStage.VERTEX, "read-only-storage"),
+      storageEntry(RENDER_DISPLAY_INDEX, GPUShaderStage.VERTEX, "read-only-storage"),
       {
         binding: RENDER_FRAME_INDEX,
         visibility: GPUShaderStage.VERTEX,
         buffer: { type: "uniform" },
+      },
+      {
+        binding: RENDER_SPRITE_TEXTURE_INDEX,
+        visibility: GPUShaderStage.FRAGMENT,
+        texture: { sampleType: "float", viewDimension: "2d" },
+      },
+      {
+        binding: RENDER_SPRITE_SAMPLER_INDEX,
+        visibility: GPUShaderStage.FRAGMENT,
+        sampler: { type: "filtering" },
       },
     ],
     label: "orb.render-bind-group-layout",
   });
   const pickBindGroupLayout = device.createBindGroupLayout({
     entries: [
-      storageEntry(PICK_POSITION_INDEX, GPUShaderStage.COMPUTE, "read-only-storage"),
-      {
-        binding: PICK_FRAME_INDEX,
-        visibility: GPUShaderStage.COMPUTE,
-        buffer: { type: "uniform" },
-      },
+      storageEntry(PICK_DISPLAY_INDEX, GPUShaderStage.COMPUTE, "read-only-storage"),
       {
         binding: PICK_PARAM_INDEX,
         visibility: GPUShaderStage.COMPUTE,
@@ -256,24 +281,25 @@ export async function createOrbWebGpuResources(
       { binding: COMPUTE_VELOCITY_INDEX, resource: { buffer: velocitiesBuffer } },
       { binding: COMPUTE_ATTRIBUTE_INDEX, resource: { buffer: attributesBuffer } },
       { binding: COMPUTE_FRAME_INDEX, resource: { buffer: frameUniformBuffer } },
+      { binding: COMPUTE_FLAG_INDEX, resource: { buffer: flagsBuffer } },
+      { binding: COMPUTE_DISPLAY_INDEX, resource: { buffer: displayBuffer } },
     ],
     layout: computeBindGroupLayout,
     label: "orb.compute-bind-group",
   });
   const renderBindGroup = device.createBindGroup({
     entries: [
-      { binding: RENDER_POSITION_INDEX, resource: { buffer: positionsBuffer } },
-      { binding: RENDER_ATTRIBUTE_INDEX, resource: { buffer: attributesBuffer } },
-      { binding: RENDER_FLAG_INDEX, resource: { buffer: flagsBuffer } },
+      { binding: RENDER_DISPLAY_INDEX, resource: { buffer: displayBuffer } },
       { binding: RENDER_FRAME_INDEX, resource: { buffer: frameUniformBuffer } },
+      { binding: RENDER_SPRITE_TEXTURE_INDEX, resource: spriteTexture.createView() },
+      { binding: RENDER_SPRITE_SAMPLER_INDEX, resource: spriteSampler },
     ],
     layout: renderBindGroupLayout,
     label: "orb.render-bind-group",
   });
   const pickBindGroup = device.createBindGroup({
     entries: [
-      { binding: PICK_POSITION_INDEX, resource: { buffer: positionsBuffer } },
-      { binding: PICK_FRAME_INDEX, resource: { buffer: frameUniformBuffer } },
+      { binding: PICK_DISPLAY_INDEX, resource: { buffer: displayBuffer } },
       { binding: PICK_PARAM_INDEX, resource: { buffer: pickParamBuffer } },
       { binding: PICK_RESULT_INDEX, resource: { buffer: pickResultBuffer } },
       { binding: RECT_PARAM_INDEX, resource: { buffer: rectParamBuffer } },
@@ -290,6 +316,7 @@ export async function createOrbWebGpuResources(
     computePipeline,
     context,
     device,
+    displayBuffer,
     flagsBuffer,
     format,
     frameUniformBuffer,
@@ -307,6 +334,31 @@ export async function createOrbWebGpuResources(
     rectStagingBuffer,
     renderBindGroup,
     renderPipeline,
+    spriteTexture,
     velocitiesBuffer,
   };
+}
+
+async function createOrbSpriteTexture(device: GPUDevice): Promise<GPUTexture> {
+  const response = await fetch("/research/maze-particle.png");
+  if (!response.ok) {
+    throw new Error(`Failed to load orb sprite: ${response.status}`);
+  }
+  const bitmap = await createImageBitmap(await response.blob());
+  const texture = device.createTexture({
+    format: "rgba8unorm",
+    label: "orb.sprite-texture",
+    size: { depthOrArrayLayers: 1, height: bitmap.height, width: bitmap.width },
+    usage:
+      GPUTextureUsage.TEXTURE_BINDING |
+      GPUTextureUsage.COPY_DST |
+      GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+  device.queue.copyExternalImageToTexture(
+    { source: bitmap },
+    { texture },
+    { height: bitmap.height, width: bitmap.width },
+  );
+  bitmap.close();
+  return texture;
 }

@@ -6,6 +6,8 @@ import {
   mapOrbPaperVisualAttributes,
 } from "../bake/orb-paper-visual-mapping";
 import { ORB_PARTICLE_CAPACITY } from "../bake/orb-particle-constants";
+import { resolveFieldPointSources } from "../../field/asset/point-source-registry";
+import type { FieldPointSource } from "../../field/asset/point-source-types";
 
 export const ORB_WEBGPU_HOVER_FLAG = 1 << 0;
 export const ORB_WEBGPU_FOCUS_FLAG = 1 << 1;
@@ -16,21 +18,11 @@ export const ORB_WEBGPU_EVIDENCE_FLAG = 1 << 5;
 export const ORB_WEBGPU_SCOPE_DIM_FLAG = 1 << 6;
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-const DEFAULT_RADIUS = 0.0065;
-const clusterPalette = [
-  [0.50, 0.72, 0.90],
-  [0.92, 0.58, 0.54],
-  [0.52, 0.76, 0.63],
-  [0.90, 0.73, 0.42],
-  [0.70, 0.63, 0.87],
-  [0.43, 0.76, 0.82],
-  [0.90, 0.56, 0.72],
-  [0.72, 0.78, 0.44],
-  [0.62, 0.70, 0.90],
-  [0.86, 0.66, 0.50],
-  [0.54, 0.80, 0.74],
-  [0.78, 0.62, 0.76],
-] as const;
+const DEFAULT_RADIUS = 0.0043;
+const BLOB_X_SCALE = 0.64;
+const BLOB_Y_SCALE = 0.61;
+const BLOB_Z_SCALE = 0.56;
+const MOVE_SCALE = 0.0028;
 
 export interface OrbWebGpuParticleArrays {
   count: number;
@@ -44,13 +36,14 @@ export function createOrbWebGpuParticleArrays(
   requestedCount: number | null | undefined,
 ): OrbWebGpuParticleArrays {
   const count = resolveOrbWebGpuParticleCount(requestedCount);
+  const source = getOrbBlobPointSource();
   const positions = new Float32Array(count * 4);
   const velocities = new Float32Array(count * 4);
   const attributes = new Float32Array(count * 4);
   const flags = new Uint32Array(count);
 
   for (let index = 0; index < count; index += 1) {
-    const seed = createSeedOrbParticle(index, count);
+    const seed = createSeedOrbParticle(index, count, source);
     writeVec4(positions, index, seed.position);
     writeVec4(velocities, index, seed.velocity);
     writeVec4(attributes, index, seed.attributes);
@@ -140,7 +133,41 @@ function resolveOrbWebGpuParticleCount(
   return Math.max(0, Math.min(ORB_PARTICLE_CAPACITY, Math.trunc(requestedCount)));
 }
 
-function createSeedOrbParticle(index: number, count: number) {
+function createSeedOrbParticle(
+  index: number,
+  count: number,
+  source: FieldPointSource | null,
+) {
+  if (source && source.pointCount > 0) {
+    const sourceIndex = index % source.pointCount;
+    const position = source.buffers.position;
+    const move = source.buffers.aMove;
+    const speed = source.buffers.aSpeed;
+    const alpha = source.buffers.aAlpha;
+    const size = source.buffers.aClickPack;
+
+    return {
+      position: [
+        (position[sourceIndex * 3] ?? 0) * BLOB_X_SCALE,
+        (position[sourceIndex * 3 + 1] ?? 0) * BLOB_Y_SCALE,
+        (position[sourceIndex * 3 + 2] ?? 0) * BLOB_Z_SCALE,
+        DEFAULT_RADIUS * (size[sourceIndex * 4 + 3] ?? 1),
+      ] as const,
+      velocity: [
+        (move[sourceIndex * 3] ?? 0) * MOVE_SCALE,
+        (move[sourceIndex * 3 + 1] ?? 0) * MOVE_SCALE,
+        (move[sourceIndex * 3 + 2] ?? 0) * MOVE_SCALE,
+        averageSpeed(speed, sourceIndex),
+      ] as const,
+      attributes: [
+        speed[sourceIndex * 3] ?? 0.5,
+        speed[sourceIndex * 3 + 1] ?? 0.5,
+        speed[sourceIndex * 3 + 2] ?? 0.5,
+        alpha[sourceIndex] ?? 0.82,
+      ] as const,
+    };
+  }
+
   const t = count <= 1 ? 0.5 : index / Math.max(1, count - 1);
   const y = 1 - 2 * t;
   const radial = Math.sqrt(Math.max(0, 1 - y * y));
@@ -157,7 +184,7 @@ function createSeedOrbParticle(index: number, count: number) {
       x * drift,
       0,
     ] as const,
-    attributes: [0.62, 0.72, 0.86, 1] as const,
+    attributes: [0.55, 0.65, 0.75, 1] as const,
   };
 }
 
@@ -167,59 +194,28 @@ function mapPaperToOrbWebGpuParticle(
   attrs: PaperAttrs,
   stats: Parameters<typeof mapOrbPaperVisualAttributes>[1],
 ) {
-  const seed = createSeedOrbParticle(index, count);
+  const seed = createSeedOrbParticle(index, count, getOrbBlobPointSource());
   const mapping = mapOrbPaperVisualAttributes(attrs, stats);
-  const graphX = normalizeGraphCoordinate(attrs.x);
-  const graphY = normalizeGraphCoordinate(attrs.y);
-  const hasGraphCoordinates =
-    Number.isFinite(attrs.x) && Number.isFinite(attrs.y);
-  const clusterPhase = ((attrs.clusterId % 37) / 37) * Math.PI * 2;
-  const z = Math.sin(clusterPhase + index * 0.017) * 0.36;
-  const position = hasGraphCoordinates
-    ? [
-        graphX * 0.78,
-        graphY * 0.62,
-        z,
-        DEFAULT_RADIUS * mapping.sizeFactor,
-      ] as const
-    : ([
-        seed.position[0],
-        seed.position[1],
-        seed.position[2],
-        DEFAULT_RADIUS * mapping.sizeFactor,
-      ] as const);
-  const color = colorFromCluster(attrs.clusterId, mapping.referenceWeight);
-
   return {
-    position,
-    velocity: [
-      seed.velocity[0] * mapping.speedFactor,
-      seed.velocity[1] * mapping.speedFactor,
-      seed.velocity[2] * mapping.speedFactor,
-      0,
+    position: [
+      seed.position[0],
+      seed.position[1],
+      seed.position[2],
+      DEFAULT_RADIUS * mapping.sizeFactor,
     ] as const,
-    attributes: [color[0], color[1], color[2], mapping.speedFactor] as const,
+    velocity: [
+      seed.velocity[0],
+      seed.velocity[1],
+      seed.velocity[2],
+      seed.velocity[3] * mapping.speedFactor,
+    ] as const,
+    attributes: [
+      seed.attributes[0],
+      seed.attributes[1],
+      seed.attributes[2],
+      seed.attributes[3],
+    ] as const,
   };
-}
-
-function normalizeGraphCoordinate(value: number | undefined): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.tanh((value ?? 0) / 650);
-}
-
-function colorFromCluster(clusterId: number, weight: number): [number, number, number] {
-  const baseIndex = Math.abs(clusterId) % clusterPalette.length;
-  const nextIndex = (baseIndex + 5) % clusterPalette.length;
-  const base = clusterPalette[baseIndex]!;
-  const next = clusterPalette[nextIndex]!;
-  const mixAmount = ((Math.abs(clusterId) * 0.37) % 1) * 0.28;
-  const lift = 0.08 + weight * 0.16;
-
-  return [
-    mix(mix(base[0], next[0], mixAmount), 1, lift),
-    mix(mix(base[1], next[1], mixAmount), 1, lift),
-    mix(mix(base[2], next[2], mixAmount), 1, lift),
-  ];
 }
 
 function writeVec4(
@@ -243,6 +239,21 @@ function isResidentIndex(index: number | null | undefined, count: number): index
   );
 }
 
-function mix(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
+function averageSpeed(speed: Float32Array, sourceIndex: number): number {
+  const x = speed[sourceIndex * 3] ?? 0.5;
+  const y = speed[sourceIndex * 3 + 1] ?? 0.5;
+  const z = speed[sourceIndex * 3 + 2] ?? 0.5;
+  return (x + y + z) / 3;
+}
+
+function getOrbBlobPointSource(): FieldPointSource | null {
+  try {
+    return resolveFieldPointSources({
+      densityScale: 1,
+      ids: ["blob"],
+      isMobile: false,
+    }).blob;
+  } catch {
+    return null;
+  }
 }

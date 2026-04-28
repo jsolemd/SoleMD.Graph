@@ -21,29 +21,12 @@ export const SOLEMD_BURST_COLORS: Record<string, string> = {
   evidence: "#D409FE",
 };
 
-function hexToRgb(hex: string): readonly [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff] as const;
-}
-
 // Landing blob base hue. Tuned against the pastel `--color-soft-blue`
 // token: saturated enough to carry against the rainbow sweep, cool
 // enough that the blob reads blue (not pink) at the mid-cycle instant
 // when `uColorNoise` lands on the magenta rainbow stop.
-export const LANDING_BASE_BLUE: readonly [number, number, number] =
-  hexToRgb("#2FA4FF");
-
-// 8 rainbow stops, hue-ordered so adjacent stops sit on neighboring wheel
-// positions. The BlobController timeline tweens `uColorNoise` through
-// these in order with a hold per stop, so the field shows one color
-// "wave" at a time rather than all eight simultaneously.
-export const LANDING_RAINBOW_RGB: readonly (readonly [number, number, number])[] = [
-  hexToRgb("#FF7A3C"), // orange
-  hexToRgb("#FFC132"), // gold
-  hexToRgb("#3FD656"), // green
-  hexToRgb("#20D9A8"), // teal
-  hexToRgb("#42A4FE"), // sky blue  (= paper brand)
-  hexToRgb("#8958FF"), // violet    (= entity brand)
-  hexToRgb("#D409FE"), // magenta   (= evidence brand)
-  hexToRgb("#FF3FB7"), // hot pink
-];
+export {
+  LANDING_BASE_BLUE_RGB as LANDING_BASE_BLUE,
+  LANDING_RAINBOW_RGB,
+  LANDING_RAINBOW_STOP_SECONDS,
+} from "../shared/landing-feel-constants";

@@ -1,11 +1,14 @@
 import { gsap } from "gsap";
 import { Color, type ShaderMaterial } from "three";
-import { LANDING_RAINBOW_RGB } from "../scene/accent-palette";
+import {
+  LANDING_RAINBOW_RGB,
+  LANDING_RAINBOW_STOP_SECONDS,
+} from "../shared/landing-feel-constants";
 
 // GSAP rainbow color cycle: tween `uColorNoise` through the palette one
 // stop at a time, `ease: "none"`, `repeat: -1`. ~2s per stop -> full
 // wheel in ~16s. Tunable.
-export const BLOB_COLOR_CYCLE_PER_STOP_SECONDS = 2;
+export const BLOB_COLOR_CYCLE_PER_STOP_SECONDS = LANDING_RAINBOW_STOP_SECONDS;
 
 export interface BlobColorCycleState {
   lastTimeScale: number;
@@ -63,7 +66,7 @@ function startBlobColorCycle(
       r: r / 255,
       g: g / 255,
       b: b / 255,
-      duration: BLOB_COLOR_CYCLE_PER_STOP_SECONDS,
+      duration: LANDING_RAINBOW_STOP_SECONDS,
       ease: "none",
     });
   }

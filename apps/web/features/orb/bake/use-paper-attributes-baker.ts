@@ -116,6 +116,10 @@ interface QuantilePair {
 interface StatsRow {
   refQuantiles: QuantilePair;
   entityQuantiles: QuantilePair;
+  xMin: number | null;
+  xMax: number | null;
+  yMin: number | null;
+  yMax: number | null;
 }
 
 function toQuantilePair(value: unknown): [number, number] {
@@ -142,7 +146,16 @@ function readStatsFromArrowRow(table: {
   }
   const [refLo, refHi] = toQuantilePair(row.refQuantiles);
   const [entityLo, entityHi] = toQuantilePair(row.entityQuantiles);
-  return { refLo, refHi, entityLo, entityHi };
+  return {
+    refLo,
+    refHi,
+    entityLo,
+    entityHi,
+    xMin: Number(row.xMin ?? 0),
+    xMax: Number(row.xMax ?? 0),
+    yMin: Number(row.yMin ?? 0),
+    yMax: Number(row.yMax ?? 0),
+  };
 }
 
 export function usePaperAttributesBaker(
@@ -184,7 +197,11 @@ export function usePaperAttributesBaker(
         const statsResult = await connection.query(
           `SELECT
              quantile_cont(LN(1 + paperReferenceCount), [0.05, 0.98]) AS refQuantiles,
-             quantile_cont(LN(1 + paperEntityCount),    [0.05, 0.98]) AS entityQuantiles
+             quantile_cont(LN(1 + paperEntityCount),    [0.05, 0.98]) AS entityQuantiles,
+             MIN(x) AS xMin,
+             MAX(x) AS xMax,
+             MIN(y) AS yMin,
+             MAX(y) AS yMax
            FROM base_points_web
            WHERE paperId IS NOT NULL`,
         );
