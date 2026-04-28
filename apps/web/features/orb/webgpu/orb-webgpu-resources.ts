@@ -8,6 +8,7 @@ import {
   COMPUTE_FLAG_INDEX,
   COMPUTE_POSITION_INDEX,
   COMPUTE_VELOCITY_INDEX,
+  COMPUTE_WEIGHT_INDEX,
   DISPLAY_PARTICLE_BYTES,
   FRAME_UNIFORM_BYTES,
   PICK_DISPLAY_INDEX,
@@ -55,6 +56,7 @@ export interface OrbWebGpuRuntimeResources {
   renderPipeline: GPURenderPipeline;
   spriteTexture: GPUTexture;
   velocitiesBuffer: GPUBuffer;
+  weightsBuffer: GPUBuffer;
 }
 
 export async function createOrbWebGpuResources(
@@ -88,6 +90,12 @@ export async function createOrbWebGpuResources(
     maxParticles * U32_BYTES,
     GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     "orb.flags",
+  );
+  const weightsBuffer = createBuffer(
+    device,
+    maxParticles * VEC4_BYTES,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    "orb.interaction-weights",
   );
   const displayBuffer = createBuffer(
     device,
@@ -174,6 +182,11 @@ export async function createOrbWebGpuResources(
         "read-only-storage",
       ),
       storageEntry(COMPUTE_DISPLAY_INDEX, GPUShaderStage.COMPUTE, "storage"),
+      storageEntry(
+        COMPUTE_WEIGHT_INDEX,
+        GPUShaderStage.COMPUTE,
+        "read-only-storage",
+      ),
     ],
     label: "orb.compute-bind-group-layout",
   });
@@ -283,6 +296,7 @@ export async function createOrbWebGpuResources(
       { binding: COMPUTE_FRAME_INDEX, resource: { buffer: frameUniformBuffer } },
       { binding: COMPUTE_FLAG_INDEX, resource: { buffer: flagsBuffer } },
       { binding: COMPUTE_DISPLAY_INDEX, resource: { buffer: displayBuffer } },
+      { binding: COMPUTE_WEIGHT_INDEX, resource: { buffer: weightsBuffer } },
     ],
     layout: computeBindGroupLayout,
     label: "orb.compute-bind-group",
@@ -336,6 +350,7 @@ export async function createOrbWebGpuResources(
     renderPipeline,
     spriteTexture,
     velocitiesBuffer,
+    weightsBuffer,
   };
 }
 

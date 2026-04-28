@@ -40,6 +40,7 @@ import {
   OrbWebGpuCanvas,
   type OrbWebGpuCanvasStatus,
 } from "../webgpu/OrbWebGpuCanvas";
+import { useOrbWebGpuRuntimeStore } from "../webgpu/orb-webgpu-runtime-store";
 
 // SSR-disabled: GraphPanelsLayer transitively pulls @/features/graph/cosmograph
 // (DetailPanel/WikiPanel/InfoPanel/PromptBox), whose top-level
@@ -273,12 +274,16 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
     (clientX: number, clientY: number) => {
       setHoverCursor({ x: clientX, y: clientY });
       handleHoverMove(clientX, clientY);
+      useOrbWebGpuRuntimeStore
+        .getState()
+        .handle?.setParallaxMouse(clientX, clientY);
     },
     [handleHoverMove],
   );
   const handleOrbHoverClear = useCallback(() => {
     setHoverCursor(null);
     clearHover();
+    useOrbWebGpuRuntimeStore.getState().handle?.clearParallaxMouse();
   }, [clearHover]);
 
   useEffect(() => {
@@ -302,6 +307,9 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
       clientY: number,
       chords: GraphSelectionChordState,
     ) => {
+      useOrbWebGpuRuntimeStore
+        .getState()
+        .handle?.applyClickImpulse(clientX, clientY);
       const handle = useOrbPickerStore.getState().handle;
       if (!handle) {
         setLastPick(null);

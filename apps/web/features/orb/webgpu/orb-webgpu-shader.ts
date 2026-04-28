@@ -5,6 +5,7 @@ import {
   COMPUTE_FLAG_INDEX,
   COMPUTE_POSITION_INDEX,
   COMPUTE_VELOCITY_INDEX,
+  COMPUTE_WEIGHT_INDEX,
   PICK_DISPLAY_INDEX,
   PICK_PARAM_INDEX,
   PICK_RESULT_INDEX,
@@ -17,12 +18,9 @@ import {
 } from "./orb-webgpu-layout";
 import {
   ORB_WEBGPU_EVIDENCE_FLAG,
-  ORB_WEBGPU_FOCUS_FLAG,
-  ORB_WEBGPU_HOVER_FLAG,
   ORB_WEBGPU_NEIGHBOR_FLAG,
   ORB_WEBGPU_SCOPE_DIM_FLAG,
   ORB_WEBGPU_SCOPE_FLAG,
-  ORB_WEBGPU_SELECTION_FLAG,
 } from "./orb-webgpu-particles";
 import {
   LANDING_RAINBOW_PERIOD_SECONDS,
@@ -44,6 +42,9 @@ struct FrameUniforms {
   colorTime: f32,
   baseColor: vec4f,
   fieldParams: vec4f,
+  clickParams: vec4f,
+  viewMouse: vec2f,
+  _pad1: vec2f,
 };
 
 struct PickParams {
@@ -81,6 +82,7 @@ struct DisplayParticle {
 @group(0) @binding(${COMPUTE_VELOCITY_INDEX}) var<storage, read> computeVelocities: array<vec4f>;
 @group(0) @binding(${COMPUTE_ATTRIBUTE_INDEX}) var<storage, read> computeAttributes: array<vec4f>;
 @group(0) @binding(${COMPUTE_FRAME_INDEX}) var<uniform> computeFrame: FrameUniforms;
+@group(0) @binding(${COMPUTE_WEIGHT_INDEX}) var<storage, read> computeWeights: array<vec4f>;
 @group(0) @binding(${COMPUTE_FLAG_INDEX}) var<storage, read> computeFlags: array<u32>;
 @group(0) @binding(${COMPUTE_DISPLAY_INDEX}) var<storage, read_write> computeDisplay: array<DisplayParticle>;
 @group(0) @binding(${RENDER_DISPLAY_INDEX}) var<storage, read> renderDisplay: array<DisplayParticle>;
@@ -106,12 +108,16 @@ fn rotateY(p: vec4f, angle: f32) -> vec4f {
   return vec4f(p.x * c + p.z * s, p.y, -p.x * s + p.z * c, p.w);
 }
 
-fn projectedCenter(p: vec4f, aspect: f32, rotation: f32) -> vec3f {
+fn projectedCenter(p: vec4f, aspect: f32, rotation: f32, viewMouse: vec2f) -> vec3f {
   let rotated = rotateY(p, rotation);
   let depthScale = clamp(1.0 + rotated.z * 0.22, 0.76, 1.28);
+  // Maze-equivalent parallax: rotated.z modulates the offset so closer
+  // particles parallax more, mirroring the mouseWrapper.rotation feel.
+  let parallaxX = viewMouse.x * 0.045 * (0.5 + rotated.z * 0.5);
+  let parallaxY = viewMouse.y * 0.028 * (0.5 + rotated.z * 0.5);
   return vec3f(
-    rotated.x * depthScale / max(aspect, 0.1),
-    rotated.y * depthScale,
+    rotated.x * depthScale / max(aspect, 0.1) + parallaxX,
+    rotated.y * depthScale + parallaxY,
     rotated.z,
   );
 }
@@ -325,7 +331,15 @@ fn landingNoiseColor(colorTime: f32) -> vec3f {
   return mix(LANDING_PALETTE[index], LANDING_PALETTE[nextIndex], fract(segment));
 }
 
-fn visualRadius(baseRadius: f32, z: f32, flag: u32, colorTime: f32) -> f32 {
+fn visualRadius(
+  baseRadius: f32,
+  z: f32,
+  flag: u32,
+  colorTime: f32,
+  hoverW: f32,
+  selectW: f32,
+  focusW: f32,
+) -> f32 {
   let pulse = 0.5 + 0.5 * sin(colorTime * 4.2);
   var radius = baseRadius * clamp(1.0 + z * 0.10, 0.88, 1.10);
   if ((flag & ${ORB_WEBGPU_SCOPE_DIM_FLAG}u) != 0u) {
@@ -334,15 +348,9 @@ fn visualRadius(baseRadius: f32, z: f32, flag: u32, colorTime: f32) -> f32 {
   if ((flag & ${ORB_WEBGPU_EVIDENCE_FLAG}u) != 0u) {
     radius = radius * (1.20 + pulse * 0.16);
   }
-  if ((flag & ${ORB_WEBGPU_SELECTION_FLAG}u) != 0u) {
-    radius = radius * 1.46;
-  }
-  if ((flag & ${ORB_WEBGPU_HOVER_FLAG}u) != 0u) {
-    radius = radius * 1.70;
-  }
-  if ((flag & ${ORB_WEBGPU_FOCUS_FLAG}u) != 0u) {
-    radius = radius * 2.15;
-  }
+  radius = radius * mix(1.0, 1.46, selectW);
+  radius = radius * mix(1.0, 1.70, hoverW);
+  radius = radius * mix(1.0, 2.15, focusW);
   return radius;
 }
 
@@ -358,6 +366,10 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let attr = computeAttributes[i];
   let speed = attr.rgb;
   let flag = computeFlags[i];
+  let weights = computeWeights[i];
+  let hoverW = clamp(weights.x, 0.0, 1.0);
+  let selectW = clamp(weights.y, 0.0, 1.0);
+  let focusW = clamp(weights.z, 0.0, 1.0);
   let amplitude = computeFrame.fieldParams.x;
   let depth = computeFrame.fieldParams.y;
   let frequency = computeFrame.fieldParams.z;
@@ -371,16 +383,49 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   );
   let liveDrift = landingMotionNoise(i, motion, colorTime);
   let normal = normalize(p.xyz + vec3f(0.0001, 0.0001, 0.0001));
-  let displaced = vec4f(
+  var displaced = vec4f(
     p.xyz * (1.0 + amplitude * fieldNoise + liveDrift * 0.012) +
       normal * liveDrift * 0.010 +
       motion.xyz * speed * depth * liveDrift,
     p.w,
   );
+
+  // Click impulse: a brief radial outward push for particles whose
+  // post-projection NDC position lies within clickParams.w of the click
+  // point. clickParams.z is the time-decayed strength (0 = no pulse).
+  let clickStrength = computeFrame.clickParams.z;
+  let clickRadius = computeFrame.clickParams.w;
+  if (clickStrength > 0.001 && clickRadius > 0.0) {
+    let preProjected = projectedCenter(
+      displaced,
+      computeFrame.aspect,
+      computeFrame.rotation,
+      computeFrame.viewMouse,
+    );
+    let toParticle = preProjected.xy - computeFrame.clickParams.xy;
+    let dist = length(toParticle);
+    if (dist < clickRadius) {
+      let falloff = 1.0 - smoothstep(0.0, clickRadius, dist);
+      let pushAmount = falloff * clickStrength;
+      let pushDir = select(
+        vec2f(0.0, 0.0),
+        toParticle / max(dist, 0.0001),
+        dist > 0.0001,
+      );
+      displaced = vec4f(
+        displaced.x + pushDir.x * pushAmount * 0.06,
+        displaced.y + pushDir.y * pushAmount * 0.06,
+        displaced.z,
+        displaced.w,
+      );
+    }
+  }
+
   let projected = projectedCenter(
     displaced,
     computeFrame.aspect,
     computeFrame.rotation,
+    computeFrame.viewMouse,
   );
   let rotatedNormal = normalize(rotateY(vec4f(normal, 1.0), computeFrame.rotation).xyz);
   let rim = pow(1.0 - clamp(dot(rotatedNormal, vec3f(0.0, 0.0, 1.0)), 0.0, 1.0), 2.0);
@@ -400,6 +445,9 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
     projected.z,
     flag,
     computeFrame.colorTime,
+    hoverW,
+    selectW,
+    focusW,
   );
   radius = radius * (1.0 + liveDrift * 0.020);
   var color = burstColor;
@@ -431,24 +479,23 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
     halo = max(halo, 0.62 + pulse * 0.26);
     ring = max(ring, 0.38 + pulse * 0.22);
   }
-  if ((flag & ${ORB_WEBGPU_SELECTION_FLAG}u) != 0u) {
-    color = mix(color, vec3f(1.0, 0.78, 0.46), 0.54);
-    alpha = max(alpha, 0.90);
-    halo = max(halo, 0.54);
-    ring = max(ring, 0.62);
-  }
-  if ((flag & ${ORB_WEBGPU_HOVER_FLAG}u) != 0u) {
-    color = mix(color, vec3f(0.78, 0.95, 1.0), 0.62);
-    alpha = max(alpha, 0.96);
-    halo = max(halo, 0.76);
-    ring = max(ring, 0.80);
-  }
-  if ((flag & ${ORB_WEBGPU_FOCUS_FLAG}u) != 0u) {
-    color = vec3f(1.0, 0.92, 0.66);
-    alpha = 1.0;
-    halo = 1.0;
-    ring = 1.0;
-  }
+  // Smoothly-fading interaction states. Replaces the prior flag-driven
+  // if/max snaps so hover/select/focus visually ease in and out via the
+  // CPU-decayed weights buffer.
+  color = mix(color, vec3f(1.0, 0.78, 0.46), 0.54 * selectW);
+  alpha = max(alpha, 0.90 * selectW);
+  halo = max(halo, 0.54 * selectW);
+  ring = max(ring, 0.62 * selectW);
+
+  color = mix(color, vec3f(0.78, 0.95, 1.0), 0.62 * hoverW);
+  alpha = max(alpha, 0.96 * hoverW);
+  halo = max(halo, 0.76 * hoverW);
+  ring = max(ring, 0.80 * hoverW);
+
+  color = mix(color, vec3f(1.0, 0.92, 0.66), focusW);
+  alpha = mix(alpha, 1.0, focusW);
+  halo = mix(halo, 1.0, focusW);
+  ring = mix(ring, 1.0, focusW);
 
   computeDisplay[i] = DisplayParticle(
     vec4f(projected.xy, projected.z, radius),
