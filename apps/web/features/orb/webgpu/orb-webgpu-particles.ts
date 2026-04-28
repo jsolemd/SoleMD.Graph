@@ -22,7 +22,7 @@ const DEFAULT_RADIUS = 0.0018;
 const BLOB_X_SCALE = 0.64;
 const BLOB_Y_SCALE = 0.61;
 const BLOB_Z_SCALE = 0.56;
-const MOVE_SCALE = 0.0028;
+const MOVE_SCALE = 0.07;
 
 export interface OrbWebGpuParticleArrays {
   count: number;

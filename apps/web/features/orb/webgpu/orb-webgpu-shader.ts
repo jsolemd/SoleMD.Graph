@@ -95,7 +95,7 @@ struct DisplayParticle {
 
 const LANDING_RAINBOW_STOP_SECONDS = ${toWgslFloat(LANDING_RAINBOW_STOP_SECONDS)};
 const LANDING_RAINBOW_PERIOD_SECONDS = ${toWgslFloat(LANDING_RAINBOW_PERIOD_SECONDS)};
-const ORB_NOISE_DOMAIN_SCALE = 4.5;
+const ORB_NOISE_DOMAIN_SCALE = 1.0;
 const LANDING_PALETTE = array<vec3f, 8>(
     ${LANDING_PALETTE_WGSL}
 );
@@ -299,7 +299,7 @@ fn landingFieldNoise(
 ) -> f32 {
   _ = motion;
   _ = instanceIndex;
-  return landingFbm(p, colorTime * 0.25);
+  return landingFbm(p, colorTime);
 }
 
 fn landingMotionNoise(
@@ -308,7 +308,7 @@ fn landingMotionNoise(
   colorTime: f32,
 ) -> f32 {
   let speed = max(motion.w, 0.001);
-  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * 0.25 * speed));
+  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * speed));
 }
 
 fn landingBaseColor() -> vec3f {
@@ -374,7 +374,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let displaced = vec4f(
     p.xyz * (1.0 + amplitude * fieldNoise + liveDrift * 0.012) +
       normal * liveDrift * 0.010 +
-      motion.xyz * speed * depth * 6.6 * (fieldNoise * 0.92 + liveDrift * 0.52),
+      motion.xyz * speed * depth * liveDrift,
     p.w,
   );
   let projected = projectedCenter(
