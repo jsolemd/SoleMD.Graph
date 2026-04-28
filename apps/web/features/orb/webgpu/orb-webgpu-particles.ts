@@ -1,6 +1,5 @@
 import type { PaperChunk } from "../stores/geometry-mutation-store";
 import type { OrbFocusVisualState } from "../stores/focus-visual-store";
-import type { PaperAttrs } from "../bake/use-paper-attributes-baker";
 import {
   deriveLocalPaperCorpusStats,
   mapOrbPaperVisualAttributes,
@@ -19,9 +18,13 @@ export const ORB_WEBGPU_SCOPE_DIM_FLAG = 1 << 6;
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const DEFAULT_RADIUS = 0.0018;
-const BLOB_X_SCALE = 0.64;
-const BLOB_Y_SCALE = 0.61;
-const BLOB_Z_SCALE = 0.56;
+// Single radius on every axis so the body is an actual sphere. The
+// prior Maze-blob triaxial scales (0.64 / 0.61 / 0.56) read as oblong
+// once free 3D rotation surfaced the Z-axis squash.
+const BLOB_RADIUS = 0.62;
+const BLOB_X_SCALE = BLOB_RADIUS;
+const BLOB_Y_SCALE = BLOB_RADIUS;
+const BLOB_Z_SCALE = BLOB_RADIUS;
 const MOVE_SCALE = 0.0028;
 
 export interface OrbWebGpuParticleArrays {
@@ -32,7 +35,23 @@ export interface OrbWebGpuParticleArrays {
   flags: Uint32Array;
 }
 
-export function createOrbWebGpuParticleArrays(
+export interface OrbWebGpuChunkRange {
+  /** First particle index touched by the chunk (inclusive). */
+  fromIndex: number;
+  /** Last particle index touched by the chunk (inclusive). */
+  toIndex: number;
+}
+
+/**
+ * Allocate and seed the orb's typed arrays once. The seed is the
+ * paper-agnostic baseline drawn straight from the field blob source —
+ * paper-bound chunks only adjust each particle's size (position.w) and
+ * speed (velocity.w) on top of these values. Splitting the seed step
+ * from chunk application is what lets us apply chunk deltas in place,
+ * avoiding the O(N²) full-rebuild that re-running this loop on every
+ * chunk produced.
+ */
+export function seedOrbWebGpuParticleArrays(
   requestedCount: number | null | undefined,
 ): OrbWebGpuParticleArrays {
   const count = resolveOrbWebGpuParticleCount(requestedCount);
@@ -52,6 +71,39 @@ export function createOrbWebGpuParticleArrays(
   return { count, positions, velocities, attributes, flags };
 }
 
+/**
+ * Apply one streamed chunk in place. Idempotent: re-applying the same
+ * chunk yields the same arrays because base radius/speed are recomputed
+ * from the (cached) blob source rather than read out of the live arrays.
+ *
+ * Returns the contiguous index range the chunk actually wrote to so the
+ * caller can do a partial GPU upload covering just that slice. Returns
+ * null if the chunk wrote nothing.
+ */
+export function applyOrbWebGpuChunkInPlace(
+  arrays: OrbWebGpuParticleArrays,
+  chunk: PaperChunk,
+): OrbWebGpuChunkRange | null {
+  const stats =
+    chunk.stats ?? deriveLocalPaperCorpusStats(chunk.attributes.values());
+  const source = getOrbBlobPointSource();
+  let minIndex = Number.POSITIVE_INFINITY;
+  let maxIndex = Number.NEGATIVE_INFINITY;
+
+  for (const [index, attrs] of chunk.attributes) {
+    if (!isResidentIndex(index, arrays.count)) continue;
+    const mapping = mapOrbPaperVisualAttributes(attrs, stats);
+    arrays.positions[index * 4 + 3] = DEFAULT_RADIUS * mapping.sizeFactor;
+    arrays.velocities[index * 4 + 3] =
+      baseSeedSpeedForIndex(index, source) * mapping.speedFactor;
+    if (index < minIndex) minIndex = index;
+    if (index > maxIndex) maxIndex = index;
+  }
+
+  if (minIndex === Number.POSITIVE_INFINITY) return null;
+  return { fromIndex: minIndex, toIndex: maxIndex };
+}
+
 export function buildOrbWebGpuParticleArrays(args: {
   requestedCount: number | null | undefined;
   chunks: readonly PaperChunk[];
@@ -65,20 +117,10 @@ export function buildOrbWebGpuParticleArrays(args: {
     | "evidenceIndices"
   >;
 }): OrbWebGpuParticleArrays {
-  const arrays = createOrbWebGpuParticleArrays(args.requestedCount);
-
+  const arrays = seedOrbWebGpuParticleArrays(args.requestedCount);
   for (const chunk of args.chunks) {
-    const stats =
-      chunk.stats ?? deriveLocalPaperCorpusStats(chunk.attributes.values());
-    for (const [index, attrs] of chunk.attributes) {
-      if (!isResidentIndex(index, arrays.count)) continue;
-      const particle = mapPaperToOrbWebGpuParticle(index, arrays.count, attrs, stats);
-      writeVec4(arrays.positions, index, particle.position);
-      writeVec4(arrays.velocities, index, particle.velocity);
-      writeVec4(arrays.attributes, index, particle.attributes);
-    }
+    applyOrbWebGpuChunkInPlace(arrays, chunk);
   }
-
   arrays.flags.set(buildOrbWebGpuFlagArray(arrays.count, args.focus));
   return arrays;
 }
@@ -124,7 +166,7 @@ export function buildOrbWebGpuFlagArray(
   return flags;
 }
 
-function resolveOrbWebGpuParticleCount(
+export function resolveOrbWebGpuParticleCount(
   requestedCount: number | null | undefined,
 ): number {
   if (!Number.isFinite(requestedCount) || requestedCount == null) {
@@ -188,34 +230,14 @@ function createSeedOrbParticle(
   };
 }
 
-function mapPaperToOrbWebGpuParticle(
+function baseSeedSpeedForIndex(
   index: number,
-  count: number,
-  attrs: PaperAttrs,
-  stats: Parameters<typeof mapOrbPaperVisualAttributes>[1],
-) {
-  const seed = createSeedOrbParticle(index, count, getOrbBlobPointSource());
-  const mapping = mapOrbPaperVisualAttributes(attrs, stats);
-  return {
-    position: [
-      seed.position[0],
-      seed.position[1],
-      seed.position[2],
-      DEFAULT_RADIUS * mapping.sizeFactor,
-    ] as const,
-    velocity: [
-      seed.velocity[0],
-      seed.velocity[1],
-      seed.velocity[2],
-      seed.velocity[3] * mapping.speedFactor,
-    ] as const,
-    attributes: [
-      seed.attributes[0],
-      seed.attributes[1],
-      seed.attributes[2],
-      seed.attributes[3],
-    ] as const,
-  };
+  source: FieldPointSource | null,
+): number {
+  if (source && source.pointCount > 0) {
+    return averageSpeed(source.buffers.aSpeed, index % source.pointCount);
+  }
+  return 0;
 }
 
 function writeVec4(
@@ -246,14 +268,24 @@ function averageSpeed(speed: Float32Array, sourceIndex: number): number {
   return (x + y + z) / 3;
 }
 
+// Module-level cache. The underlying registry already memoizes by
+// (env, density, id), but resolving — even on a hit — does map lookups,
+// catch-block setup, and object construction. Holding the result here
+// turns the chunk hot path into a single dereference, which matters
+// when 16k particles each used to call into the registry.
+let cachedOrbBlobPointSource: FieldPointSource | null | undefined;
+
 function getOrbBlobPointSource(): FieldPointSource | null {
+  if (cachedOrbBlobPointSource !== undefined) return cachedOrbBlobPointSource;
   try {
-    return resolveFieldPointSources({
-      densityScale: 1,
-      ids: ["blob"],
-      isMobile: false,
-    }).blob;
+    cachedOrbBlobPointSource =
+      resolveFieldPointSources({
+        densityScale: 1,
+        ids: ["blob"],
+        isMobile: false,
+      }).blob ?? null;
   } catch {
-    return null;
+    cachedOrbBlobPointSource = null;
   }
+  return cachedOrbBlobPointSource;
 }

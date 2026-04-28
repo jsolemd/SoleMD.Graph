@@ -11,8 +11,11 @@ import {
   type OrbSnapshotHandle,
 } from "../stores/snapshot-store";
 import {
+  applyOrbWebGpuChunkInPlace,
   buildOrbWebGpuFlagArray,
-  buildOrbWebGpuParticleArrays,
+  resolveOrbWebGpuParticleCount,
+  seedOrbWebGpuParticleArrays,
+  type OrbWebGpuParticleArrays,
 } from "./orb-webgpu-particles";
 import {
   OrbWebGpuUnavailableError,
@@ -28,15 +31,6 @@ import {
   useOrbWebGpuRuntimeStore,
   type OrbWebGpuControlHandle,
 } from "./orb-webgpu-runtime-store";
-
-const EMPTY_ORB_FOCUS = {
-  evidenceIndices: [] as number[],
-  focusIndex: null,
-  hoverIndex: null,
-  neighborIndices: [] as number[],
-  scopeIndices: [] as number[],
-  selectionIndices: [] as number[],
-};
 
 export type OrbWebGpuCanvasStatus =
   | { kind: "initializing" }
@@ -67,7 +61,6 @@ export function OrbWebGpuCanvas({
   const rotationSpeedMultiplier = useShellStore(
     (s) => s.rotationSpeedMultiplier,
   );
-  const chunks = useOrbGeometryMutationStore((s) => s.chunks);
   const focusIndex = useOrbFocusVisualStore((s) => s.focusIndex);
   const hoverIndex = useOrbFocusVisualStore((s) => s.hoverIndex);
   const evidenceIndices = useOrbFocusVisualStore((s) => s.evidenceIndices);
@@ -94,19 +87,18 @@ export function OrbWebGpuCanvas({
     ],
   );
 
-  const particleArrays = useMemo(
-    () =>
-      buildOrbWebGpuParticleArrays({
-        chunks,
-        focus: EMPTY_ORB_FOCUS,
-        requestedCount: particleCount,
-      }),
-    [chunks, particleCount],
-  );
+  const particleArraysRef = useRef<OrbWebGpuParticleArrays | null>(null);
+  const [particleArraysCount, setParticleArraysCount] = useState(0);
+  // The seed/upload effect is keyed on the resolved count rather than
+  // the raw `particleCount` prop so the null → 16384 transition that
+  // happens when the paper baker reports its row count does NOT tear
+  // down and rebuild the typed arrays. Both null and the typical
+  // resolved value clamp to ORB_PARTICLE_CAPACITY.
+  const resolvedParticleCount = resolveOrbWebGpuParticleCount(particleCount);
 
   const flagArray = useMemo(
-    () => buildOrbWebGpuFlagArray(particleArrays.count, focus),
-    [focus, particleArrays.count],
+    () => buildOrbWebGpuFlagArray(particleArraysCount, focus),
+    [focus, particleArraysCount],
   );
 
   const motionSettings = useMemo(
@@ -266,8 +258,47 @@ export function OrbWebGpuCanvas({
   }, []);
 
   useEffect(() => {
-    runtime?.uploadParticles(particleArrays);
-  }, [particleArrays, runtime]);
+    if (!runtime) {
+      particleArraysRef.current = null;
+      setParticleArraysCount(0);
+      return;
+    }
+
+    // Seed the typed arrays once. Any chunks already in the store
+    // (e.g. on remount after a route swap that kept the global Zustand
+    // state) are folded into this one full upload — every later chunk
+    // is a partial GPU write of just its slice.
+    const arrays = seedOrbWebGpuParticleArrays(resolvedParticleCount);
+    particleArraysRef.current = arrays;
+    const initialChunks = useOrbGeometryMutationStore.getState().chunks;
+    for (const chunk of initialChunks) {
+      applyOrbWebGpuChunkInPlace(arrays, chunk);
+    }
+    runtime.uploadParticles(arrays);
+    setParticleArraysCount(arrays.count);
+    let processedChunks = initialChunks.length;
+
+    // Subscribe directly to the mutation store rather than reading
+    // chunks via a React selector — chunk arrivals stream every ~2k
+    // particles, so the React-render path would otherwise re-render
+    // the whole canvas component (and re-build a 16k×4 typed array)
+    // per stream batch.
+    const unsubscribe = useOrbGeometryMutationStore.subscribe((state) => {
+      const arraysNow = particleArraysRef.current;
+      if (!arraysNow) return;
+      while (processedChunks < state.chunks.length) {
+        const chunk = state.chunks[processedChunks]!;
+        processedChunks += 1;
+        const range = applyOrbWebGpuChunkInPlace(arraysNow, chunk);
+        if (range) runtime.uploadParticleRange(arraysNow, range);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      particleArraysRef.current = null;
+    };
+  }, [runtime, resolvedParticleCount]);
 
   useEffect(() => {
     if (!runtime) return;

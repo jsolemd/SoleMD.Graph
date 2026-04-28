@@ -12,7 +12,10 @@ import {
   LANDING_BASE_BLUE_RGB,
   rgb255ToUnit,
 } from "../../field/shared/landing-feel-constants";
-import type { OrbWebGpuParticleArrays } from "./orb-webgpu-particles";
+import type {
+  OrbWebGpuChunkRange,
+  OrbWebGpuParticleArrays,
+} from "./orb-webgpu-particles";
 import type { OrbWebGpuDeviceContext } from "./orb-webgpu-gate";
 import {
   FRAME_UNIFORM_BYTES,
@@ -39,6 +42,10 @@ const ORB_BASE_COLOR = rgb255ToUnit(LANDING_BASE_BLUE_RGB);
 
 export interface OrbWebGpuRuntime {
   uploadParticles(arrays: OrbWebGpuParticleArrays): void;
+  uploadParticleRange(
+    arrays: OrbWebGpuParticleArrays,
+    range: OrbWebGpuChunkRange,
+  ): void;
   uploadFlags(flags: Uint32Array): void;
   setMotionSettings(settings: OrbWebGpuMotionSettings): void;
   pickAsync(clientX: number, clientY: number): Promise<number>;
@@ -190,6 +197,45 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       arrays.attributes.subarray(0, count * 4),
     );
     this.uploadFlags(arrays.flags.subarray(0, count));
+  }
+
+  uploadParticleRange(
+    arrays: OrbWebGpuParticleArrays,
+    range: OrbWebGpuChunkRange,
+  ): void {
+    if (this.disposed || this.particleCount <= 0) return;
+    const lo = Math.max(0, range.fromIndex);
+    const hi = Math.min(this.particleCount - 1, range.toIndex);
+    if (hi < lo) return;
+    // writeBuffer copies a Float32 slice [lo*4, (hi+1)*4) into the
+    // GPU buffer at byte offset lo*16, leaving every other particle
+    // untouched. Per WebGPU spec, the dataOffset/size args are in
+    // typed-array elements (Float32 = 4 bytes), so element math here
+    // and byte math on bufferOffset stay in sync.
+    const startElement = lo * 4;
+    const elementCount = (hi - lo + 1) * 4;
+    const byteOffset = startElement * Float32Array.BYTES_PER_ELEMENT;
+    this.device.queue.writeBuffer(
+      this.positionsBuffer,
+      byteOffset,
+      arrays.positions,
+      startElement,
+      elementCount,
+    );
+    this.device.queue.writeBuffer(
+      this.velocitiesBuffer,
+      byteOffset,
+      arrays.velocities,
+      startElement,
+      elementCount,
+    );
+    this.device.queue.writeBuffer(
+      this.attributesBuffer,
+      byteOffset,
+      arrays.attributes,
+      startElement,
+      elementCount,
+    );
   }
 
   uploadFlags(flags: Uint32Array): void {
