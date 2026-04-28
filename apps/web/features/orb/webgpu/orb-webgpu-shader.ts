@@ -299,7 +299,7 @@ fn landingFieldNoise(
 ) -> f32 {
   _ = motion;
   _ = instanceIndex;
-  return landingFbm(p, colorTime);
+  return landingFbm(p, colorTime * 0.25);
 }
 
 fn landingMotionNoise(
@@ -308,7 +308,7 @@ fn landingMotionNoise(
   colorTime: f32,
 ) -> f32 {
   let speed = max(motion.w, 0.001);
-  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * speed));
+  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * 0.25 * speed));
 }
 
 fn landingBaseColor() -> vec3f {
