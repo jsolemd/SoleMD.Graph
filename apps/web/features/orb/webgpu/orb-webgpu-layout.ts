@@ -20,15 +20,7 @@ export const RENDER_SPRITE_SAMPLER_INDEX = 21;
 export const U32_BYTES = 4;
 export const VEC4_BYTES = 16;
 export const DISPLAY_PARTICLE_BYTES = VEC4_BYTES * 3;
-// FrameUniforms layout (96 bytes, 16-byte aligned):
-//  0  time, dt, count, _pad0
-// 16  aspect, radiusScale, rotation, colorTime
-// 32  baseColor (vec4f)
-// 48  fieldParams (vec4f)
-// 64  clickParams (vec4f) — xy = NDC click, z = strength, w = radius
-// 80  viewMouse (vec2f) + _pad (vec2f)
-export const FRAME_UNIFORM_BYTES = 96;
-export const INTERACTION_WEIGHT_VEC4_COUNT = 1;
+export const FRAME_UNIFORM_BYTES = 64;
 export const PICK_PARAM_BYTES = 16;
 export const RECT_PARAM_BYTES = 32;
 

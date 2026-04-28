@@ -202,11 +202,6 @@ export function OrbWebGpuCanvas({
         controlHandle = {
           applyTwist: (deltaRadians) =>
             runtimeRef.current?.applyTwist(deltaRadians),
-          applyClickImpulse: (clientX, clientY) =>
-            runtimeRef.current?.applyClickImpulse(clientX, clientY),
-          setParallaxMouse: (clientX, clientY) =>
-            runtimeRef.current?.setParallaxMouse(clientX, clientY),
-          clearParallaxMouse: () => runtimeRef.current?.clearParallaxMouse(),
         };
         snapshotHandle = {
           captureSnapshot: () => {

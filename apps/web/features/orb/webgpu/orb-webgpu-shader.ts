@@ -42,9 +42,6 @@ struct FrameUniforms {
   colorTime: f32,
   baseColor: vec4f,
   fieldParams: vec4f,
-  clickParams: vec4f,
-  viewMouse: vec2f,
-  _pad1: vec2f,
 };
 
 struct PickParams {
@@ -108,16 +105,12 @@ fn rotateY(p: vec4f, angle: f32) -> vec4f {
   return vec4f(p.x * c + p.z * s, p.y, -p.x * s + p.z * c, p.w);
 }
 
-fn projectedCenter(p: vec4f, aspect: f32, rotation: f32, viewMouse: vec2f) -> vec3f {
+fn projectedCenter(p: vec4f, aspect: f32, rotation: f32) -> vec3f {
   let rotated = rotateY(p, rotation);
   let depthScale = clamp(1.0 + rotated.z * 0.22, 0.76, 1.28);
-  // Maze-equivalent parallax: rotated.z modulates the offset so closer
-  // particles parallax more, mirroring the mouseWrapper.rotation feel.
-  let parallaxX = viewMouse.x * 0.045 * (0.5 + rotated.z * 0.5);
-  let parallaxY = viewMouse.y * 0.028 * (0.5 + rotated.z * 0.5);
   return vec3f(
-    rotated.x * depthScale / max(aspect, 0.1) + parallaxX,
-    rotated.y * depthScale + parallaxY,
+    rotated.x * depthScale / max(aspect, 0.1),
+    rotated.y * depthScale,
     rotated.z,
   );
 }
@@ -383,49 +376,16 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   );
   let liveDrift = landingMotionNoise(i, motion, colorTime);
   let normal = normalize(p.xyz + vec3f(0.0001, 0.0001, 0.0001));
-  var displaced = vec4f(
+  let displaced = vec4f(
     p.xyz * (1.0 + amplitude * fieldNoise + liveDrift * 0.012) +
       normal * liveDrift * 0.010 +
       motion.xyz * speed * depth * liveDrift,
     p.w,
   );
-
-  // Click impulse: a brief radial outward push for particles whose
-  // post-projection NDC position lies within clickParams.w of the click
-  // point. clickParams.z is the time-decayed strength (0 = no pulse).
-  let clickStrength = computeFrame.clickParams.z;
-  let clickRadius = computeFrame.clickParams.w;
-  if (clickStrength > 0.001 && clickRadius > 0.0) {
-    let preProjected = projectedCenter(
-      displaced,
-      computeFrame.aspect,
-      computeFrame.rotation,
-      computeFrame.viewMouse,
-    );
-    let toParticle = preProjected.xy - computeFrame.clickParams.xy;
-    let dist = length(toParticle);
-    if (dist < clickRadius) {
-      let falloff = 1.0 - smoothstep(0.0, clickRadius, dist);
-      let pushAmount = falloff * clickStrength;
-      let pushDir = select(
-        vec2f(0.0, 0.0),
-        toParticle / max(dist, 0.0001),
-        dist > 0.0001,
-      );
-      displaced = vec4f(
-        displaced.x + pushDir.x * pushAmount * 0.06,
-        displaced.y + pushDir.y * pushAmount * 0.06,
-        displaced.z,
-        displaced.w,
-      );
-    }
-  }
-
   let projected = projectedCenter(
     displaced,
     computeFrame.aspect,
     computeFrame.rotation,
-    computeFrame.viewMouse,
   );
   let rotatedNormal = normalize(rotateY(vec4f(normal, 1.0), computeFrame.rotation).xyz);
   let rim = pow(1.0 - clamp(dot(rotatedNormal, vec3f(0.0, 0.0, 1.0)), 0.0, 1.0), 2.0);

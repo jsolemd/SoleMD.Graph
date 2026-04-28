@@ -34,16 +34,6 @@ import {
 import { OrbWebGpuRotationController } from "./orb-webgpu-rotation";
 
 const ORB_BASE_COLOR = rgb255ToUnit(LANDING_BASE_BLUE_RGB);
-// Click impulse parameters. The plan calls for a subtle, calm-pastel
-// outward push that reads as tactile but never theatrical. Strength
-// decays exponentially with this half-life; the radius stays constant
-// while strength is non-zero.
-const CLICK_IMPULSE_TAU_SECONDS = 0.18;
-const CLICK_IMPULSE_RADIUS_NDC = 0.55;
-const CLICK_IMPULSE_INITIAL_STRENGTH = 1;
-// Time constant for mouse parallax smoothing. ~160ms approximates the
-// Maze mouseWrapper feel without dropping back into snapping motion.
-const MOUSE_PARALLAX_TAU_SECONDS = 0.16;
 
 export interface OrbWebGpuRuntime {
   uploadParticles(arrays: OrbWebGpuParticleArrays): void;
@@ -56,9 +46,6 @@ export interface OrbWebGpuRuntime {
   ): Promise<number[]>;
   captureSnapshot(): Promise<Blob | null>;
   applyTwist(deltaRadians: number): void;
-  applyClickImpulse(clientX: number, clientY: number): void;
-  setParallaxMouse(clientX: number, clientY: number): void;
-  clearParallaxMouse(): void;
   start(): void;
   stop(): void;
   destroy(): void;
@@ -135,13 +122,6 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   };
   private flagShadow!: Uint32Array;
   private weights!: OrbInteractionWeights;
-  private parallaxTargetX = 0;
-  private parallaxTargetY = 0;
-  private parallaxMouseX = 0;
-  private parallaxMouseY = 0;
-  private clickImpulseX = 0;
-  private clickImpulseY = 0;
-  private clickImpulseStrength = 0;
 
   private constructor(args: OrbWebGpuRuntimeResources) {
     Object.assign(this, args);
@@ -253,32 +233,6 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.applyTwist(deltaRadians, performance.now());
     this.writeFrameUniforms(performance.now() / 1000, 0);
-  }
-
-  applyClickImpulse(clientX: number, clientY: number): void {
-    if (this.disposed) return;
-    const point = this.clientPointToClip(clientX, clientY);
-    if (!point) return;
-    // Pre-aspect-correct so the impulse origin lives in the same NDC
-    // space as the post-projection particle XY (projectedCenter divides
-    // X by aspect). This way the radius reads as a circle on screen.
-    const aspect = Math.max(this.aspect, 0.1);
-    this.clickImpulseX = point.x / aspect;
-    this.clickImpulseY = point.y;
-    this.clickImpulseStrength = CLICK_IMPULSE_INITIAL_STRENGTH;
-  }
-
-  setParallaxMouse(clientX: number, clientY: number): void {
-    if (this.disposed) return;
-    const point = this.clientPointToClip(clientX, clientY);
-    if (!point) return;
-    this.parallaxTargetX = point.x;
-    this.parallaxTargetY = point.y;
-  }
-
-  clearParallaxMouse(): void {
-    this.parallaxTargetX = 0;
-    this.parallaxTargetY = 0;
   }
 
   async captureSnapshot(): Promise<Blob | null> {
@@ -477,48 +431,24 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     view.setFloat32(52, this.resolveEffectiveDepth(), true);
     view.setFloat32(56, BLOB_FREQUENCY, true);
     view.setFloat32(60, BLOB_WAVE_SPEED, true);
-    view.setFloat32(64, this.clickImpulseX, true);
-    view.setFloat32(68, this.clickImpulseY, true);
-    view.setFloat32(72, this.clickImpulseStrength, true);
-    view.setFloat32(76, CLICK_IMPULSE_RADIUS_NDC, true);
-    view.setFloat32(80, this.parallaxMouseX, true);
-    view.setFloat32(84, this.parallaxMouseY, true);
-    view.setFloat32(88, 0, true);
-    view.setFloat32(92, 0, true);
     this.device.queue.writeBuffer(this.frameUniformBuffer, 0, this.frameUniformBytes);
   }
 
   private tickInteractionState(dtSeconds: number): void {
-    if (dtSeconds <= 0) return;
-    if (this.particleCount > 0) {
-      tickOrbInteractionWeights(
-        this.weights,
-        this.flagShadow,
-        this.particleCount,
-        dtSeconds,
-      );
-      this.device.queue.writeBuffer(
-        this.weightsBuffer,
-        0,
-        this.weights.data,
-        0,
-        this.particleCount * 4,
-      );
-    }
-    const parallaxDecay = Math.exp(-dtSeconds / MOUSE_PARALLAX_TAU_SECONDS);
-    this.parallaxMouseX =
-      this.parallaxTargetX +
-      (this.parallaxMouseX - this.parallaxTargetX) * parallaxDecay;
-    this.parallaxMouseY =
-      this.parallaxTargetY +
-      (this.parallaxMouseY - this.parallaxTargetY) * parallaxDecay;
-    if (this.clickImpulseStrength > 0) {
-      const clickDecay = Math.exp(-dtSeconds / CLICK_IMPULSE_TAU_SECONDS);
-      this.clickImpulseStrength *= clickDecay;
-      if (this.clickImpulseStrength < 0.001) {
-        this.clickImpulseStrength = 0;
-      }
-    }
+    if (dtSeconds <= 0 || this.particleCount <= 0) return;
+    tickOrbInteractionWeights(
+      this.weights,
+      this.flagShadow,
+      this.particleCount,
+      dtSeconds,
+    );
+    this.device.queue.writeBuffer(
+      this.weightsBuffer,
+      0,
+      this.weights.data,
+      0,
+      this.particleCount * 4,
+    );
   }
 
   private getRenderBundle(): GPURenderBundle | null {

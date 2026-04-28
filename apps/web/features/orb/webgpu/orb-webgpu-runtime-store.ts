@@ -2,9 +2,6 @@ import { create } from "zustand";
 
 export interface OrbWebGpuControlHandle {
   applyTwist: (deltaRadians: number) => void;
-  applyClickImpulse: (clientX: number, clientY: number) => void;
-  setParallaxMouse: (clientX: number, clientY: number) => void;
-  clearParallaxMouse: () => void;
 }
 
 interface OrbWebGpuRuntimeStore {
