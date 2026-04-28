@@ -3,6 +3,8 @@ import {
   COMPUTE_DISPLAY_INDEX,
   COMPUTE_FRAME_INDEX,
   COMPUTE_FLAG_INDEX,
+  COMPUTE_PALETTE_SAMPLER_INDEX,
+  COMPUTE_PALETTE_TEXTURE_INDEX,
   COMPUTE_POSITION_INDEX,
   COMPUTE_VELOCITY_INDEX,
   COMPUTE_WEIGHT_INDEX,
@@ -24,11 +26,7 @@ import {
 } from "./orb-webgpu-particles";
 import {
   LANDING_RAINBOW_PERIOD_SECONDS,
-  LANDING_RAINBOW_RGB,
-  LANDING_RAINBOW_STOP_SECONDS,
 } from "../../field/shared/landing-feel-constants";
-
-const LANDING_PALETTE_WGSL = LANDING_RAINBOW_RGB.map(toWgslColor).join(",\n    ");
 
 export const ORB_WEBGPU_SHADER_SOURCE = /* wgsl */ `
 struct FrameUniforms {
@@ -84,6 +82,8 @@ struct DisplayParticle {
 @group(0) @binding(${COMPUTE_FRAME_INDEX}) var<uniform> computeFrame: FrameUniforms;
 @group(0) @binding(${COMPUTE_WEIGHT_INDEX}) var<storage, read> computeWeights: array<vec4f>;
 @group(0) @binding(${COMPUTE_FLAG_INDEX}) var<storage, read> computeFlags: array<u32>;
+@group(0) @binding(${COMPUTE_PALETTE_TEXTURE_INDEX}) var paletteTexture: texture_2d<f32>;
+@group(0) @binding(${COMPUTE_PALETTE_SAMPLER_INDEX}) var paletteSampler: sampler;
 @group(0) @binding(${COMPUTE_DISPLAY_INDEX}) var<storage, read_write> computeDisplay: array<DisplayParticle>;
 @group(0) @binding(${RENDER_DISPLAY_INDEX}) var<storage, read> renderDisplay: array<DisplayParticle>;
 @group(0) @binding(${RENDER_FRAME_INDEX}) var<uniform> renderFrame: FrameUniforms;
@@ -95,12 +95,7 @@ struct DisplayParticle {
 @group(0) @binding(${RECT_PARAM_INDEX}) var<uniform> rectParams: RectParams;
 @group(0) @binding(${RECT_RESULT_INDEX}) var<storage, read_write> rectResult: array<atomic<u32>>;
 
-const LANDING_RAINBOW_STOP_SECONDS = ${toWgslFloat(LANDING_RAINBOW_STOP_SECONDS)};
 const LANDING_RAINBOW_PERIOD_SECONDS = ${toWgslFloat(LANDING_RAINBOW_PERIOD_SECONDS)};
-const ORB_NOISE_DOMAIN_SCALE = 4.5;
-const LANDING_PALETTE = array<vec3f, 8>(
-    ${LANDING_PALETTE_WGSL}
-);
 
 fn rotateY(p: vec4f, angle: f32) -> vec4f {
   let c = cos(angle);
@@ -336,34 +331,23 @@ fn landingBaseColor() -> vec3f {
   return computeFrame.baseColor.rgb;
 }
 
-// Organic palette sample. Two ingredients beyond a simple lerp through
-// 8 palette stops:
-//
-//  1. Per-particle phase offset (phaseOffset). Each particle sees the
-//     palette wave at a *different* moment in the cycle, so at any
-//     instant the cloud spans warm and cool colors instead of all
-//     biasing toward whichever stop the global clock is currently on.
-//     Feeding the FBM field noise as the phase makes the offsets
-//     spatially coherent — neighbors cluster on similar palette stops,
-//     distant patches sit on different stops, producing visible color
-//     "regions" that drift apart and merge as the field evolves.
-//
-//  2. Cosine ease on the inter-stop transition. The prior linear
-//     mix(palette[i], palette[i+1], fract(seg)) reads as muddy at the
-//     50% midpoint; the cosine variant dwells on each stop and
-//     transitions fast through the middle, which is what reads as
-//     the "burst" feel — colors pop, then settle, then pop again.
-fn landingNoiseColor(colorTime: f32, phaseOffset: f32) -> vec3f {
-  let shifted = colorTime + phaseOffset * LANDING_RAINBOW_PERIOD_SECONDS;
-  let wrappedTime =
-    shifted - floor(shifted / LANDING_RAINBOW_PERIOD_SECONDS) *
-    LANDING_RAINBOW_PERIOD_SECONDS;
-  let segment = wrappedTime / LANDING_RAINBOW_STOP_SECONDS;
-  let index = u32(floor(segment)) % 8u;
-  let nextIndex = (index + 1u) % 8u;
-  let t = fract(segment);
-  let eased = 0.5 - 0.5 * cos(3.14159265 * t);
-  return mix(LANDING_PALETTE[index], LANDING_PALETTE[nextIndex], eased);
+// Sample the global "noise color" from the rainbow palette LUT. The
+// 8-texel palette texture is configured with linear filter + repeat-U,
+// so a normalized cursor in [0, 1) sweeps the wheel once per period
+// with a hardware-blended transition across each stop boundary. This
+// reproduces the prior Three.js orb's GSAP-tweened uColorNoise without
+// any per-frame CPU work or shader-side palette indexing — exactly
+// the same single global color drives every particle, and only the
+// per-particle vNoise modulates how far each one travels from the
+// fixed base toward this noise color.
+fn landingNoiseColor(colorTime: f32) -> vec3f {
+  let cursor = colorTime / LANDING_RAINBOW_PERIOD_SECONDS;
+  return textureSampleLevel(
+    paletteTexture,
+    paletteSampler,
+    vec2f(cursor, 0.5),
+    0.0,
+  ).rgb;
 }
 
 fn visualRadius(
@@ -411,7 +395,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let waveSpeed = computeFrame.fieldParams.w;
   let colorTime = computeFrame.colorTime * waveSpeed;
   let fieldNoise = landingFieldNoise(
-    p.xyz * frequency * ORB_NOISE_DOMAIN_SCALE,
+    p.xyz * frequency,
     motion,
     i,
     colorTime,
@@ -455,11 +439,14 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let depthLight = clamp(0.64 + projected.z * 0.34 + rim * 0.22, 0.36, 1.16);
   let pulse = 0.5 + 0.5 * sin(computeFrame.colorTime * 4.2 + f32(i) * 0.037);
   let baseColor = landingBaseColor();
-  let noiseColor = landingNoiseColor(computeFrame.colorTime, fieldNoise);
+  let noiseColor = landingNoiseColor(computeFrame.colorTime);
+  // Maze-verbatim per-particle lerp: stay near baseColor when vNoise
+  // is low; spike toward the global noiseColor when vNoise is high.
+  // The 4.0 amplification is intentional — clamp+overshoot gives the
+  // "burst" reach into saturated palette stops on high-noise particles.
   let vNoise = clamp(fieldNoise, 0.0, 1.0);
-  let neighborhood = 1.0 + 0.45 * (vNoise - 0.5);
   let burstColor = clamp(
-    (baseColor + vNoise * 4.0 * (noiseColor - baseColor)) * neighborhood,
+    baseColor + vNoise * 4.0 * (noiseColor - baseColor),
     vec3f(0.0),
     vec3f(1.0),
   );
@@ -625,12 +612,6 @@ fn pickRect(@builtin(global_invocation_id) id: vec3u) {
   }
 }
 `;
-
-function toWgslColor(
-  color: readonly [number, number, number],
-): string {
-  return `vec3f(${toWgslFloat(color[0] / 255)}, ${toWgslFloat(color[1] / 255)}, ${toWgslFloat(color[2] / 255)})`;
-}
 
 function toWgslFloat(value: number): string {
   return Number.isInteger(value) ? `${value}.0` : value.toFixed(6);

@@ -6,6 +6,8 @@ import {
   COMPUTE_DISPLAY_INDEX,
   COMPUTE_FRAME_INDEX,
   COMPUTE_FLAG_INDEX,
+  COMPUTE_PALETTE_SAMPLER_INDEX,
+  COMPUTE_PALETTE_TEXTURE_INDEX,
   COMPUTE_POSITION_INDEX,
   COMPUTE_VELOCITY_INDEX,
   COMPUTE_WEIGHT_INDEX,
@@ -28,6 +30,7 @@ import {
   storageEntry,
 } from "./orb-webgpu-layout";
 import { ORB_WEBGPU_SHADER_SOURCE } from "./orb-webgpu-shader";
+import { LANDING_RAINBOW_RGB } from "../../field/shared/landing-feel-constants";
 
 export interface OrbWebGpuRuntimeResources {
   attributesBuffer: GPUBuffer;
@@ -152,6 +155,20 @@ export async function createOrbWebGpuResources(
     magFilter: "linear",
     minFilter: "linear",
   });
+  const paletteTexture = createOrbPaletteTexture(device);
+  // Linear filter + repeat-U on a 1×8 palette texture is what gives us
+  // the prior orb's smooth GSAP-tweened "uColorNoise" rolling through
+  // the rainbow stops. The hardware filter blends across adjacent
+  // texels (and across the seam from texel 7 → texel 0) for free —
+  // no shader-side lerp, no per-frame CPU tween. Sampling with
+  // u = colorTime / period gives one full sweep per period.
+  const paletteSampler = device.createSampler({
+    addressModeU: "repeat",
+    addressModeV: "clamp-to-edge",
+    label: "orb.palette-sampler",
+    magFilter: "linear",
+    minFilter: "linear",
+  });
 
   device.pushErrorScope("validation");
   const shaderModule = device.createShaderModule({
@@ -187,6 +204,16 @@ export async function createOrbWebGpuResources(
         GPUShaderStage.COMPUTE,
         "read-only-storage",
       ),
+      {
+        binding: COMPUTE_PALETTE_TEXTURE_INDEX,
+        visibility: GPUShaderStage.COMPUTE,
+        texture: { sampleType: "float", viewDimension: "2d" },
+      },
+      {
+        binding: COMPUTE_PALETTE_SAMPLER_INDEX,
+        visibility: GPUShaderStage.COMPUTE,
+        sampler: { type: "filtering" },
+      },
     ],
     label: "orb.compute-bind-group-layout",
   });
@@ -297,6 +324,11 @@ export async function createOrbWebGpuResources(
       { binding: COMPUTE_FLAG_INDEX, resource: { buffer: flagsBuffer } },
       { binding: COMPUTE_DISPLAY_INDEX, resource: { buffer: displayBuffer } },
       { binding: COMPUTE_WEIGHT_INDEX, resource: { buffer: weightsBuffer } },
+      {
+        binding: COMPUTE_PALETTE_TEXTURE_INDEX,
+        resource: paletteTexture.createView(),
+      },
+      { binding: COMPUTE_PALETTE_SAMPLER_INDEX, resource: paletteSampler },
     ],
     layout: computeBindGroupLayout,
     label: "orb.compute-bind-group",
@@ -352,6 +384,36 @@ export async function createOrbWebGpuResources(
     velocitiesBuffer,
     weightsBuffer,
   };
+}
+
+// Bake the LANDING_RAINBOW_RGB palette into a 1-row 8-column RGBA8Unorm
+// texture. Using `rgba8unorm` (not `rgba8unorm-srgb`) keeps the linear
+// filter blending in the same color space as the prior shader's GSAP
+// linear RGB tween, so the visual character of the palette ramp matches
+// what we had in Three.js.
+function createOrbPaletteTexture(device: GPUDevice): GPUTexture {
+  const stops = LANDING_RAINBOW_RGB.length;
+  const data = new Uint8Array(stops * 4);
+  for (let i = 0; i < stops; i += 1) {
+    const [r, g, b] = LANDING_RAINBOW_RGB[i] ?? [0, 0, 0];
+    data[i * 4 + 0] = r;
+    data[i * 4 + 1] = g;
+    data[i * 4 + 2] = b;
+    data[i * 4 + 3] = 255;
+  }
+  const texture = device.createTexture({
+    format: "rgba8unorm",
+    label: "orb.palette-texture",
+    size: { depthOrArrayLayers: 1, height: 1, width: stops },
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+  });
+  device.queue.writeTexture(
+    { texture },
+    data,
+    { bytesPerRow: stops * 4, rowsPerImage: 1 },
+    { depthOrArrayLayers: 1, height: 1, width: stops },
+  );
+  return texture;
 }
 
 async function createOrbSpriteTexture(device: GPUDevice): Promise<GPUTexture> {
