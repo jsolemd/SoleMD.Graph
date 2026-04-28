@@ -131,6 +131,13 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   private renderBundleParticleCount = -1;
   private colorTime = 0;
   private focusIndex = -1;
+  // Low-pass-filtered yaw angular velocity in rad/sec. Drives the
+  // tangential drift term in the compute shader so particles "swirl"
+  // (lag behind the rigid camera spin) while the user is rotating.
+  // The smoothing avoids a single-frame spike on touch start.
+  private smoothedYawOmega = 0;
+  private lastSampledYaw = 0;
+  private lastSampledYawMs = 0;
   private motionSettings: OrbWebGpuMotionSettings = {
     ambientEntropy: 1,
     motionSpeedMultiplier: 1,
@@ -552,7 +559,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     view.setFloat32(32, ORB_BASE_COLOR[0], true);
     view.setFloat32(36, ORB_BASE_COLOR[1], true);
     view.setFloat32(40, ORB_BASE_COLOR[2], true);
-    view.setFloat32(44, 0, true);
+    view.setFloat32(44, this.sampleYawOmega(), true);
     view.setFloat32(48, BLOB_AMPLITUDE, true);
     view.setFloat32(52, this.resolveEffectiveDepth(), true);
     view.setFloat32(56, BLOB_FREQUENCY, true);
@@ -600,6 +607,33 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     this.renderBundleList = [this.renderBundle];
     this.renderBundleParticleCount = this.particleCount;
     return this.renderBundle;
+  }
+
+  private sampleYawOmega(): number {
+    const now = performance.now();
+    const yaw = this.rotationController.rotation;
+    const dtMs = now - this.lastSampledYawMs;
+    if (this.lastSampledYawMs === 0 || dtMs <= 0 || dtMs > 250) {
+      // First sample, or a long gap (e.g. tab backgrounded). Reset
+      // without producing a spurious high-velocity reading.
+      this.smoothedYawOmega = 0;
+      this.lastSampledYaw = yaw;
+      this.lastSampledYawMs = now;
+      return 0;
+    }
+    let dYaw = yaw - this.lastSampledYaw;
+    // Wrap to (-π, π] so a 0.01 → 2π-0.01 step reads as -0.02, not +(2π-0.02).
+    if (dYaw > Math.PI) dYaw -= Math.PI * 2;
+    if (dYaw < -Math.PI) dYaw += Math.PI * 2;
+    const instantOmega = (dYaw * 1000) / dtMs;
+    // 100ms time constant: enough to debounce micro-jitter while
+    // staying responsive to the start/end of a drag.
+    const alpha = 1 - Math.exp(-dtMs / 100);
+    this.smoothedYawOmega +=
+      (instantOmega - this.smoothedYawOmega) * alpha;
+    this.lastSampledYaw = yaw;
+    this.lastSampledYawMs = now;
+    return this.smoothedYawOmega;
   }
 
   private resolveEffectiveDepth(): number {

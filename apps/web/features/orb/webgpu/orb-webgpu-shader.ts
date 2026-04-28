@@ -398,10 +398,21 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   );
   let liveDrift = landingMotionNoise(i, motion, colorTime);
   let normal = normalize(p.xyz + vec3f(0.0001, 0.0001, 0.0001));
+  // Yaw angular velocity (rad/sec, smoothed in the runtime) is packed
+  // into baseColor.w. Tangent to a yaw spin around the world Y axis is
+  // (p.z, 0, -p.x); scaling by omega and a small coefficient gives a
+  // tangential drift that lags the rigid camera rotation, producing a
+  // visible "swirl" while the user is dragging. The 0.018 magnitude is
+  // tuned so a typical drag (~3 rad/sec peak) shifts particles by a few
+  // percent of the blob radius — enough to read as flow without breaking
+  // the hand-off back to the FBM-driven idle motion.
+  let yawOmega = computeFrame.baseColor.w;
+  let tangential = vec3f(p.z, 0.0, -p.x) * yawOmega * 0.018;
   let displaced = vec4f(
     p.xyz * (1.0 + amplitude * fieldNoise + liveDrift * 0.012) +
       normal * liveDrift * 0.010 +
-      motion.xyz * speed * depth * liveDrift,
+      motion.xyz * speed * depth * liveDrift +
+      tangential,
     p.w,
   );
   let projected = projectedCenter(
