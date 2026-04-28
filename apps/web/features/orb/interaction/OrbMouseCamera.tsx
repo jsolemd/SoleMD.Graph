@@ -91,13 +91,15 @@ export function OrbMouseCamera({
       const handle = useOrbWebGpuRuntimeStore.getState().handle;
       if (!handle) return;
       if (mode === "rotate") {
-        // Drag right -> yaw so the right-front rotates further right
-        // (positive Y rotation). Drag up (negative dy in screen) ->
-        // pitch positive, which tilts the front of the orb downward
-        // so the user sees more of the top — the standard "look down
-        // at the top" feel for object inspection.
+        // Direct manipulation: the grabbed particle follows the
+        // cursor. For yaw (rotateY) positive angle moves the
+        // front-center particle to +X, so dx maps directly to yaw.
+        // For pitch (rotateX) positive angle moves the front-center
+        // particle to -Y; to make drag-up move the front up, we want
+        // pitch to take the same sign as dy (negative dy -> negative
+        // pitch -> +Y for front).
         handle.applyTwist(dx * ROTATE_RADIANS_PER_PIXEL);
-        handle.applyPitch(-dy * ROTATE_RADIANS_PER_PIXEL);
+        handle.applyPitch(dy * ROTATE_RADIANS_PER_PIXEL);
       } else if (mode === "pan") {
         // 2 NDC units span the canvas height. Mapping pixels to NDC
         // by height keeps drag distance feeling consistent across
