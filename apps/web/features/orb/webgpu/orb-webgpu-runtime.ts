@@ -40,6 +40,19 @@ import { OrbWebGpuZoomController } from "./orb-webgpu-zoom";
 
 const ORB_BASE_COLOR = rgb255ToUnit(LANDING_BASE_BLUE_RGB);
 
+// Interaction-burst envelope. While the user is actively rotating
+// (applyTwist / nudgeRotation / applyPitch / nudgePitch), the runtime
+// accumulates a 0..1 burst value that scales BLOB_AMPLITUDE and
+// BLOB_FREQUENCY toward the boost targets in fieldParams. The burst
+// decays exponentially after the gesture ends — half-life 0.48s so
+// the orb visibly "rings" for ~1.4s after a drag, matching the prior
+// Three.js BlobController.triggerInteractionBurst path.
+const INTERACTION_BURST_AMPLITUDE = 0.25;
+const INTERACTION_BURST_FREQUENCY = 1.7;
+const INTERACTION_BURST_HALF_LIFE_SECONDS = 0.48;
+const INTERACTION_BURST_CONTROL_STRENGTH = 0.1;
+const INTERACTION_BURST_EPSILON = 1e-3;
+
 export interface OrbWebGpuRuntime {
   uploadParticles(arrays: OrbWebGpuParticleArrays): void;
   uploadParticleRange(
@@ -138,6 +151,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   private smoothedYawOmega = 0;
   private lastSampledYaw = 0;
   private lastSampledYawMs = 0;
+  // Interaction burst envelope (0..1). Accumulated while rotating,
+  // decayed each frame; scales fieldParams.amplitude and frequency in
+  // writeFrameUniforms.
+  private interactionBurst = 0;
   private motionSettings: OrbWebGpuMotionSettings = {
     ambientEntropy: 1,
     motionSpeedMultiplier: 1,
@@ -311,23 +328,43 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   applyTwist(deltaRadians: number): void {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.applyTwist(deltaRadians, performance.now());
+    this.triggerInteractionBurst();
     this.writeFrameUniforms(performance.now() / 1000, 0);
   }
 
   nudgeRotation(deltaRadians: number): void {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.nudgeRotation(deltaRadians, performance.now());
+    this.triggerInteractionBurst();
   }
 
   applyPitch(deltaRadians: number): void {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.applyPitch(deltaRadians, performance.now());
+    this.triggerInteractionBurst();
     this.writeFrameUniforms(performance.now() / 1000, 0);
   }
 
   nudgePitch(deltaRadians: number): void {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.nudgePitch(deltaRadians, performance.now());
+    this.triggerInteractionBurst();
+  }
+
+  private triggerInteractionBurst(
+    strength = INTERACTION_BURST_CONTROL_STRENGTH,
+  ): void {
+    if (!Number.isFinite(strength) || strength <= 0) return;
+    this.interactionBurst = Math.min(1, this.interactionBurst + strength);
+  }
+
+  private decayInteractionBurst(dtSeconds: number): void {
+    if (this.interactionBurst <= 0 || dtSeconds <= 0) return;
+    this.interactionBurst *=
+      0.5 ** (dtSeconds / INTERACTION_BURST_HALF_LIFE_SECONDS);
+    if (this.interactionBurst < INTERACTION_BURST_EPSILON) {
+      this.interactionBurst = 0;
+    }
   }
 
   applyZoom(factor: number): void {
@@ -499,6 +536,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       prefersReducedMotion: this.motionSettings.prefersReducedMotion,
     });
     this.tickInteractionState(rawDt);
+    // Burst envelope decays even while ambient motion is paused —
+    // visual rings out smoothly after a release regardless of the
+    // pause toggle so the gesture itself stays expressive.
+    this.decayInteractionBurst(rawDt);
     this.writeFrameUniforms(timestampMs / 1000, motionDt);
 
     const encoder = this.device.createCommandEncoder({ label: "orb.frame" });
@@ -560,9 +601,22 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     view.setFloat32(36, ORB_BASE_COLOR[1], true);
     view.setFloat32(40, ORB_BASE_COLOR[2], true);
     view.setFloat32(44, this.sampleYawOmega(), true);
-    view.setFloat32(48, BLOB_AMPLITUDE, true);
+    // Burst-blended fieldParams. amplitude scales the radial FBM
+    // displacement and frequency scales the FBM input domain — so a
+    // burst makes particles scatter further AND samples a higher-
+    // frequency slice of the noise (more visible color regions).
+    // Mean reverts to the baseline 0.05 / 0.5 once the burst envelope
+    // decays back to zero.
+    const burst = this.interactionBurst;
+    const amplitudeNow =
+      BLOB_AMPLITUDE +
+      (INTERACTION_BURST_AMPLITUDE - BLOB_AMPLITUDE) * burst;
+    const frequencyNow =
+      BLOB_FREQUENCY +
+      (INTERACTION_BURST_FREQUENCY - BLOB_FREQUENCY) * burst;
+    view.setFloat32(48, amplitudeNow, true);
     view.setFloat32(52, this.resolveEffectiveDepth(), true);
-    view.setFloat32(56, BLOB_FREQUENCY, true);
+    view.setFloat32(56, frequencyNow, true);
     view.setFloat32(60, BLOB_WAVE_SPEED, true);
     view.setFloat32(64, this.panController.x, true);
     view.setFloat32(68, this.panController.y, true);
