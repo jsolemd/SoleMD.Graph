@@ -53,22 +53,25 @@ the same `currentPointScopeSql`.
 
 ## Render-vs-physics lane separation
 
-Codified at `apps/web/features/orb/bake/apply-paper-overrides.ts:51`,
-restated here as the *first* architectural rule:
+Codified in the current WebGPU implementation by
+`apps/web/features/orb/bake/orb-paper-visual-mapping.ts` and
+`apps/web/features/orb/webgpu/orb-webgpu-particles.ts`, restated here
+as the *first* architectural rule:
 
-- **Render lanes** (existing): `aSpeed`, `aClickPack.{xyz, w}`,
-  `aBucket`, `aFunnel*`, `aColor` (planned). Written by surface code
-  (paper baker, click handler, lands-mode field baker). Cheap to
-  rewrite via `addUpdateRange` + `bufferSubData`. Visual output
-  only.
-- **Physics lanes** (new): position, velocity, mass, selection mask,
-  filter mask, excitation state (intensity + decayStart), pin mask,
-  plus foundational effect lanes: relation class, radial band, effect
-  stage, orbit phase, and resident reason. Written by simulation pass /
-  interaction stores. M7 stores live state in WebGPU storage buffers.
-  Historical texture names such as `posTex` / `selectionMask` describe
-  semantics, not the target storage primitive. **Never** conflated with
-  render attributes.
+- **Visual mapping lanes**: display color, radius, and drift speed
+  derived from paper attributes. These are packed into the WebGPU
+  `attributes` and `velocity` storage buffers. They are visual
+  derivations, not intrinsic physics state.
+- **Live particle lanes**: `position`, `velocity`, `attributes`, and
+  `flags` storage buffers owned by the raw WebGPU orb runtime. Focus,
+  hover, scope, selection, neighbor, and evidence state write `flags`
+  through the orb focus visual store.
+- **Physics lanes**: future force-kernel state for mass, edge forces,
+  excitation, pins, relation class, radial band, effect stage, orbit
+  phase, and resident reason. M7 stores live state in WebGPU buffers;
+  historical texture names such as `posTex` / `selectionMask` describe
+  semantics, not the target storage primitive. **Never** conflate these
+  with visual mappings.
 
 Adding a feature = naming its lane + wiring its writer + wiring
 its reader. No glue layers. No lane overloads.
@@ -103,10 +106,11 @@ Resident set rebuilds on:
 - Cluster focus (resident becomes cluster-stratified for that
   focus).
 
-The ambient render canvas (`apps/web/features/field/asset/point-source-registry.ts:22`,
-16,384 points) is the substrate; resident LOD writes new
-`paperId↔particleIdx` mappings into it via the
-`apply-paper-overrides` hot path.
+The `/graph` orb substrate is the WebGPU resident particle set. The
+paper baker materializes `paper_sample`, streams chunks into
+`useOrbGeometryMutationStore`, and the WebGPU canvas packs them into
+storage-buffer arrays. The landing field keeps its own ambient substrate
+and is not the `/graph` orb runtime.
 
 See [milestones/M1-canonical-views-and-mask-writer.md](milestones/M1-canonical-views-and-mask-writer.md)
 for the `paperId↔particleIdx` mask writer that makes resident-LOD
@@ -190,10 +194,11 @@ renders. On surface toggle (orb ↔ map), both canvases stay mounted;
 only `visibility` flips. On low-power toggle or session leave,
 each subsystem exposes `dispose()`:
 
-- WebGL render targets, GPU buffers, picking offscreen target.
-- `<CameraControls>` (yomotsu).
-- drei `<Html>` portals.
-- `ForceKernel` instance + typed-array buffers.
+- WebGPU canvas context, device-owned buffers, staging buffers, and
+  command scheduling for the orb canvas.
+- Landing-field WebGL resources when the landing surface is mounted.
+- `SemanticPhysicsKernel` instance + typed-array buffers once the
+  kernel is promoted beyond the current minimal compute slice.
 - Lazy-attached DuckDB views (orb-specific).
 - OPFS-cached kNN shards (kept across sessions; cleared on cap
   exceeded via LRU).

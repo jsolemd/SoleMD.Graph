@@ -4,8 +4,8 @@ import { useEffect, useRef } from "react";
 import type { GraphBundleQueries, GraphPointRecord } from "@solemd/graph";
 
 import { useGraphStore } from "@/features/graph/stores";
-import { PARTICLE_STATE_CAPACITY } from "@/features/field/renderer/field-particle-state-texture";
 import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
+import { ORB_PARTICLE_CAPACITY } from "./orb-particle-constants";
 
 const PAPER_SAMPLE_TABLE = "paper_sample";
 const NEIGHBOR_HIGHLIGHT_COUNT = 8;
@@ -185,7 +185,7 @@ export function useOrbFocusResolver(
       index != null &&
       index >= 0 &&
       index < particleCount &&
-      index < PARTICLE_STATE_CAPACITY;
+      index < ORB_PARTICLE_CAPACITY;
 
     const commitResolution = (resolution: FocusResolution) => {
       const focusIndex = isValidIndex(resolution.focusIndex)
@@ -207,7 +207,7 @@ export function useOrbFocusResolver(
         index == null ||
         index < 0 ||
         index >= particleCount ||
-        index >= PARTICLE_STATE_CAPACITY
+        index >= ORB_PARTICLE_CAPACITY
       ) {
         clearResolution();
         return;

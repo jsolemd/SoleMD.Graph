@@ -15,20 +15,15 @@ import type {
 } from "../scene/visual-presets";
 
 /**
- * Bridge between the layout-owned FieldCanvas and the surfaces that render
- * inside `{children}` (landing, orb).
+ * Bridge for the layout-owned landing FieldCanvas.
  *
- * The Canvas/FieldScene are mounted once at the (dashboard) layout level so
- * the WebGL context survives `router.replace('/' ↔ '/graph')` under Next
- * 16's `cacheComponents` + React `<Activity>`. But per-route surfaces still
- * need access to the in-R3F artifacts — controllers (for hotspot overlays),
- * camera (for DOM projection), stageReady signal, sceneStateRef. This
- * context is that thin handoff.
+ * The Canvas/FieldScene stay under the (dashboard) layout for the landing
+ * storytelling surface. Landing still needs access to in-R3F artifacts:
+ * controllers for hotspot overlays, camera for DOM projection,
+ * stageReady, and sceneStateRef. This context is that thin handoff.
  *
- * Landing reads it to wire FixedStageManager.registerController and to
- * gate its ready-state through. Orb reads it to attach picking and
- * subscribe to paper-mutation publishing. Neither surface *creates* any
- * of these refs — the layout owns them.
+ * The raw WebGPU `/graph` orb path does not use this bridge for picking,
+ * particle state, or touch rotation.
  */
 
 export interface FieldRuntimeBridge {
@@ -44,9 +39,8 @@ export interface FieldRuntimeBridge {
   controllerEpoch: number;
   sceneStateRef: MutableRefObject<FieldSceneState>;
   /**
-   * Surface signals readiness to tick. Landing drives this from its
-   * FixedStageManager.ready; orb drives it true once the paper bake
-   * has a connection. FieldCanvas consumes via the `stageReady` prop.
+   * Landing signals readiness to tick from FixedStageManager.ready.
+   * FieldCanvas consumes via the `stageReady` prop.
    */
   setStageReady: Dispatch<SetStateAction<boolean>>;
   stageReady: boolean;

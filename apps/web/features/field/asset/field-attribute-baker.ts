@@ -8,36 +8,20 @@ import * as THREE from "three";
 // Bucket id -> aBucket float (0..N-1) is exposed via `buildBucketIndex()`
 // so consumers can gate per-bucket color behavior on-field.
 //
-// Field-shader contract (orb-field pivot, step 4): one additional vec4
-// attribute `aClickPack` is ALWAYS baked, packing two paper-mode values
-// into a single slot so the total vertex-attribute count stays equal
-// to the pre-pivot shader:
+// Field-shader contract: one additional vec4 attribute `aClickPack` is
+// ALWAYS baked, preserving the legacy shader layout without increasing
+// the attribute count:
 //
-//   aClickPack.xyz = click-attraction offset (0,0,0 in lands-mode,
-//                    written by orb physics in step 7; DynamicDraw for
-//                    partial updates without reallocation)
-//   aClickPack.w   = sizeFactor               (1.0 in lands-mode,
-//                    written by orb's apply-paper-overrides)
+//   aClickPack.xyz = click-attraction offset (0,0,0 in landing mode)
+//   aClickPack.w   = sizeFactor               (1.0 in landing mode)
 //
 // With these defaults the shader additions are bit-exact no-ops.
 // Some WebGL platforms expose fewer attribute slots than the v2 spec
 // floor of 16, so keeping the total flat is the safest design.
 //
-// Slice 8 (orb-field): scope membership is NOT a vertex attribute —
-// the program is at the WebGL attribute budget already, and adding a
-// 15th lane causes "Too many attributes" link failures on conforming
-// GPUs (one slot is reserved for `position`; some drivers reserve
-// more for varyings or transform feedback bookkeeping). Per-particle
-// scope state lives in a sidecar `THREE.DataTexture` keyed by
-// `aIndex`; see `renderer/field-particle-state-texture.ts`. Future
-// dynamic state (focus excitation, search pulse, band/stage/ring)
-// joins the same RGBA8 texture instead of growing the attribute set,
-// and migrates to a WebGPU storage buffer when TSL lands.
-//
-// Paper identity (paperId ↔ particleIndex) lives on the JS side — the
-// usePaperAttributesBaker hook emits a Map, and apply-paper-overrides
-// consumes it directly. Keeping paper id out of the vertex attribute
-// set saves a slot and avoids duplicating identity across layers.
+// Scope, focus, evidence, and paper identity are no longer added to
+// this WebGL shader path. The /graph orb runtime owns those values in
+// WebGPU storage buffers.
 
 export interface FieldSemanticBucket {
   id: string;
@@ -101,28 +85,6 @@ export interface FieldAttributeBakeOptions {
   randomnessScale?: { x: number; y: number; z: number };
 }
 
-/**
- * Attribute names that orb's `applyPaperAttributeOverrides` mutates per
- * chunk. The orb blob-geometry subscriber flips these to
- * DynamicDrawUsage at activation time so partial updates via
- * `addUpdateRange` land through `gl.bufferSubData` instead of forcing a
- * full `gl.bufferData` realloc every time `needsUpdate` fires.
- *
- * Exported from the baker (not from apply-paper-overrides) because the
- * baker owns the attribute layout contract; any future baker change
- * that drops or renames one of these ripples here first.
- */
-export const ORB_PAPER_OVERRIDE_ATTRIBUTES = [
-  "aSpeed",
-  "aBucket",
-  "aClickPack",
-  "aStreamFreq",
-  "aFunnelThickness",
-  "aFunnelNarrow",
-  "aFunnelStartShift",
-  "aFunnelEndShift",
-] as const;
-
 const DEFAULT_MOVE_RANGE = 30;
 const DEFAULT_ALPHA_RANGE = [0.2, 1] as const;
 const DEFAULT_RANDOMNESS_SCALE = { x: 0, y: 1, z: 0.5 };
@@ -160,9 +122,8 @@ function pickBucketIndex(
 // Writes every Maze attribute (aMove, aSpeed, aRandomness, aAlpha, aSelection,
 // aIndex, aStreamFreq, aFunnelThickness, aFunnelNarrow, aFunnelStartShift,
 // aFunnelEndShift) plus SoleMD `aBucket` onto the given BufferGeometry,
-// plus the packed paper-mode vec4 `aClickPack` required by the shared
-// vertex shader (defaults: xyz=0, w=1; DynamicDraw so orb physics can
-// write partial updates later without reallocating the buffer).
+// plus the packed legacy vec4 `aClickPack` required by the shared
+// vertex shader (defaults: xyz=0, w=1).
 // Requires the position attribute to already be present (determines count).
 export function bakeFieldAttributes(
   geometry: THREE.BufferGeometry,
@@ -199,8 +160,8 @@ export function bakeFieldAttributes(
   const aFunnelEndShift = new Float32Array(count);
   const aBucket = new Float32Array(count);
 
-  // Shared-shader defaults — orb's apply-paper-overrides overwrites these.
-  // Packed vec4: .xyz = click attraction, .w = size factor.
+  // Shared-shader defaults. Packed vec4: .xyz = click attraction,
+  // .w = size factor.
   const aClickPack = new Float32Array(count * 4);
 
   const alphaMin = alphaRange[0];
@@ -268,12 +229,6 @@ export function bakeFieldAttributes(
     new THREE.BufferAttribute(aFunnelEndShift, 1),
   );
   geometry.setAttribute("aBucket", new THREE.BufferAttribute(aBucket, 1));
-  // DynamicDrawUsage: orb's d3-force-3d click-attraction sim (step 7)
-  // writes partial index ranges into the .xyz lanes per frame without
-  // reallocating. The .w lane (sizeFactor) is written by
-  // apply-paper-overrides once per paper bake; still DynamicDraw since
-  // the whole buffer is.
   const clickAttr = new THREE.BufferAttribute(aClickPack, 4);
-  clickAttr.setUsage(THREE.DynamicDrawUsage);
   geometry.setAttribute("aClickPack", clickAttr);
 }

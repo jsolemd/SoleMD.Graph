@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import type { GraphBundle } from "@solemd/graph";
 
@@ -36,20 +36,26 @@ const BUNDLE_STUB = {
   bundleChecksum: "test-bundle",
 } as GraphBundle;
 
+function setRendererMode(rendererMode: "2d" | "3d") {
+  act(() => {
+    useDashboardStore.setState({ rendererMode });
+  });
+}
+
 describe("GraphSurfaceSwitch", () => {
   beforeEach(() => {
     orbMock.mockClear();
     dashboardShellMock.mockClear();
     errorBoundaryMock.mockClear();
-    useDashboardStore.setState({ rendererMode: "3d" });
+    setRendererMode("3d");
   });
 
   afterEach(() => {
-    useDashboardStore.setState({ rendererMode: "3d" });
+    setRendererMode("3d");
   });
 
   it("mounts OrbSurface (and not the 2D branch) when rendererMode is '3d'", () => {
-    useDashboardStore.setState({ rendererMode: "3d" });
+    setRendererMode("3d");
     render(<GraphSurfaceSwitch bundle={BUNDLE_STUB} />);
     expect(screen.getByTestId("orb-surface")).toBeInTheDocument();
     expect(screen.queryByTestId("dashboard-shell")).not.toBeInTheDocument();
@@ -58,7 +64,7 @@ describe("GraphSurfaceSwitch", () => {
   });
 
   it("mounts DashboardShell wrapped in GraphErrorBoundary (and not OrbSurface) when rendererMode is '2d'", () => {
-    useDashboardStore.setState({ rendererMode: "2d" });
+    setRendererMode("2d");
     render(<GraphSurfaceSwitch bundle={BUNDLE_STUB} />);
     expect(screen.getByTestId("dashboard-shell")).toBeInTheDocument();
     expect(screen.getByTestId("error-boundary")).toBeInTheDocument();
@@ -68,19 +74,19 @@ describe("GraphSurfaceSwitch", () => {
   });
 
   it("does not bleed prop state across a 3d → 2d → 3d toggle", () => {
-    const { rerender } = render(<GraphSurfaceSwitch bundle={BUNDLE_STUB} />);
+    render(<GraphSurfaceSwitch bundle={BUNDLE_STUB} />);
     expect(orbMock).toHaveBeenCalledTimes(1);
     expect(dashboardShellMock).not.toHaveBeenCalled();
 
-    useDashboardStore.setState({ rendererMode: "2d" });
-    rerender(<GraphSurfaceSwitch bundle={BUNDLE_STUB} />);
+    setRendererMode("2d");
+    expect(screen.getByTestId("dashboard-shell")).toBeInTheDocument();
     expect(dashboardShellMock).toHaveBeenCalledTimes(1);
     // Orb mount count stays at 1 — no re-render of the 3d branch
     // while 2d is active.
     expect(orbMock).toHaveBeenCalledTimes(1);
 
-    useDashboardStore.setState({ rendererMode: "3d" });
-    rerender(<GraphSurfaceSwitch bundle={BUNDLE_STUB} />);
+    setRendererMode("3d");
+    expect(screen.getByTestId("orb-surface")).toBeInTheDocument();
     expect(orbMock).toHaveBeenCalledTimes(2);
     // 2d branch did not render again on the flip back.
     expect(dashboardShellMock).toHaveBeenCalledTimes(1);

@@ -1,5 +1,12 @@
 # 07 — Selection
 
+> **Updated 2026-04-27.** Current `/graph` selection still uses
+> `selected_point_indices` as the DuckDB source of truth, but orb visual
+> selection no longer writes a `selectionMask` DataTexture. The WebGPU
+> canvas packs selected/scope/focus/evidence membership into a `flags`
+> storage buffer, and rectangle selection obtains particle ids through
+> async compute picking before committing back to DuckDB.
+
 ## Modes
 
 Cosmograph parity:

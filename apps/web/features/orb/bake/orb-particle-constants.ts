@@ -1,0 +1,1 @@
+export const ORB_PARTICLE_CAPACITY = 16_384;

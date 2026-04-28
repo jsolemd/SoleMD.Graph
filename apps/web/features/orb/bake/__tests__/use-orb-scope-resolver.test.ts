@@ -17,15 +17,8 @@ jest.mock("@/features/graph/lib/cosmograph-selection", () => ({
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
-import {
-  getParticleStateData,
-  PARTICLE_STATE_LANES,
-  resetParticleStateTexture,
-  writeLane,
-} from "@/features/field/renderer/field-particle-state-texture";
 import { useDashboardStore } from "@/features/graph/stores";
 import { useOrbFocusVisualStore } from "../../stores/focus-visual-store";
-import { useOrbScopeMutationStore } from "../../stores/scope-mutation-store";
 import { useOrbScopeResolver } from "../use-orb-scope-resolver";
 
 interface Deferred<T> {
@@ -56,10 +49,6 @@ function buildTable(rows: QueryResult["rows"]) {
   return { toArray: () => rows };
 }
 
-function rByte(index: number): number {
-  return index * PARTICLE_STATE_LANES;
-}
-
 async function advanceResolverWindow(): Promise<void> {
   await act(async () => {
     jest.advanceTimersByTime(70);
@@ -79,18 +68,14 @@ async function resolveDeferred<T>(item: Deferred<T>, value: T): Promise<void> {
 describe("useOrbScopeResolver", () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    resetParticleStateTexture();
     useOrbFocusVisualStore.getState().reset();
-    useOrbScopeMutationStore.getState().reset();
     useDashboardStore.setState(useDashboardStore.getInitialState());
   });
 
   afterEach(() => {
     cleanup();
     jest.useRealTimers();
-    resetParticleStateTexture();
     useOrbFocusVisualStore.getState().reset();
-    useOrbScopeMutationStore.getState().reset();
     useDashboardStore.setState(useDashboardStore.getInitialState());
   });
 
@@ -120,7 +105,6 @@ describe("useOrbScopeResolver", () => {
   });
 
   it("clears a null scope immediately without a DuckDB read or debounce", () => {
-    writeLane("R", 3, 0);
     useOrbFocusVisualStore.getState().setScopeIndices([3]);
     const query = jest.fn().mockResolvedValue(buildTable([]));
     const connection = buildConnection(query);
@@ -134,7 +118,6 @@ describe("useOrbScopeResolver", () => {
       }),
     );
 
-    expect(getParticleStateData()[rByte(3)]).toBe(255);
     expect(useOrbFocusVisualStore.getState().scopeIndices).toEqual([]);
     expect(query).not.toHaveBeenCalled();
   });
@@ -163,9 +146,6 @@ describe("useOrbScopeResolver", () => {
     });
     await advanceResolverWindow();
 
-    expect(getParticleStateData()[rByte(2)]).toBe(255);
-    expect(getParticleStateData()[rByte(3)]).toBe(0);
-    expect(getParticleStateData()[rByte(7)]).toBe(255);
     expect(useOrbFocusVisualStore.getState().scopeIndices).toEqual([2, 7]);
   });
 
@@ -192,8 +172,6 @@ describe("useOrbScopeResolver", () => {
     await advanceResolverWindow();
 
     expect(query).toHaveBeenCalledTimes(1);
-    expect(getParticleStateData()[rByte(201)]).toBe(255);
-    expect(getParticleStateData()[rByte(202)]).toBe(0);
     expect(useOrbFocusVisualStore.getState().scopeIndices).toHaveLength(100);
     expect(useOrbFocusVisualStore.getState().scopeIndices.at(-1)).toBe(297);
   });
@@ -229,7 +207,7 @@ describe("useOrbScopeResolver", () => {
       rows: [{ particleIdx: 3, in_scope: false }],
     });
 
-    expect(getParticleStateData()[rByte(3)]).toBe(255);
+    expect(useOrbFocusVisualStore.getState().scopeIndices).toEqual([]);
     expect(query).toHaveBeenCalledTimes(1);
 
     await advanceResolverWindow();
@@ -237,11 +215,10 @@ describe("useOrbScopeResolver", () => {
     expect(query.mock.calls[1]?.[0]).toContain("year >= 2024");
 
     await resolveDeferred(second, {
-      rows: [{ particleIdx: 4, in_scope: false }],
+      rows: [{ particleIdx: 4, in_scope: true }],
     });
 
-    expect(getParticleStateData()[rByte(3)]).toBe(255);
-    expect(getParticleStateData()[rByte(4)]).toBe(0);
+    expect(useOrbFocusVisualStore.getState().scopeIndices).toEqual([4]);
   });
 
   it("cancels pending rAF/timer work on unmount", async () => {
@@ -267,7 +244,7 @@ describe("useOrbScopeResolver", () => {
     await advanceResolverWindow();
 
     expect(query).not.toHaveBeenCalled();
-    expect(getParticleStateData()[rByte(2)]).toBe(255);
+    expect(useOrbFocusVisualStore.getState().scopeIndices).toEqual([]);
   });
 
   it("prevents writes after unmounting an in-flight query", async () => {
@@ -297,6 +274,6 @@ describe("useOrbScopeResolver", () => {
       rows: [{ particleIdx: 5, in_scope: false }],
     });
 
-    expect(getParticleStateData()[rByte(5)]).toBe(255);
+    expect(useOrbFocusVisualStore.getState().scopeIndices).toEqual([]);
   });
 });

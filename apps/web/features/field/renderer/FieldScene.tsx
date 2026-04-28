@@ -9,8 +9,6 @@ import {
   ShaderMaterial,
   type Camera,
   type Points,
-  type Scene,
-  type WebGLRenderer,
 } from "three";
 import { FIELD_NON_DESKTOP_BREAKPOINT } from "../field-breakpoints";
 import { BlobController as BlobControllerClass } from "../controller/BlobController";
@@ -38,41 +36,6 @@ import {
 
 export type { FieldHotspotFrame } from "../controller/BlobController";
 
-/**
- * Out-of-tree subscriber for the blob layer's BufferGeometry.
- *
- * FieldScene calls this once the blob geometry has been attached to the
- * scene graph, passing (geometry, invalidate). The callback installs
- * whatever subscription it wants — e.g. an orb-mode paper-mutation store
- * — and returns a disposer run on scene unmount or prop-change.
- *
- * The callback is opaque from FieldScene's perspective: this is the
- * substrate→feature boundary. Renderer code stays unaware of orb.
- */
-export type BlobGeometrySubscriber = (args: {
-  geometry: BufferGeometry;
-  invalidate: () => void;
-}) => () => void;
-
-/**
- * Out-of-tree subscriber for the blob layer's THREE.Points handle +
- * the R3F renderer + scene + camera.
- *
- * Passed to FieldScene by orb mode so the picker can render the blob's
- * geometry against the same shader uniforms as the display pass. The
- * subscriber is responsible for enabling the blob's picking layer
- * (typically `points.layers.enable(1)`) and publishing a pickSync
- * handle; cleanup disables the layer and retracts the handle.
- */
-export type BlobPointsSubscriber = (args: {
-  points: Points;
-  material: ShaderMaterial;
-  renderer: WebGLRenderer;
-  scene: Scene;
-  camera: Camera;
-  invalidate: () => void;
-}) => () => void;
-
 interface FieldSceneProps {
   activeIds?: readonly FieldStageItemId[];
   cameraRef?: MutableRefObject<Camera | null>;
@@ -83,21 +46,6 @@ interface FieldSceneProps {
   ) => void;
   sceneStateRef: MutableRefObject<FieldSceneState>;
   stageReady?: boolean;
-  /**
-   * Optional blob-geometry subscriber. When provided, FieldScene installs
-   * it once the blob layer's BufferGeometry is attached and tears it
-   * down on unmount. Used by orb mode to stream paper-attribute chunks
-   * into the same 16384-particle buffer.
-   */
-  blobGeometrySubscriber?: BlobGeometrySubscriber;
-  /**
-   * Optional blob-points subscriber. When provided, FieldScene installs
-   * it once the blob THREE.Points handle is attached. Used by orb mode
-   * to wire GPU picking against the live renderer/scene/camera — the
-   * subscriber enables a layer mask bit on blob so the picker can
-   * exclude stream/objectFormation from the picking pass.
-   */
-  blobPointsSubscriber?: BlobPointsSubscriber;
 }
 
 function syncLayerUniforms(
@@ -150,14 +98,8 @@ export function FieldScene({
   onControllerReady,
   sceneStateRef,
   stageReady = true,
-  blobGeometrySubscriber,
-  blobPointsSubscriber,
 }: FieldSceneProps) {
   const viewportWidth = useThree((state) => state.size.width);
-  const invalidate = useThree((state) => state.invalidate);
-  const gl = useThree((state) => state.gl);
-  const scene = useThree((state) => state.scene);
-  const camera = useThree((state) => state.camera);
   const isMobile = viewportWidth < FIELD_NON_DESKTOP_BREAKPOINT;
   const colorScheme = useComputedColorScheme("dark");
   const lightModeValue = colorScheme === "light" ? 1 : 0;
@@ -388,68 +330,6 @@ export function FieldScene({
     onControllerReady,
     streamController,
     streamHandles,
-  ]);
-
-  // Install the blob-geometry subscriber once blob is mounted AND the
-  // subscriber prop is present (orb mode). Renderer stays agnostic about
-  // what the subscriber does; it hands over (geometry, invalidate) and
-  // tears down on unmount or prop change. With `frameloop="demand"`, the
-  // subscriber MUST call `invalidate()` after mutating buffer attrs for
-  // the GPU to observe the change — that's the contract.
-  //
-  // Effect keys on `pointSources.blob` so it reinstalls whenever the
-  // blob layer's source (which owns the geometry attributes) is rebuilt.
-  useEffect(() => {
-    if (!blobGeometrySubscriber) return;
-    if (!activeIdSet.has("blob")) return;
-    if (!pointSources.blob) return;
-    const geometry = blobHandles.geometry.current;
-    if (!geometry) return;
-    const dispose = blobGeometrySubscriber({ geometry, invalidate });
-    return () => {
-      dispose();
-    };
-  }, [
-    activeIdSet,
-    blobGeometrySubscriber,
-    blobHandles,
-    invalidate,
-    pointSources.blob,
-  ]);
-
-  // Install the blob-points subscriber (orb-mode GPU picking). The
-  // subscriber receives the blob THREE.Points + its ShaderMaterial + the
-  // R3F renderer/scene/camera, publishes a pickSync handle to the orb
-  // store, and enables a layers bit on blob so the picker can exclude
-  // stream/objectFormation from the picking pass. Cleanup retracts the
-  // handle (identity-guarded) and disables the layer bit.
-  useEffect(() => {
-    if (!blobPointsSubscriber) return;
-    if (!activeIdSet.has("blob")) return;
-    if (!pointSources.blob) return;
-    const points = blobHandles.points.current;
-    const material = blobHandles.material.current;
-    if (!points || !material) return;
-    const dispose = blobPointsSubscriber({
-      points,
-      material,
-      renderer: gl,
-      scene,
-      camera,
-      invalidate,
-    });
-    return () => {
-      dispose();
-    };
-  }, [
-    activeIdSet,
-    blobHandles,
-    blobPointsSubscriber,
-    camera,
-    gl,
-    invalidate,
-    pointSources.blob,
-    scene,
   ]);
 
   useFrame((state, delta) => {

@@ -2,18 +2,15 @@
 
 import dynamic from "next/dynamic";
 import type { GraphBundle } from "@solemd/graph";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useGraphWarmup } from "@/features/graph/hooks/use-graph-warmup";
 import { usePaperAttributesBaker } from "../bake/use-paper-attributes-baker";
 import { useOrbEvidencePulseResolver } from "../bake/use-orb-evidence-pulse-resolver";
 import { useOrbFocusResolver } from "../bake/use-orb-focus-resolver";
-import { useOrbHoverResolver } from "../bake/use-orb-hover-resolver";
 import { useOrbSelectionResolver } from "../bake/use-orb-selection-resolver";
 import { useOrbScopeResolver } from "../bake/use-orb-scope-resolver";
-import { useFieldRuntime } from "@/features/field/renderer/field-runtime-context";
 import { buildSelectedViewPredicate } from "@/features/graph/duckdb/sql-helpers";
-import { clearLanes } from "@/features/field/renderer/field-particle-state-texture";
 import { clearSelectionState } from "@/features/graph/lib/graph-selection-state";
 import {
   useDashboardStore,
@@ -21,11 +18,7 @@ import {
   useShellStore,
 } from "@/features/graph/stores";
 import { useOrbGeometryMutationStore } from "../stores/geometry-mutation-store";
-import {
-  selectOrbFocusVisualActive,
-  useOrbFocusVisualStore,
-} from "../stores/focus-visual-store";
-import { useOrbScopeMutationStore } from "../stores/scope-mutation-store";
+import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
 import {
   OrbInteractionSurface,
   type OrbSelectionRect,
@@ -35,12 +28,18 @@ import { useOrbClick } from "../interaction/use-orb-click";
 import { useOrbHover } from "../interaction/use-orb-hover";
 import { useOrbRectSelection } from "../interaction/use-orb-rect-selection";
 import { useOrbSelectionEscape } from "../interaction/use-orb-selection-escape";
-import { useOrbPickerStore } from "../interaction/orb-picker-store";
-import { PICK_NO_HIT } from "@/features/field/renderer/field-picking";
+import {
+  ORB_PICK_NO_HIT,
+  useOrbPickerStore,
+} from "../interaction/orb-picker-store";
 import { OrbChromeBar } from "../chrome/OrbChromeBar";
 import { OrbHoverBillboard } from "../chrome/OrbHoverBillboard";
 import { OrbLegendOverlay } from "../chrome/OrbLegendOverlay";
 import type { GraphSelectionChordState } from "@/features/graph/lib/graph-selection-chords";
+import {
+  OrbWebGpuCanvas,
+  type OrbWebGpuCanvasStatus,
+} from "../webgpu/OrbWebGpuCanvas";
 
 // SSR-disabled: GraphPanelsLayer transitively pulls @/features/graph/cosmograph
 // (DetailPanel/WikiPanel/InfoPanel/PromptBox), whose top-level
@@ -73,8 +72,6 @@ function clearOrbVisualSelectionState(clearScopeLane: boolean): void {
 
   if (clearScopeLane) {
     focusVisual.reset();
-    clearLanes(["R", "G"]);
-    useOrbScopeMutationStore.getState().bumpScopeRevision();
     return;
   }
 
@@ -87,105 +84,37 @@ function clearOrbVisualSelectionState(clearScopeLane: boolean): void {
 /**
  * Orb surface for /graph.
  *
- * Mounts on top of the layout-owned field canvas. No R3F mount of its
- * own — the 16384-particle substrate is provided by DashboardClientShell.
- * OrbSurface provides the orb-specific content layer:
+ * Owns the /graph orb workspace shell. The 3D particle core is the
+ * raw WebGPU `OrbWebGpuCanvas`; DashboardClientShell keeps the legacy
+ * FieldCanvas for landing mode only. OrbSurface provides the orb-specific
+ * content layer:
  *
  *   - Kicks off the progressive paper baker against the active bundle's
  *     DuckDB connection. Chunks flow into the orb geometry mutation
- *     store, hydrating particles into paper-mode without repainting.
- *   - Marks stageReady=true so FieldScene starts ticking the blob
- *     controller even before landing has ever run.
+ *     store, and the WebGPU canvas packs them into storage buffers.
  *   - Click capture: orb picker resolves a particle index. Plain clicks
  *     dispatch through the shared `useResolveAndSelectNode` funnel into
  *     `useGraphStore.selectedNode`; Shift-click uses the explicit
  *     `selected_point_indices` lane for additive selection; the
- *     rectangle tool batches a GPU pick-buffer read into the same
+ *     rectangle tool batches a WebGPU compute readback into the same
  *     explicit selection commit path.
  *   - Mounts the renderer-clean panel chrome via GraphPanelsLayer (the
  *     same component DashboardShell uses for 2D), plus OrbChromeBar
- *     for the 3D-only opener pills. Slice F adds orb-native legends,
- *     hover labels, and snapshot export; Slice G routes filters/timeline
+ *     for the 3D-only opener pills. Slice F adds orb-native legends
+ *     and hover labels; Slice G routes filters/timeline
  *     through shared scope SQL so both renderers see the same subset.
  *   - Dev-only HUD shows streaming progress so the orb bring-up can be
  *     verified visually.
  */
 export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
   const { canvas, connection, queries, status } = useGraphWarmup(bundle);
-  const { sceneStateRef, setStageReady } = useFieldRuntime();
-  const pauseMotion = useShellStore((s) => s.pauseMotion);
-  const lowPowerProfile = useShellStore((s) => s.lowPowerProfile);
-  const prefersReducedMotion = useShellStore((s) => s.prefersReducedMotion);
-  const motionSpeedMultiplier = useShellStore((s) => s.motionSpeedMultiplier);
-  const rotationSpeedMultiplier = useShellStore(
-    (s) => s.rotationSpeedMultiplier,
-  );
-  const ambientEntropy = useShellStore((s) => s.ambientEntropy);
   const orbSelectionTool = useDashboardStore((s) => s.orbSelectionTool);
   const showTimeline = useDashboardStore((s) => s.showTimeline);
   const uiHidden = useDashboardStore((s) => s.uiHidden);
   const setOrbSelectionTool = useDashboardStore((s) => s.setOrbSelectionTool);
-  const orbFocusActive = useOrbFocusVisualStore(selectOrbFocusVisualActive);
-
-  // Orb doesn't wait on FixedStageManager — the blob controller needs
-  // to be ticking when the user arrives at /graph so paper mutations
-  // are rendered. Mark ready on mount; clear on unmount so a back-nav
-  // to landing re-gates on FixedStageManager.
-  useEffect(() => {
-    setStageReady(true);
-    return () => setStageReady(false);
-  }, [setStageReady]);
-
-  // Slice B (orb-3d-physics-taxonomy.md §9.2): split the user pause
-  // from the reduced-motion / low-power gate. `motionEnabled` keeps
-  // the existing meaning (false ⇒ controllers floor at motionScale
-  // = 0.16); `motionPaused` is the new hard-freeze flag the
-  // controllers translate to a zero scale on time / rotation /
-  // color-cycle.
-  useEffect(() => {
-    const sceneState = sceneStateRef.current;
-    sceneState.motionPaused = pauseMotion;
-    sceneState.motionEnabled =
-      lowPowerProfile !== "on" && !prefersReducedMotion;
-    return () => {
-      sceneState.motionPaused = false;
-      sceneState.motionEnabled = true;
-    };
-  }, [pauseMotion, lowPowerProfile, prefersReducedMotion, sceneStateRef]);
-
-  // Slice B (§9.2): mirror the three ambient-physics multipliers into
-  // sceneStateRef so the field controllers can read them on tick.
-  // Apply the low-power cap on entropy here so the field never sees
-  // > 1.0 under `lowPowerProfile === 'on'` (parity-plan rule:
-  // "low-power disables high-frequency drift").
-  useEffect(() => {
-    const sceneState = sceneStateRef.current;
-    sceneState.motionSpeedMultiplier = motionSpeedMultiplier;
-    sceneState.rotationSpeedMultiplier = rotationSpeedMultiplier;
-    sceneState.ambientEntropy =
-      lowPowerProfile === "on"
-        ? Math.min(ambientEntropy, 1)
-        : ambientEntropy;
-    return () => {
-      sceneState.motionSpeedMultiplier = 1;
-      sceneState.rotationSpeedMultiplier = 1;
-      sceneState.ambientEntropy = 1;
-    };
-  }, [
-    motionSpeedMultiplier,
-    rotationSpeedMultiplier,
-    ambientEntropy,
-    lowPowerProfile,
-    sceneStateRef,
-  ]);
-
-  useEffect(() => {
-    const sceneState = sceneStateRef.current;
-    sceneState.orbFocusActive = orbFocusActive;
-    return () => {
-      sceneState.orbFocusActive = false;
-    };
-  }, [orbFocusActive, sceneStateRef]);
+  const [webGpuStatus, setWebGpuStatus] =
+    useState<OrbWebGpuCanvasStatus | null>(null);
+  const clickRequestIdRef = useRef(0);
 
   const paperState = usePaperAttributesBaker({
     connection,
@@ -229,18 +158,11 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
     enabled: connection != null,
     paperSampleReady: paperState.count != null,
   });
-  useOrbHoverResolver({
-    particleCount: paperState.count ?? 0,
-    enabled: paperState.count != null,
-  });
 
-  // Clear any leftover dynamic particle-state lanes when the orb
-  // unmounts. Mirrors the geometry-mutation reset in
-  // DashboardClientShell so a back-nav to landing doesn't replay a
-  // stale dim, focus, or hover mark.
+  // Clear dynamic WebGPU flag lanes when the orb unmounts so a later
+  // remount starts without stale focus, hover, scope, or evidence bits.
   useEffect(() => {
     return () => {
-      useOrbScopeMutationStore.getState().reset();
       useOrbFocusVisualStore.getState().reset();
     };
   }, []);
@@ -306,13 +228,10 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
           }
         : undefined,
       clearNode: () => {
-        if (!dashboard.currentPointScopeSql || shouldClearScope) {
-          sceneStateRef.current.orbFocusActive = false;
-        }
         clearOrbVisualSelectionState(shouldClearScope);
       },
     }).catch(() => {});
-  }, [queries, releaseOrbSelectionTool, sceneStateRef]);
+  }, [queries, releaseOrbSelectionTool]);
 
   const clearAllOrbSelection = useCallback(() => {
     releaseOrbSelectionTool();
@@ -333,11 +252,10 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
         forceRevision: true,
       },
       clearNode: () => {
-        sceneStateRef.current.orbFocusActive = false;
         clearOrbVisualSelectionState(true);
       },
     }).catch(() => {});
-  }, [queries, releaseOrbSelectionTool, sceneStateRef]);
+  }, [queries, releaseOrbSelectionTool]);
 
   useOrbSelectionEscape({
     onClearSelection: clearOrbSelection,
@@ -390,23 +308,33 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
         releaseOrbSelectionTool();
         return;
       }
-      const index = handle.pickSync(clientX, clientY);
-      if (index === PICK_NO_HIT) {
-        setLastPick({ kind: "miss" });
-        releaseOrbSelectionTool();
-        return;
-      }
-      setLastPick({ kind: "hit", index });
-      selectByIndex(index, chords);
-      releaseOrbSelectionTool();
+      const requestId = ++clickRequestIdRef.current;
+      void handle
+        .pickAsync(clientX, clientY)
+        .then((index) => {
+          if (requestId !== clickRequestIdRef.current) return;
+          if (index === ORB_PICK_NO_HIT) {
+            setLastPick({ kind: "miss" });
+            releaseOrbSelectionTool();
+            return;
+          }
+          setLastPick({ kind: "hit", index });
+          selectByIndex(index, chords);
+          releaseOrbSelectionTool();
+        })
+        .catch(() => {
+          if (requestId === clickRequestIdRef.current) {
+            setLastPick({ kind: "miss" });
+            releaseOrbSelectionTool();
+          }
+        });
     },
     [releaseOrbSelectionTool, selectByIndex],
   );
 
   // Mobile parity for the desktop spacebar shortcut. Hits the same
-  // shell-store flag that MotionControlPanel and the keyboard handler
-  // both write, so the field controllers honor the pause uniformly
-  // regardless of input source.
+  // shell-store flag that MotionControlPanel writes, so motion pause
+  // stays one shared state regardless of input source.
   const handleDoubleTapPause = useCallback(() => {
     const store = useShellStore.getState();
     store.setPauseMotion(!store.pauseMotion);
@@ -416,6 +344,10 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
 
   return (
     <main className="relative min-h-screen">
+      <OrbWebGpuCanvas
+        particleCount={paperState.count}
+        onStatusChange={setWebGpuStatus}
+      />
       <OrbInteractionSurface
         onClick={handleCapturedClick}
         onDoubleTap={handleDoubleTapPause}
@@ -450,6 +382,7 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
         <OrbStreamingHud
           paperState={paperState}
           warmupStatus={status}
+          webGpuStatus={webGpuStatus}
           lastPick={lastPick}
         />
       ) : null}
@@ -476,10 +409,12 @@ function OrbSelectionNotice({ message }: { message: string }) {
 function OrbStreamingHud({
   paperState,
   warmupStatus,
+  webGpuStatus,
   lastPick,
 }: {
   paperState: ReturnType<typeof usePaperAttributesBaker>;
   warmupStatus: string;
+  webGpuStatus: OrbWebGpuCanvasStatus | null;
   lastPick: { kind: "miss" } | { kind: "hit"; index: number } | null;
 }) {
   const chunkCount = useOrbGeometryMutationStore((s) => s.chunks.length);
@@ -497,6 +432,7 @@ function OrbStreamingHud({
     >
       <div>bundle: {warmupStatus}</div>
       <div>baker: {paperState.status}</div>
+      <div>webgpu: {formatWebGpuStatus(webGpuStatus)}</div>
       <div>
         chunks: {chunkCount} · {percent}%
       </div>
@@ -514,4 +450,13 @@ function OrbStreamingHud({
       ) : null}
     </div>
   );
+}
+
+function formatWebGpuStatus(status: OrbWebGpuCanvasStatus | null): string {
+  if (status == null) return "initializing";
+  if (status.kind === "running") return status.profile.name;
+  if (status.kind === "unsupported") return status.reason;
+  if (status.kind === "device-lost") return "device lost";
+  if (status.kind === "error") return "error";
+  return status.kind;
 }

@@ -11,10 +11,10 @@ import { useOrbInteraction } from "./orb-interaction-context";
 /**
  * Single DOM owner of orb-mode pointer / wheel / touch interaction.
  *
- * Replaces the prior `OrbClickCaptureLayer`. Sits above the layout-passive
- * `FieldCanvas` (z:0, `pointer-events-none`) and below the canonical
- * detail / wiki / info / prompt panels (z:30+) so panels intercept their
- * own pointer events first and orb clicks fall through to this surface.
+ * Sits above the WebGPU orb canvas (z:0, `pointer-events-none`) and below
+ * the canonical detail / wiki / info / prompt panels (z:30+) so panels
+ * intercept their own pointer events first and orb clicks fall through to
+ * this surface.
  *
  * Slice A0 contract:
  * - Establishes the surface, the registration handshake to the
@@ -127,11 +127,10 @@ export function OrbInteractionSurface({
     null,
   );
   // Tracks the number of primary-button pointers currently down. On
-  // mobile, two-finger camera gestures (pan + pinch via drei
-  // `<CameraControls>` `TOUCH_DOLLY_OFFSET`) generate two pointerdowns
-  // and two pointerups; without this guard, a brief two-finger gesture
-  // where the second finger barely moves could fire a stray tap-select
-  // when it lifts. Contract:
+  // mobile, two-finger WebGPU twist gestures generate two pointerdowns and
+  // two pointerups; without this guard, a brief two-finger gesture where the
+  // second finger barely moves could fire a stray tap-select when it lifts.
+  // Contract:
   //   - first pointerdown: count→1, store down position.
   //   - subsequent pointerdown: count→2+, INVALIDATE down position
   //     (null) so no tap can fire when fingers lift.
@@ -145,9 +144,8 @@ export function OrbInteractionSurface({
 
   // Callback ref: fires with the element when it mounts and `null` on
   // unmount. The provider's `surfaceElement` state mirrors that, so
-  // consumers (slice A1's `<CameraControls>` effect, etc.) can react to
-  // element identity changes — including the 3D ↔ 2D toggle replacing
-  // the surface entirely.
+  // consumers can react to element identity changes, including the 3D ↔ 2D
+  // toggle replacing the surface entirely.
   const handleRef = useCallback(
     (node: HTMLDivElement | null) => {
       registerSurface(node);
@@ -160,10 +158,9 @@ export function OrbInteractionSurface({
       ref={handleRef}
       aria-hidden
       className="pointer-events-auto fixed inset-0 z-[5]"
-      // touchAction `none` so drei `<CameraControls>` (slice A1) owns
-      // pinch / two-finger gestures without the browser stealing
-      // vertical pinches as page scroll. userSelect prevents text-
-      // selection during camera drags.
+      // touchAction `none` so the WebGPU orb owns pointer gestures without
+      // the browser stealing vertical pinches as page scroll. userSelect
+      // prevents text-selection during drags.
       style={{
         touchAction: "none",
         userSelect: "none",
@@ -171,12 +168,10 @@ export function OrbInteractionSurface({
       }}
       onPointerDown={(e) => {
         // Only track primary-button presses for the click-vs-drag
-        // discriminator. Right-button (button=2) is camera-controls'
-        // OFFSET pan; middle (button=1) is dolly. Letting those fire a
-        // selection-click on under-4px pointerup would re-select the
-        // particle under the cursor every time the user clicks-without-
-        // dragging to pan or dolly. Touch reports button=0 by default,
-        // so this also leaves single-finger tap-select working.
+        // discriminator. Right-button is reserved for rectangle selection
+        // when that tool is active; middle/right non-tool clicks are ignored
+        // so they cannot accidentally re-select a particle. Touch reports
+        // button=0 by default, so single-finger tap-select still works.
         if (e.button === 2 && rectSelectionEnabled) {
           rightDownRef.current = { x: e.clientX, y: e.clientY };
           return;
@@ -319,8 +314,8 @@ export function OrbInteractionSurface({
         }
         onHoverClear?.();
       }}
-      // Right-drag is camera-controls' OFFSET pan; suppress the browser
-      // context menu so the gesture doesn't open it on right-click.
+      // Suppress the browser context menu so rectangle right-drag does not
+      // open it on pointer release.
       onContextMenu={(e) => {
         e.preventDefault();
       }}

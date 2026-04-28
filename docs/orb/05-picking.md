@@ -1,5 +1,14 @@
 # 05 — Picking
 
+> **Updated 2026-04-27.** The current `/graph` orb picker is WebGPU
+> compute-first. `OrbWebGpuCanvas` publishes an async picker handle via
+> `useOrbPickerStore`; hover/click/rectangle selection call `pickAsync`
+> / `pickRectAsync`. The runtime writes tiny result buffers, copies to
+> separate `MAP_READ` staging buffers, and resolves with `mapAsync()`.
+> Operation tokens in the React interaction hooks prevent stale async
+> results from overwriting newer hover/click state. The old WebGL
+> render-target/color-ID path below is historical.
+
 ## Pipeline
 
 Reuses the existing GPU-ID picker from

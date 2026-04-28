@@ -1,11 +1,13 @@
 # 04 — Renderer (`<GraphOrb>`)
 
-> **SUPERSEDED 2026-04-25.** The `<GraphOrb>` R3F point-cloud renderer
+> **SUPERSEDED 2026-04-27.** The `<GraphOrb>` R3F point-cloud renderer
 > described below was a prototype and has been retired. The current
-> 3D primary on `/graph` is `OrbSurface` on the persistent FieldCanvas
-> (see `apps/web/features/orb/surface/OrbSurface.tsx`). This file is
-> kept as background for the original physics/render-lane separation
-> contract; do not implement against it as a current spec.
+> 3D primary on `/graph` is `OrbSurface` plus
+> `apps/web/features/orb/webgpu/OrbWebGpuCanvas.tsx`. The orb particle
+> core is raw WebGPU: one canvas/device owner, storage-buffer particle
+> state, instanced billboards, compute integration, and async compute
+> picking. This file is kept as background for earlier physics/render
+> lane discussions; do not implement against it as a current spec.
 
 ## Overview
 

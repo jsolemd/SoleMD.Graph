@@ -31,16 +31,11 @@ import {
   FieldSceneStoreProvider,
 } from "@/features/field/scroll/field-scene-store";
 import type { FieldController } from "@/features/field/controller/FieldController";
-import { installBlobMutationSubscriber } from "@/features/orb/bake/install-blob-mutation-subscriber";
-import { OrbCameraControls } from "@/features/orb/camera/OrbCameraControls";
-import { OrbSnapshotBridge } from "@/features/orb/capture/OrbSnapshotBridge";
-import { installBlobPointsSubscriber } from "@/features/orb/interaction/install-blob-points-subscriber";
 import {
   OrbInteractionContext,
   type OrbInteractionBridge,
 } from "@/features/orb/interaction/orb-interaction-context";
 import { useOrbGeometryMutationStore } from "@/features/orb/stores/geometry-mutation-store";
-import { useOrbScopeMutationStore } from "@/features/orb/stores/scope-mutation-store";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import { useShellVariant } from "@/features/graph/components/shell/use-shell-variant";
 import {
@@ -53,21 +48,19 @@ export function resolveFieldMode(
   pathname: string | null,
   rendererMode: RendererMode,
 ): FieldMode {
-  // /graph in '3d' mode uses the field substrate as the orb. Toggling to
-  // '2d' (native Cosmograph) keeps the dashboard layout mounted but the
-  // field stays inert so blob mutation/picking subscribers don't run
-  // pointlessly under Cosmograph.
+  // /graph in '3d' mode is owned by the raw WebGPU orb runtime mounted
+  // inside OrbSurface. Toggling to '2d' (native Cosmograph) keeps the
+  // dashboard layout mounted while the layout-level landing FieldCanvas
+  // remains unmounted for /graph.
   return pathname === "/graph" && rendererMode === "3d" ? "orb" : "landing";
 }
 
 /**
  * Layout-owned client shell for the (dashboard) route group.
  *
- * Mounts the R3F FieldCanvas once at the layout level and exposes a
- * FieldRuntimeBridge so `/` (landing) and `/graph` (orb) can drive it
- * without remounting the WebGL context across navigations. Next 16's
- * `cacheComponents: true` keeps this subtree alive across
- * `router.replace('/' ↔ '/graph')` — only `{children}` swaps.
+ * Mounts the R3F FieldCanvas for landing. The /graph 3D path owns its
+ * own raw WebGPU canvas in OrbSurface; the layout no longer installs
+ * WebGL blob mutation or picking subscribers for orb mode.
  *
  * Scope contract:
  * - Canvas + scene store + field mode live HERE.
@@ -103,12 +96,9 @@ export function DashboardClientShell({
   >({});
   const [controllerEpoch, setControllerEpoch] = useState(0);
   const [stageReady, setStageReady] = useState(false);
-  // Slice A0: the OrbInteractionSurface lives inside `{children}` (orb
-  // mode), but slice A1's `<CameraControls>` lives inside FieldCanvas
-  // which is its sibling. React context only flows downward, so the
-  // bridge is hoisted here above both subtrees. `surfaceElement` is
-  // reactive state (not a ref) so consumers can key effects on element
-  // identity changing across the 3D ↔ 2D toggle.
+  // The OrbInteractionSurface lives inside `{children}`; the bridge is
+  // hoisted here so touch/hover/selection bindings can follow the live
+  // DOM element across the 3D ↔ 2D toggle.
   const [orbSurfaceElement, setOrbSurfaceElement] =
     useState<HTMLDivElement | null>(null);
 
@@ -121,24 +111,14 @@ export function DashboardClientShell({
     [],
   );
 
-  // Wire the orb → blob mutation bridge only while /graph is active.
-  // Resetting the store on transition back to landing prevents a stale
-  // chunk from replaying against a freshly-baked geometry when the user
-  // returns to /graph — the baker will re-stream on re-mount.
-  const blobGeometrySubscriber =
-    fieldMode === "orb" ? installBlobMutationSubscriber : undefined;
-  const blobPointsSubscriber =
-    fieldMode === "orb" ? installBlobPointsSubscriber : undefined;
-
   useEffect(() => {
     if (fieldMode === "orb") return;
     useOrbGeometryMutationStore.getState().reset();
-    useOrbScopeMutationStore.getState().reset();
   }, [fieldMode]);
 
   // Slice 9: OS reduced-motion bridge. Mirrors the media-query into
-  // useShellStore.prefersReducedMotion so consumers (OrbSurface,
-  // BlobController gate) can collapse the three orthogonal motion
+  // useShellStore.prefersReducedMotion so consumers can collapse the
+  // three orthogonal motion
   // inputs (user-controlled pauseMotion, user/auto lowPowerProfile,
   // system-controlled OS preference) into a single derived flag
   // without each call site re-running window.matchMedia. Critical
@@ -186,24 +166,16 @@ export function DashboardClientShell({
         <FieldSceneStoreProvider store={sceneStore}>
           <FieldRuntimeContext.Provider value={bridge}>
             <OrbInteractionContext.Provider value={orbInteractionBridge}>
-              <FieldCanvas
-                activeIds={FIELD_STAGE_ITEM_IDS}
-                blobGeometrySubscriber={blobGeometrySubscriber}
-                blobPointsSubscriber={blobPointsSubscriber}
-                cameraRef={cameraRef}
-                canvasChildren={
-                  fieldMode === "orb" ? (
-                    <>
-                      <OrbCameraControls />
-                      <OrbSnapshotBridge />
-                    </>
-                  ) : null
-                }
-                className="fixed inset-0"
-                onControllerReady={handleControllerReady}
-                sceneStateRef={sceneStateRef}
-                stageReady={stageReady}
-              />
+              {fieldMode === "landing" ? (
+                <FieldCanvas
+                  activeIds={FIELD_STAGE_ITEM_IDS}
+                  cameraRef={cameraRef}
+                  className="fixed inset-0"
+                  onControllerReady={handleControllerReady}
+                  sceneStateRef={sceneStateRef}
+                  stageReady={stageReady}
+                />
+              ) : null}
               {children}
             </OrbInteractionContext.Provider>
           </FieldRuntimeContext.Provider>

@@ -7,10 +7,10 @@ import {
   useOrbGeometryMutationStore,
   type PaperCorpusStats,
 } from "../stores/geometry-mutation-store";
+import { ORB_PARTICLE_CAPACITY } from "./orb-particle-constants";
 
 /**
- * Progressive paper-attribute streamer for the orb's paper-mode overlay
- * over the shared field substrate.
+ * Progressive paper-attribute streamer for the WebGPU orb.
  *
  * One entry per particle index in [0, count). Sampled deterministically
  * via DuckDB `USING SAMPLE reservoir(<count>) REPEATABLE(<seed>)` so
@@ -22,32 +22,34 @@ import {
  * The pre-5d implementation fired a single `connection.query(reservoir(...))`
  * which blocked until the full 16384-row sample was collected and
  * materialized in memory. At /graph entry that's a visible ~1–3s pause
- * before any paper can hydrate — the entire canvas sits motionless.
+ * before any paper can hydrate.
  *
  * 5d materializes the reservoir sample ONCE into a temp table
  * (`CREATE OR REPLACE TEMP TABLE paper_sample AS …`), then opens a
  * streaming read (`connection.send(sql, true)`) that emits Arrow
  * RecordBatches as DuckDB produces them. Each batch (~1–2k rows)
  * becomes a `PaperChunk` published to the orb geometry mutation store.
- * FieldScene's blob-geometry subscriber applies each chunk in order.
+ * OrbWebGpuCanvas packs those chunks into storage-buffer arrays.
  *
  * Determinism is preserved (REPEATABLE seeds the reservoir; subsequent
  * streaming reads are in the ROW_NUMBER order we assigned when
- * materializing). Progressive delivery gives the user a smooth "paper
- * hydration" during landing scroll rather than a blocking pause at
- * /graph entry.
+ * materializing). Progressive delivery gives the user a smooth paper
+ * hydration rather than a blocking pause at /graph entry.
  *
  * ### Layout authority boundary
  *
  * This hook owns DuckDB interaction, chunk emission, and store writes.
- * It does NOT mutate geometry — that's `applyPaperAttributeOverrides`,
- * invoked by the blob-geometry subscriber whenever the store gains
- * chunks. Two separate responsibilities across the tree boundary.
+ * It does NOT mutate GPU buffers directly. OrbWebGpuCanvas owns the
+ * canvas/device and uploads packed buffer data when chunks change.
  */
 
 export interface PaperAttrs {
   paperId: string;
+  pointId?: string;
   clusterId: number;
+  x?: number;
+  y?: number;
+  displayLabel?: string;
   refCount: number;
   entityCount: number;
   relationCount: number;
@@ -86,13 +88,17 @@ export interface UsePaperAttributesBakerOptions {
   enabled?: boolean;
 }
 
-const DEFAULT_COUNT = 16_384;
+const DEFAULT_COUNT = ORB_PARTICLE_CAPACITY;
 const DEFAULT_SEED = 20_260_418; // mirrors FIELD_SEED in point-source-registry
 
 interface PaperRow {
   particleIdx: number;
+  id: string;
   paperId: string;
   clusterId: number | null;
+  x: number | null;
+  y: number | null;
+  displayLabel: string | null;
   paperReferenceCount: number | null;
   paperEntityCount: number | null;
   paperRelationCount: number | null;
@@ -203,6 +209,9 @@ export function usePaperAttributesBaker(
                  id,
                  paperId,
                  clusterId,
+                 x,
+                 y,
+                 displayLabel,
                  paperReferenceCount,
                  paperEntityCount,
                  paperRelationCount,
@@ -221,7 +230,7 @@ export function usePaperAttributesBaker(
         // Step 3: open a streaming read in particleIdx order so each
         // batch is a contiguous chunk of particles.
         const reader = await connection.send(
-          `SELECT particleIdx, paperId, clusterId,
+          `SELECT particleIdx, id, paperId, clusterId, x, y, displayLabel,
                   paperReferenceCount, paperEntityCount,
                   paperRelationCount, year
              FROM paper_sample
@@ -259,7 +268,11 @@ export function usePaperAttributesBaker(
 
             attributes.set(particleIdx, {
               paperId: String(row.paperId),
+              pointId: String(row.id),
               clusterId: Number(row.clusterId ?? 0) | 0,
+              x: Number(row.x ?? 0),
+              y: Number(row.y ?? 0),
+              displayLabel: String(row.displayLabel ?? row.paperId ?? row.id),
               refCount,
               entityCount,
               relationCount,

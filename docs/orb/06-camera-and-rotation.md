@@ -1,5 +1,12 @@
 # 06 — Camera and rotation
 
+> **Updated 2026-04-27.** The current `/graph` orb no longer mounts
+> drei `CameraControls`. The first WebGPU implementation uses a fixed
+> clip-space billboard view with WebGPU-owned rotation/drift in the
+> compute/render pipeline and DOM-level interaction capture. The
+> CameraControls design below is retained as the richer navigation
+> target for later camera-state work, not as current runtime code.
+
 ## Camera
 
 `@react-three/drei` `<CameraControls>` (wraps yomotsu/camera-controls).

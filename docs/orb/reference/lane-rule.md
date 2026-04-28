@@ -1,25 +1,20 @@
 # Reference — render-vs-physics lane rule
 
 The load-bearing architectural rule for everything in this docset.
-Codified at `apps/web/features/orb/bake/apply-paper-overrides.ts:51`
-and reaffirmed in
-`docs/future/orb-mass-normalization-port.md`.
+The original version lived in
+`apps/web/features/orb/bake/apply-paper-overrides.ts`; the current
+WebGPU version is codified by
+`apps/web/features/orb/bake/orb-paper-visual-mapping.ts` and
+`apps/web/features/orb/webgpu/orb-webgpu-particles.ts`.
 
-## The rule, verbatim from `apply-paper-overrides.ts`
+## The current rule
 
-> The attributes this writes (`aSpeed`, `aClickPack.w`, `aBucket`,
-> `aFunnel*`) are **render lanes**, not physics state. `aSpeed`
-> multiplies shader noise displacement (`field-vertex-motion.glsl.ts:232`);
-> `aClickPack.w` is a sprite-size multiplier
-> (`field-vertex-motion.glsl.ts:266`).
->
-> When the physics layer lands (N-body, search excitation, drag,
-> hover-zoom), it gets its **own** state — likely a sidecar
-> texture or a separate attribute pass, designed at that point.
-> Sprite size MAY derive from intrinsic mass via a render mapping,
-> but the two are never the same field. This separation is the
-> rule the larger Cosmograph→3D port follows: visual mappings live
-> here; intrinsic properties live next to the simulation.
+Paper-derived visual mappings write WebGPU display lanes: color,
+radius, and drift speed. They do not define intrinsic mass or semantic
+force state. Interaction state writes flag bits. Future force kernels
+get their own storage buffers for mass, edges, excitation, pins, and
+summary state. Visual mappings may derive from the same source data as
+physics inputs, but they are never the same lane.
 
 ## Why this matters
 
@@ -35,39 +30,32 @@ for any future GPGPU work.
 
 ## Lane inventory (current + planned)
 
-### Render lanes (existing)
+### WebGPU visual lanes
 
-Written by surface code (paper baker, click handler, lands-mode
-field baker). Cheap to rewrite via `addUpdateRange` +
-`bufferSubData`. Visual output only.
-
-| Lane | Type | Owner | Use |
-|---|---|---|---|
-| `aSpeed` | vec3 | baker (paper-mass) | shader noise modulator |
-| `aClickPack.{xyz}` | vec3 | click-attraction handler (NOT physics) | click-attraction offset |
-| `aClickPack.w` | float | baker | sprite size factor |
-| `aBucket` | float | baker (orb mode = 0) | shader paper-bucket gate |
-| `aFunnel*` | float | baker | funnel deformation |
-| `aColor` | vec3 (planned) | baker | cluster color render lane |
-| `aMass` | float (planned) | baker | derived from log-percentile mass |
-| `aSelection` | float | selection store | selection glow render lane |
-| `aSignalCount` | float | RAG / signal subscriber | evidenceMark glow render lane |
-
-### Physics lanes (new for orb)
-
-Written by simulation pass / interaction stores. Sidecar GPGPU
-textures or DataTextures. **Never** conflated with render
-attributes.
+Written by the paper baker and packed by the WebGPU canvas. Visual
+output only.
 
 | Lane | Type | Owner | Use |
 |---|---|---|---|
-| `posTex` | RGBA16F texture | force kernel | current physics positions (ping-pong) |
-| `velTex` | RGBA16F texture | force kernel | velocities (ping-pong) |
-| `massTex` | R16F texture | bake (read-only) | intrinsic mass for force integration |
-| `selectionMask` | R8 DataTexture | selection store | per-particle selection bit |
-| `filterMask` | R16F DataTexture | filter+timeline subscriber | per-particle scope membership (continuous for timeline smooth-step) |
-| `excitationTex` | RG16F DataTexture | RAG result subscriber | (intensity, decayStart) for `evidencePulse` |
-| `pinMask` | R8 DataTexture | (optional) | per-particle pin state |
+| `position.w` | float | paper visual mapping | billboard radius |
+| `velocity.xyz` | vec3 | paper visual mapping | ambient drift/spin seed |
+| `attributes.rgb` | vec3 | paper visual mapping | display color |
+| `attributes.w` | float | paper visual mapping | display speed factor |
+| `flags` | u32 bitfield | focus visual store | hover/focus/scope/selection/neighbor/evidence styling |
+
+### Physics lanes
+
+Written by simulation passes and interaction stores. Storage buffers,
+not DataTextures. **Never** conflated with visual mappings.
+
+| Lane | Type | Owner | Use |
+|---|---|---|---|
+| `position` | `array<vec4f>` | force kernel | current particle position + radius |
+| `velocity` | `array<vec4f>` | force kernel | velocity + spare |
+| `mass` / `attributes` | storage buffer | bake / kernel | intrinsic mass and simulation params |
+| `edges` | storage buffer | graph upload | compact neighbor/citation/entity forces |
+| `flags` | `array<u32>` | interaction upload | selected/focus/scope/evidence bits |
+| `summary` | storage/readback buffers | kernel | diagnostic and UI summary values |
 
 ## Boundary discipline
 
@@ -76,14 +64,16 @@ attributes.
 - Never overload an existing lane with new semantics.
 - Visual derivations from physics state happen in the **shader
   reading both**, not in the writer of either.
-- Picking shader composes the same motion chunks as display
-  (`field-picking-material.ts:15`). When physics state is added
-  to display, picking adds the same.
+- Picking computes against the same storage-buffer positions that the
+  display pass renders. When physics state changes display position,
+  compute picking reads the updated position buffer.
 
 ## Pointers
 
-- `apps/web/features/orb/bake/apply-paper-overrides.ts:51` — the
-  rule's primary citation in code.
+- `apps/web/features/orb/bake/orb-paper-visual-mapping.ts` — visual
+  paper-derived mapping.
+- `apps/web/features/orb/webgpu/orb-webgpu-particles.ts` — WebGPU
+  storage-buffer packing and flag bit layout.
 - `docs/future/orb-mass-normalization-port.md` — the prior plan
   that established the rule.
 - [01-architecture.md](../01-architecture.md) § Lane inventory —

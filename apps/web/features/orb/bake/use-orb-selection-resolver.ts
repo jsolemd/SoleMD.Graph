@@ -3,10 +3,10 @@
 import { useEffect, useRef } from "react";
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
-import { PARTICLE_STATE_CAPACITY } from "@/features/field/renderer/field-particle-state-texture";
 import { useDashboardStore } from "@/features/graph/stores";
 import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
 import { queryResidentParticleRows } from "./resident-particle-query";
+import { ORB_PARTICLE_CAPACITY } from "./orb-particle-constants";
 
 const SELECTED_PARTICLE_SQL = `
   SELECT sample.particleIdx
@@ -41,7 +41,7 @@ function normalizeParticleIndices(
             index != null &&
             index >= 0 &&
             index < particleCount &&
-            index < PARTICLE_STATE_CAPACITY,
+            index < ORB_PARTICLE_CAPACITY,
         ),
     ),
   ).sort((a, b) => a - b);

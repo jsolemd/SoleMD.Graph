@@ -4,13 +4,9 @@ import { useEffect } from "react";
 import type { GraphBundleQueries } from "@solemd/graph";
 import type { GraphRagQueryResponsePayload } from "@solemd/api-client/shared/graph-rag";
 
-import {
-  clearLane,
-  PARTICLE_STATE_CAPACITY,
-  writeLane,
-} from "@/features/field/renderer/field-particle-state-texture";
 import { useDashboardStore } from "@/features/graph/stores";
-import { useOrbScopeMutationStore } from "../stores/scope-mutation-store";
+import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
+import { ORB_PARTICLE_CAPACITY } from "./orb-particle-constants";
 
 const PAPER_SAMPLE_TABLE = "paper_sample";
 const ANSWER_SIGNAL_INTENSITY = 255;
@@ -148,20 +144,19 @@ export function useOrbEvidencePulseResolver(
 ): void {
   const { queries, particleCount, enabled = true, paperSampleReady } = options;
   const ragResponse = useDashboardStore((s) => s.ragResponse);
+  const setEvidenceIndices = useOrbFocusVisualStore((s) => s.setEvidenceIndices);
 
   useEffect(() => {
     if (!enabled) return;
 
     const refs = collectEvidencePulseRefs(ragResponse);
     if (!ragResponse || refs.length === 0) {
-      clearLane("B");
-      useOrbScopeMutationStore.getState().bumpScopeRevision();
+      setEvidenceIndices([]);
       return;
     }
 
     if (!queries || !paperSampleReady || particleCount <= 0) {
-      clearLane("B");
-      useOrbScopeMutationStore.getState().bumpScopeRevision();
+      setEvidenceIndices([]);
       return;
     }
 
@@ -172,25 +167,25 @@ export function useOrbEvidencePulseResolver(
         .then((result) => {
           if (cancelled) return;
 
-          clearLane("B");
+          const evidenceIndices: number[] = [];
           for (const row of result.rows) {
             const index = readParticleIndex(row);
             if (
               index == null ||
               index < 0 ||
               index >= particleCount ||
-              index >= PARTICLE_STATE_CAPACITY
+              index >= ORB_PARTICLE_CAPACITY ||
+              readIntensity(row) <= 0
             ) {
               continue;
             }
-            writeLane("B", index, readIntensity(row));
+            evidenceIndices.push(index);
           }
-          useOrbScopeMutationStore.getState().bumpScopeRevision();
+          setEvidenceIndices(evidenceIndices);
         })
         .catch(() => {
           if (cancelled) return;
-          clearLane("B");
-          useOrbScopeMutationStore.getState().bumpScopeRevision();
+          setEvidenceIndices([]);
         });
     });
 
@@ -204,5 +199,6 @@ export function useOrbEvidencePulseResolver(
     particleCount,
     queries,
     ragResponse,
+    setEvidenceIndices,
   ]);
 }

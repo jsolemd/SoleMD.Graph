@@ -34,9 +34,9 @@ const GLYPH_STROKE = 1.5;
  *  - Rotation      → `useShellStore.setRotationSpeedMultiplier`
  *  - Entropy       → `useShellStore.setAmbientEntropy`
  *
- * Field controllers consume these via `sceneStateRef` (bridged in
- * `OrbSurface.tsx`); the landing path defaults all multipliers to 1.0
- * and never writes them, so this panel only changes the orb feel.
+ * The WebGPU orb runtime consumes these through `OrbWebGpuCanvas`.
+ * The landing path defaults all multipliers to 1.0 and never writes
+ * them, so this panel only changes the orb feel.
  */
 
 const sliderStyles = {
@@ -323,16 +323,11 @@ function ControlsSection({
   );
 }
 
-// Keyboard + touch shortcuts wired in `OrbCameraControls.tsx` (window-
-// level listener gated on `fieldMode === "orb"`) and `OrbInteractionSurface`
-// (touch double-tap). Documented here so the controls popover is the
-// single discovery surface for all of them. `note` is for inputs that
-// aren't keyboard (touch double-tap on the Pause row).
+// Touch shortcuts are wired in `OrbInteractionSurface` (touch double-tap).
+// Keyboard camera shortcuts were retired with the R3F orb camera path; keep
+// only shortcuts that still have a WebGPU/runtime owner.
 const SHORTCUTS = [
   { keys: ["Space"], label: "Pause / play", note: "double-tap" },
-  { keys: ["←", "→", "↑", "↓"], label: "Pan camera", note: "WASD" },
-  { keys: ["<", ">"], label: "Rotate", note: "Q / E" },
-  { keys: ["+", "−"], label: "Zoom" },
 ] as const;
 
 function ShortcutsSection() {

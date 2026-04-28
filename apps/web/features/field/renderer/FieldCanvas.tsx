@@ -10,11 +10,7 @@ import {
 import { PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import type { Camera } from "three";
-import {
-  FieldScene,
-  type BlobGeometrySubscriber,
-  type BlobPointsSubscriber,
-} from "./FieldScene";
+import { FieldScene } from "./FieldScene";
 import { FrameloopInvalidator } from "./FrameloopInvalidator";
 import { useAdaptiveFrameloop } from "./use-adaptive-frameloop";
 import type { FieldController } from "../controller/FieldController";
@@ -38,18 +34,6 @@ interface FieldCanvasProps {
     controller: FieldController,
   ) => void;
   /**
-   * Orb-mode hook: when provided, FieldScene installs this subscriber on
-   * the blob layer's BufferGeometry so out-of-tree surfaces (the paper
-   * baker) can stream attribute mutations into the running scene.
-   */
-  blobGeometrySubscriber?: BlobGeometrySubscriber;
-  /**
-   * Orb-mode hook: when provided, FieldScene installs this subscriber on
-   * the blob layer's THREE.Points so out-of-tree surfaces (the picker)
-   * can render picking passes against the live renderer/scene/camera.
-   */
-  blobPointsSubscriber?: BlobPointsSubscriber;
-  /**
    * Surface-level slot rendered inside the R3F `<Canvas>` after
    * `<FieldScene>`. Surfaces can mount their own R3F children (camera
    * controls, post-processing, debug helpers) without the substrate
@@ -68,8 +52,6 @@ export function FieldCanvas({
   reducedMotion = false,
   stageReady = true,
   onControllerReady,
-  blobGeometrySubscriber,
-  blobPointsSubscriber,
   canvasChildren,
   className,
   style,
@@ -121,8 +103,6 @@ export function FieldCanvas({
           densityScale={reducedMotion ? Math.min(densityScale, 0.84) : densityScale}
           stageReady={stageReady}
           onControllerReady={onControllerReady}
-          blobGeometrySubscriber={blobGeometrySubscriber}
-          blobPointsSubscriber={blobPointsSubscriber}
         />
         {canvasChildren}
       </Canvas>

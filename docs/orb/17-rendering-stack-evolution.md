@@ -3,23 +3,24 @@
 ## Status
 
 Updated 2026-04-27 after the WebGPU documentation pass, CodeAtlas
-doc-search indexing of `/gpuweb/gpuweb`, and the WebGPU-only product
-decision for the owned 3D field/orb runtime.
+doc-search indexing of `/gpuweb/gpuweb`, the WebGPU-only product
+decision, and the first implementation slice.
 
-This file describes the target architecture and migration. It does not
-claim the current field/orb runtime is already WebGPU-native. Today, the
-owned 3D field is still React Three Fiber on three.js `WebGLRenderer`
-with GLSL `ShaderMaterial` programs.
+The `/graph` owned 3D orb surface now mounts a raw WebGPU particle core:
+`OrbWebGpuCanvas` owns the field canvas/device, packs DuckDB paper
+chunks into storage buffers, renders instanced billboards, runs a small
+compute integration pass, and performs async compute picking. The
+landing field may still use the legacy R3F/WebGL renderer. The 2D graph
+lens remains Cosmograph/cosmos.gl.
 
 ## The Evolution
 
 | Phase | Renderer | State / physics | Notes |
 |---|---|---|---|
-| **Today** | R3F `Canvas` -> three.js `WebGLRenderer`; GLSL `ShaderMaterial` | shader-time motion and `DataTexture` particle state | persistent field canvas is shipping, but the renderer is WebGL/GLSL-first |
-| **M7 Phase 0-1** | hard WebGPU gate plus WebGPU runtime boundary | no mounted runtime when unsupported | prove device/adapter creation, device loss handling, and lab render |
-| **M7 Phase 2** | WebGPU runtime | storage-buffer particle state | delete the live `DataTexture` mental model before visual parity work |
-| **M7 Phase 3** | WebGPU instanced billboards | storage buffers feed particle display | replace WebGL point sprites; do not use sized WebGPU `Points` |
-| **M7 Phase 4-5** | WebGPU compute/render pipeline | `SemanticPhysicsKernel` plus compute picking | native GPU data pipeline for physics and interaction |
+| **Now: `/graph` 3D** | raw WebGPU canvas/runtime | storage-buffer particles, instanced billboards, minimal compute, async compute picking | first WebGPU-native orb slice is active |
+| **Now: landing field** | R3F `Canvas` -> three.js `WebGLRenderer`; GLSL `ShaderMaterial` | shader-time motion and landing-field `DataTexture` state | retained outside the `/graph` orb product path |
+| **M7 remaining** | WebGPU runtime hardening | layout tests, richer frame graph, device/profile QA, snapshot path | close acceptance gaps around diagnostics and robustness |
+| **M7 physics expansion** | WebGPU compute/render pipeline | `SemanticPhysicsKernel` forces, edges, summaries | native GPU data pipeline for full semantic physics |
 | **M7 Phase 6-7** | WebGPU-only shipped field/orb runtime | snapshots and cleanup | remove WebGL runtime imports and unsupported fallback assumptions |
 
 ## Product Boundary

@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, DynamicDrawUsage } from "three";
+import { BufferAttribute, BufferGeometry } from "three";
 import {
   bakeFieldAttributes,
   buildBucketIndex,
@@ -142,9 +142,9 @@ describe("bakeFieldAttributes", () => {
     expect(index.evidence).toBe(3);
   });
 
-  /* ---- Shared-shader contract: packed paper-mode attribute ---- */
+  /* ---- Shared-shader contract: packed legacy attribute ---- */
 
-  it("always bakes aClickPack (vec4 packing click offset + sizeFactor)", () => {
+  it("always bakes aClickPack (vec4 packing offset + sizeFactor)", () => {
     const geometry = makeGeometry(256);
     bakeFieldAttributes(geometry, { random: seededRandom(11) });
     const attr = geometry.getAttribute("aClickPack");
@@ -173,13 +173,6 @@ describe("bakeFieldAttributes", () => {
       expect(aClickPack[i * 4 + 2]).toBe(0);
       expect(aClickPack[i * 4 + 3]).toBe(1);
     }
-  });
-
-  it("marks aClickPack for DynamicDraw (orb's d3-force partial updates)", () => {
-    const geometry = makeGeometry(128);
-    bakeFieldAttributes(geometry, { random: seededRandom(1) });
-    const attr = geometry.getAttribute("aClickPack")!;
-    expect(attr.usage).toBe(DynamicDrawUsage);
   });
 
   it("lands-mode is bit-exact reproducible across calls with the same seed", () => {

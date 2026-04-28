@@ -5,13 +5,8 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import type { GraphBundleQueries } from "@solemd/graph";
 import type { GraphRagQueryResponsePayload } from "@solemd/api-client/shared/graph-rag";
 
-import {
-  getParticleStateData,
-  PARTICLE_STATE_LANES,
-  resetParticleStateTexture,
-} from "@/features/field/renderer/field-particle-state-texture";
 import { useDashboardStore } from "@/features/graph/stores";
-import { useOrbScopeMutationStore } from "../../stores/scope-mutation-store";
+import { useOrbFocusVisualStore } from "../../stores/focus-visual-store";
 import {
   buildEvidencePulseResolutionSql,
   collectEvidencePulseRefs,
@@ -20,10 +15,6 @@ import {
 
 interface QueryResult {
   rows: Array<{ particleIdx: number; intensity: number }>;
-}
-
-function bByte(index: number): number {
-  return index * PARTICLE_STATE_LANES + 2;
 }
 
 function buildQueries(runReadOnlyQuery: jest.Mock): GraphBundleQueries {
@@ -119,17 +110,15 @@ async function flushRaf(): Promise<void> {
 describe("useOrbEvidencePulseResolver", () => {
   beforeEach(() => {
     jest.useFakeTimers();
-    resetParticleStateTexture();
     useDashboardStore.setState({ ragResponse: null });
-    useOrbScopeMutationStore.getState().reset();
+    useOrbFocusVisualStore.getState().reset();
   });
 
   afterEach(() => {
     cleanup();
     jest.useRealTimers();
-    resetParticleStateTexture();
     useDashboardStore.setState({ ragResponse: null });
-    useOrbScopeMutationStore.getState().reset();
+    useOrbFocusVisualStore.getState().reset();
   });
 
   it("deduplicates graph refs and lets answer signals win intensity", () => {
@@ -152,7 +141,7 @@ describe("useOrbEvidencePulseResolver", () => {
     expect(sql).toContain("sample.paperId = pulse_refs.graphPaperRef");
   });
 
-  it("writes B lane intensities for resident evidence refs", async () => {
+  it("publishes resident evidence refs into the WebGPU visual store", async () => {
     const runReadOnlyQuery = jest
       .fn<Promise<QueryResult>, [string]>()
       .mockResolvedValue({
@@ -178,15 +167,13 @@ describe("useOrbEvidencePulseResolver", () => {
     await flushRaf();
 
     expect(runReadOnlyQuery).toHaveBeenCalledTimes(1);
-    expect(getParticleStateData()[bByte(2)]).toBe(255);
-    expect(getParticleStateData()[bByte(4)]).toBe(168);
+    expect(useOrbFocusVisualStore.getState().evidenceIndices).toEqual([2, 4]);
 
     act(() => {
       useDashboardStore.setState({ ragResponse: null });
     });
     await flushRaf();
 
-    expect(getParticleStateData()[bByte(2)]).toBe(0);
-    expect(getParticleStateData()[bByte(4)]).toBe(0);
+    expect(useOrbFocusVisualStore.getState().evidenceIndices).toEqual([]);
   });
 });

@@ -8,6 +8,7 @@ const initial = useOrbPickerStore.getState();
 
 function createHandle(index: number): OrbPickerHandle {
   return {
+    pickAsync: () => Promise.resolve(index),
     pickSync: () => index,
     pickRectAsync: () => Promise.resolve([index]),
   };

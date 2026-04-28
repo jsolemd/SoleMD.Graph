@@ -8,20 +8,13 @@ import {
   hasCurrentPointScopeSql,
   normalizeCurrentPointScopeSql,
 } from "@/features/graph/lib/selection-query-state";
-import {
-  clearLane,
-  PARTICLE_STATE_CAPACITY,
-  writeLane,
-} from "@/features/field/renderer/field-particle-state-texture";
-import { useOrbScopeMutationStore } from "../stores/scope-mutation-store";
 import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
 import { queryResidentParticleRows } from "./resident-particle-query";
+import { ORB_PARTICLE_CAPACITY } from "./orb-particle-constants";
 
 /**
- * Resolves the active filter / timeline scope clause to the per-
- * particle R lane of the field's particle-state texture (1.0 = in
- * scope, 0.0 = out of scope) and notifies subscribers via the
- * scope-mutation store.
+ * Resolves the active filter / timeline scope clause to resident
+ * particle indices in the WebGPU visual store.
  *
  * ### Pipeline reuse
  *
@@ -36,8 +29,8 @@ import { queryResidentParticleRows } from "./resident-particle-query";
  *   - `paper_sample` (built by `usePaperAttributesBaker`) for the
  *     particleIdx ↔ id mapping. The resolver runs only after the
  *     paper baker has materialized that temp table.
- *   - The shared `field-particle-state-texture` module singleton —
- *     no parallel mask system, no per-particle attribute lane.
+ *   - The shared `useOrbFocusVisualStore` flag source — no parallel
+ *     mask system and no renderer-owned React row state.
  *
  * ### Particle scope semantics
  *
@@ -135,9 +128,7 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
     };
 
     const applyFullVisibility = () => {
-      clearLane("R");
       setScopeIndices([]);
-      useOrbScopeMutationStore.getState().bumpScopeRevision();
     };
 
     const applyScopeSql = async (sql: string | null) => {
@@ -158,12 +149,6 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
         );
         if (cancelled || pendingSql !== undefined || liveSql !== sql) return;
 
-        // Initialize all particles to in-scope only after the query
-        // returns and is still current. If a newer scope arrived while
-        // this query was in-flight, keep the existing texture untouched
-        // until the latest scope lands.
-        clearLane("R");
-
         const scopeIndices: number[] = [];
         for (const row of rows) {
           const idx = Number(row.particleIdx);
@@ -171,20 +156,17 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
             !Number.isInteger(idx) ||
             idx < 0 ||
             idx >= particleCount ||
-            idx >= PARTICLE_STATE_CAPACITY
+            idx >= ORB_PARTICLE_CAPACITY
           ) {
             continue;
           }
-          if (row.in_scope === false || row.in_scope === 0) {
-            writeLane("R", idx, 0);
-          } else {
+          if (row.in_scope !== false && row.in_scope !== 0) {
             scopeIndices.push(idx);
           }
         }
 
         if (!cancelled) {
           setScopeIndices(scopeIndices);
-          useOrbScopeMutationStore.getState().bumpScopeRevision();
         }
       } catch {
         // Defensive: a stale connection or torn-down bundle yields

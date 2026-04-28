@@ -1,5 +1,11 @@
 # 10 — Force vocabulary
 
+> **Updated 2026-04-27.** The named effects remain the product
+> vocabulary. The current WebGPU slice expresses focus, hover, scope,
+> selection, neighbor, and evidence membership as `flags` storage-buffer
+> bits for rendering. Full force participation is still owned by the
+> future `SemanticPhysicsKernel`.
+
 ## The named effects
 
 A small composable set. Lives in
@@ -56,8 +62,8 @@ Each tick, the kernel iterates resident-set particles and applies:
    but `evidenceMark` is render-only, no force participation).
 5. User-gesture force (reads `tug` state, `pulseImpulse` queue).
 
-Overlay-state lives in plain JS tables / DataTextures keyed by
-`particleIdx`, mutated by the effect-dispatch API
+Overlay-state lives in plain JS tables and WebGPU storage buffers keyed
+by `particleIdx`, mutated by the effect-dispatch API
 (`register(id, payload)` / `unregister(id)`). Not by swapping d3
 force instances. (Per canonical "force accumulator" framing,
 slightly tightened.)

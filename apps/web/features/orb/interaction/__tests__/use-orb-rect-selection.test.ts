@@ -47,6 +47,7 @@ function publishPicker(
     >()
     .mockResolvedValue(indices);
   useOrbPickerStore.getState().setHandle({
+    pickAsync: () => Promise.resolve(-1),
     pickSync: () => -1,
     pickRectAsync,
   });

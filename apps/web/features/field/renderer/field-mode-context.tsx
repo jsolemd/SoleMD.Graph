@@ -3,16 +3,16 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 /**
- * Field-mode is the substrate authority for which surface semantics the
- * shared 16384-particle pipeline is currently presenting:
+ * Field-mode is the layout authority for whether the landing FieldCanvas
+ * is mounted or whether /graph is using its separate WebGPU orb canvas:
  *
- *   - 'landing' → scroll-driven chapters, wrapper rotation, pointer-events
- *     off, no paper bake. The existing landing storytelling path.
- *   - 'orb'     → paper-per-particle bake, click-to-focus, camera controls,
- *     scroll chapters gated off. The /graph evidence renderer.
+ *   - 'landing' → scroll-driven chapters and the existing R3F/WebGL
+ *     storytelling path.
+ *   - 'orb'     → /graph 3D is active; the layout FieldCanvas stays
+ *     unmounted and OrbSurface owns the raw WebGPU particle canvas.
  *
- * Consumers (BlobController, scroll driver, FixedStageManager, FieldScene)
- * read mode via `useFieldMode()` instead of prop-drilling through 8+ files.
+ * Consumers read mode via `useFieldMode()` instead of prop-drilling
+ * route/renderer state through the layout.
  * Default outside a provider is 'landing' so existing surfaces render
  * unchanged before the provider is mounted.
  */

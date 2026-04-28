@@ -1,21 +1,22 @@
 import { create } from "zustand";
 
-import type { FieldPickRectMode } from "@/features/field/renderer/field-picking";
+export type OrbPickRectMode = "front-slab" | "through-volume";
+export const ORB_PICK_NO_HIT = -1;
 
 /**
- * Published handle for the orb GPU picker.
+ * Published handle for the orb WebGPU picker.
  *
- * FieldScene's blob-points subscriber publishes a pickSync function when
- * the blob `<points>` and its ShaderMaterial are mounted; out-of-tree
- * surfaces (OrbInteractionSurface → useOrbClick / useOrbRectSelection)
- * call it with pointer coordinates and receive particle indices.
+ * OrbWebGpuCanvas publishes async compute-picking functions after the
+ * WebGPU runtime owns its canvas, device, storage buffers, and command
+ * scheduling. Out-of-tree surfaces (OrbInteractionSurface → useOrbClick /
+ * useOrbRectSelection) call it with pointer coordinates and receive
+ * resident particle indices.
  *
- * Crossing the R3F tree boundary:
- *   - the subscriber lives inside the Canvas and owns the pick target,
- *     the picking material, and the camera layer mask;
+ * Crossing the canvas/DOM boundary:
+ *   - the WebGPU canvas owns the pick target and readback buffers;
  *   - the click layer sits outside the Canvas in plain DOM;
- *   - zustand is the bridge, same pattern as the geometry mutation
- *     store but with a single slot rather than an append-only log.
+ *   - zustand is the bridge, with a single slot rather than an
+ *     append-only log.
  *
  * ### Identity-guarded cleanup
  *
@@ -28,13 +29,14 @@ import type { FieldPickRectMode } from "@/features/field/renderer/field-picking"
  */
 
 export interface OrbPickerHandle {
-  pickSync: (clientX: number, clientY: number) => number;
+  pickAsync: (clientX: number, clientY: number) => Promise<number>;
+  pickSync?: (clientX: number, clientY: number) => number;
   pickRectAsync: (rect: {
     left: number;
     top: number;
     right: number;
     bottom: number;
-  }, options?: { mode?: FieldPickRectMode }) => Promise<number[]>;
+  }, options?: { mode?: OrbPickRectMode }) => Promise<number[]>;
 }
 
 export interface OrbPickerStore {

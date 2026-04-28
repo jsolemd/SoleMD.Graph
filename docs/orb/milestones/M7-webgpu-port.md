@@ -2,29 +2,35 @@
 
 ## Status
 
-Updated 2026-04-27 after the WebGPU-only product decision and after
+Updated 2026-04-27 after the WebGPU-only product decision, after
 indexing the W3C GPUWeb repository in CodeAtlas doc-search as
-`/gpuweb/gpuweb`.
+`/gpuweb/gpuweb`, and after the first `/graph` WebGPU implementation
+slice landed.
 
 This milestone replaces the previous staged WebGL2/WebGPU compatibility
 migration. The field/orb runtime target is now a WebGPU-only rewrite.
 Unsupported browsers and devices receive an explicit unsupported state;
 they do not receive a degraded WebGL2 field runtime.
 
-The current implementation is still WebGL/GLSL-first:
+The first implementation slice is active on `/graph`:
 
-- `FieldCanvas` uses React Three Fiber `Canvas` with the default
-  three.js `WebGLRenderer`.
-- Field/orb particles are authored as GLSL `ShaderMaterial` programs.
-- Picking uses a WebGL render target and pixel readback.
-- Snapshot, scene, picking, controllers, and tests still name
-  `WebGLRenderer` directly.
-- Particle state still uses texture-shaped data paths.
+- `OrbSurface` mounts `OrbWebGpuCanvas`, a raw WebGPU-owned canvas for
+  the orb particle core.
+- The WebGPU gate rejects unsupported browsers/devices instead of
+  falling back to WebGL2.
+- Paper chunks stream from DuckDB into WebGPU storage-buffer arrays.
+- Particle display uses instanced billboards, not sized WebGPU points.
+- Hover, click, and rectangle selection use async compute readback.
+- Staging/readback buffers are separate from hot particle buffers.
+- The old orb-specific WebGL picker, R3F camera controls, snapshot
+  bridge, and DataTexture mutation subscribers have been removed from
+  the `/graph` orb path.
 - Cosmograph/cosmos.gl remains a separate WebGL dependency for the 2D
   graph lens.
 
-M7 is therefore not a renderer swap. It is a native GPU data-pipeline
-rewrite for the owned 3D field/orb runtime.
+M7 is still not "done": the first slice proves the native GPU data path,
+while richer semantic physics, snapshots, layout tests, and device QA
+remain acceptance work.
 
 ## Product Decision
 
@@ -90,30 +96,28 @@ Profiles must never route to WebGL2.
   Host-side typed-array packing and WGSL declarations need explicit
   stride/offset tests.
 
-## Current WebGL Assumptions To Delete
+## Legacy WebGL Assumptions Already Removed From `/graph` Orb
 
-- `apps/web/features/field/renderer/FieldCanvas.tsx`
-  - Remove object-form `gl` config for default WebGL renderer creation.
-  - Mount the field only after the WebGPU gate succeeds.
-  - If R3F remains in the field, use an async WebGPU-only renderer
-    factory.
-- `apps/web/features/field/renderer/FieldScene.tsx`
-  - Remove public `WebGLRenderer` and `ShaderMaterial` assumptions from
-    subscribers and controller inputs.
-  - Depend on `FieldGpuRuntime`, not a renderer union.
-- `apps/web/features/field/renderer/FieldStageLayer.tsx`
-  - Replace `<points>` / `<shaderMaterial>` with instanced billboard
-    rendering.
-- `apps/web/features/field/renderer/field-shaders.ts`
-  - Delete from shipped field/orb imports after visual parity is rebuilt.
-  - Preserve only as historical reference during the port.
-- `apps/web/features/field/renderer/field-picking.ts`
-  - Replace render-target color picking with compute picking and tiny
+- `apps/web/app/(dashboard)/DashboardClientShell.tsx`
+  - `/graph` 3D no longer routes through the landing `FieldCanvas`.
+- `apps/web/features/orb/webgpu/OrbWebGpuCanvas.tsx`
+  - Owns the orb canvas/device/runtime boundary.
+- `apps/web/features/orb/webgpu/orb-webgpu-runtime.ts`
+  - Replaces render-target color picking with compute picking and tiny
     async readback.
-- `apps/web/features/orb/capture/OrbSnapshotBridge.tsx`
-  - Remove `WebGLRenderer` typing and synchronous render assumptions.
-- `apps/web/features/field/renderer/field-particle-state-texture.ts`
-  - Replace live particle `DataTexture` state with storage-buffer state.
+- `apps/web/features/orb/webgpu/orb-webgpu-particles.ts`
+  - Replaces orb live `DataTexture` mutation with storage-buffer
+    packing.
+- Deleted orb-path WebGL files:
+  - `apps/web/features/field/renderer/field-picking.ts`
+  - `apps/web/features/field/renderer/field-picking-material.ts`
+  - `apps/web/features/orb/capture/OrbSnapshotBridge.tsx`
+  - `apps/web/features/orb/camera/OrbCameraControls.tsx`
+  - `apps/web/features/orb/bake/apply-paper-overrides.ts`
+
+The landing field still uses its historical R3F/WebGL code. That code is
+outside the `/graph` WebGPU orb runtime and should not be confused with
+the owned 3D orb product path.
 
 ## Phase 0 - Hard WebGPU Gate And Lab
 

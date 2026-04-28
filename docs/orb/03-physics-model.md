@@ -1,5 +1,12 @@
 # 03 — Physics model (hybrid ambient + wake-driven)
 
+> **Updated 2026-04-27.** The current `/graph` WebGPU slice implements
+> the first compute step: storage-buffer positions drift through a small
+> WGSL integration pass and the render/pick paths consume the same
+> buffers. The richer `SemanticPhysicsKernel` described below remains
+> the target for force effects, edges, summaries, and wake/sleep
+> behavior.
+
 ## Two physics tiers
 
 **Ambient (always on, ~free):**
@@ -114,13 +121,12 @@ main-thread d3-force runtime.
 
 ## Mass
 
-Intrinsic mass = log-percentile(`paperReferenceCount`) shipped via
-the existing baker pipeline
-(`apps/web/features/orb/bake/apply-paper-overrides.ts`). Already
-canonical; reused for physics. Render lane (`aClickPack.w` size
-factor) reads the *same* underlying mass via a small render
-mapping; the two lanes derive from one source but are stored
-separately per the lane rule.
+Intrinsic mass = log-percentile(`paperReferenceCount`) from the paper
+baker. The current visual mapping lives in
+`apps/web/features/orb/bake/orb-paper-visual-mapping.ts` and writes
+display radius/speed into WebGPU buffers. Future physics mass may derive
+from the same source data, but it must live in a separate simulation
+lane per the lane rule.
 
 Ambient amplitude is also mass-aware: high-mass papers move less,
 low-mass papers can twinkle slightly more, and all ambient motion is

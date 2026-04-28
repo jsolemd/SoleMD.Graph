@@ -3,11 +3,13 @@
 > **Status (2026-04-27 amendment).** The R3F `<GraphOrb>` /
 > `Graph3DSurface` / `/orb-dev` point-cloud prototype described
 > throughout this docset has been retired from the product path. The
-> current 3D primary is `OrbSurface` on the persistent FieldCanvas
-> (paper identity overlaid on the 16,384-particle field substrate);
-> 2D is the native Cosmograph mount via `DashboardShell` (the same
-> path `/map` uses). The renderer-mode toggle on `/graph` is
-> `'3d' | '2d'` with `'3d'` default.
+> current 3D primary is `OrbSurface` with a raw WebGPU-owned
+> `OrbWebGpuCanvas` for the orb particle core. Paper identity streams
+> from DuckDB into WebGPU storage buffers; compute picking resolves
+> hover/click/rectangle selection. The landing field may still use the
+> legacy R3F/WebGL canvas, and 2D remains the native Cosmograph mount
+> via `DashboardShell` (the same path `/map` uses). The renderer-mode
+> toggle on `/graph` is `'3d' | '2d'` with `'3d'` default.
 >
 > The field/orb WebGPU target is now WebGPU-only, not a WebGL2/WebGPU
 > compatibility migration. Unsupported browsers/devices get a controlled
@@ -75,12 +77,13 @@ review transcripts.
 
 Every file in this docset honors:
 
-- **Render-vs-physics lane separation** — visual render attributes
-  (`aSpeed`, `aClickPack`, `aBucket`, `aFunnel*`) are written by
-  surface code; physics state (`posTex`, `velTex`, `selectionMask`,
-  `filterMask`, `excitationTex`) lives in dedicated GPGPU lanes.
-  Never overloaded. Codified at
-  `apps/web/features/orb/bake/apply-paper-overrides.ts:51`.
+- **Render-vs-physics lane separation** — paper visual mappings are
+  centralized in `apps/web/features/orb/bake/orb-paper-visual-mapping.ts`
+  and packed for WebGPU by
+  `apps/web/features/orb/webgpu/orb-webgpu-particles.ts`. Live orb
+  state uses storage-buffer lanes (`position`, `velocity`,
+  `attributes`, `flags`); simulation state remains separate from visual
+  derivations. Never overload one lane with another meaning.
 - **Single source of truth in DuckDB + Zustand** — both
   the 3D workspace and optional 2D lens read the same view chain and
   subscribe to the same store; no parallel state.

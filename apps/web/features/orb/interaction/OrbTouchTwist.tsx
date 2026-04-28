@@ -2,9 +2,7 @@
 
 import { useEffect } from "react";
 
-import { BlobController } from "@/features/field/controller/BlobController";
-import { useFieldMode } from "@/features/field/renderer/field-mode-context";
-import { useFieldRuntime } from "@/features/field/renderer/field-runtime-context";
+import { useOrbWebGpuRuntimeStore } from "../webgpu/orb-webgpu-runtime-store";
 
 import { useOrbInteraction } from "./orb-interaction-context";
 
@@ -15,17 +13,9 @@ import { useOrbInteraction } from "./orb-interaction-context";
  * `pointercancel` events on the orb interaction surface. When exactly
  * two pointers are active, it computes the angle of the line between
  * them via `Math.atan2(dy, dx)` and applies the per-frame angle delta
- * to the orb wrapper's Y-axis rotation via `BlobController.applyTwist`.
- * That same controller method triggers the orb interaction-burst envelope.
- *
- * This is purely additive on top of drei `<CameraControls>` —
- * `touches.two = TOUCH_DOLLY_OFFSET` still pans + pinch-dollies the
- * camera. Twist is a third lane that rotates the orb itself (not the
- * camera) around its own Y axis, so a two-finger pan + twist combo
- * pans the camera AND spins the orb. Pointer events are dispatched
- * to ALL listeners on the same element regardless of the
- * library's `setPointerCapture` calls — capture redirects events to a
- * specific target but does not consume them, so co-existence is safe.
+ * to the WebGPU runtime's presentation rotation. This rotates the orb
+ * itself around its own Y axis without involving the retired R3F camera
+ * controller path.
  *
  * Sign convention: screen Y grows downward, world Y grows upward.
  * A clockwise twist (in screen space) yields an INCREASING `atan2`
@@ -36,16 +26,13 @@ import { useOrbInteraction } from "./orb-interaction-context";
  * own hand cadence, and a dead-zone would lose slow rotations
  * (each event delta is sub-threshold, but the cumulative is not).
  *
- * Gated on `fieldMode === "orb"` and a non-null `surfaceElement`.
+ * Gated on a non-null interaction surface and a live WebGPU runtime.
  * Returns null (no DOM) — pure side-effect component.
  */
 export function OrbTouchTwist() {
-  const fieldMode = useFieldMode();
   const { surfaceElement } = useOrbInteraction();
-  const { controllersRef } = useFieldRuntime();
 
   useEffect(() => {
-    if (fieldMode !== "orb") return;
     if (surfaceElement == null) return;
 
     const pointers = new Map<number, { x: number; y: number }>();
@@ -83,12 +70,9 @@ export function OrbTouchTwist() {
       else if (delta < -Math.PI) delta += 2 * Math.PI;
       lastAngle = angle;
 
-      const blob = controllersRef.current.blob;
-      if (blob instanceof BlobController) {
-        // Negate so screen-CW twist yields world-CW orb rotation
-        // (screen Y grows down; world Y grows up).
-        blob.applyTwist(-delta);
-      }
+      // Negate so screen-CW twist yields world-CW orb rotation
+      // (screen Y grows down; world Y grows up).
+      useOrbWebGpuRuntimeStore.getState().handle?.applyTwist(-delta);
     };
 
     const handlePointerEnd = (e: PointerEvent) => {
@@ -109,7 +93,7 @@ export function OrbTouchTwist() {
       surfaceElement.removeEventListener("pointerup", handlePointerEnd);
       surfaceElement.removeEventListener("pointercancel", handlePointerEnd);
     };
-  }, [controllersRef, fieldMode, surfaceElement]);
+  }, [surfaceElement]);
 
   return null;
 }
