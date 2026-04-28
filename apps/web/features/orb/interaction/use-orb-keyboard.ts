@@ -79,29 +79,34 @@ export function useOrbKeyboard({
           event.preventDefault();
           handle?.resetView();
           return;
+        // Arrow / WASD signs: pan is camera-space, not direct
+        // manipulation. ArrowLeft means "look at content further left,"
+        // which shifts the world right on screen — same convention as
+        // the 2D cosmograph keyboard handler. Mouse drag uses the
+        // opposite (direct-manipulation) sign.
         case "ArrowLeft":
         case "a":
         case "A":
           event.preventDefault();
-          handle?.applyPan(-ORB_PAN_KEY_NDC, 0);
+          handle?.applyPan(ORB_PAN_KEY_NDC, 0);
           return;
         case "ArrowRight":
         case "d":
         case "D":
           event.preventDefault();
-          handle?.applyPan(ORB_PAN_KEY_NDC, 0);
+          handle?.applyPan(-ORB_PAN_KEY_NDC, 0);
           return;
         case "ArrowUp":
         case "w":
         case "W":
           event.preventDefault();
-          handle?.applyPan(0, ORB_PAN_KEY_NDC);
+          handle?.applyPan(0, -ORB_PAN_KEY_NDC);
           return;
         case "ArrowDown":
         case "s":
         case "S":
           event.preventDefault();
-          handle?.applyPan(0, -ORB_PAN_KEY_NDC);
+          handle?.applyPan(0, ORB_PAN_KEY_NDC);
           return;
         default:
           return;

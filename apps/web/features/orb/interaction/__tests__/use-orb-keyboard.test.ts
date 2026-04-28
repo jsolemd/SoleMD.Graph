@@ -59,10 +59,11 @@ describe("useOrbKeyboard", () => {
 
     expect(handle.applyZoom).toHaveBeenCalledWith(ORB_ZOOM_KEY_FACTOR);
     expect(handle.applyZoom).toHaveBeenCalledWith(1 / ORB_ZOOM_KEY_FACTOR);
-    expect(handle.applyPan).toHaveBeenCalledWith(-ORB_PAN_KEY_NDC, 0);
+    // Camera convention: ArrowLeft = positive pan (world shifts right).
     expect(handle.applyPan).toHaveBeenCalledWith(ORB_PAN_KEY_NDC, 0);
-    expect(handle.applyPan).toHaveBeenCalledWith(0, ORB_PAN_KEY_NDC);
+    expect(handle.applyPan).toHaveBeenCalledWith(-ORB_PAN_KEY_NDC, 0);
     expect(handle.applyPan).toHaveBeenCalledWith(0, -ORB_PAN_KEY_NDC);
+    expect(handle.applyPan).toHaveBeenCalledWith(0, ORB_PAN_KEY_NDC);
     expect(handle.applyTwist).toHaveBeenCalledTimes(2);
     expect(handle.resetView).toHaveBeenCalledTimes(1);
   });

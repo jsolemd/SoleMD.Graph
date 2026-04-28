@@ -23,6 +23,7 @@ import {
   OrbInteractionSurface,
   type OrbSelectionRect,
 } from "../interaction/OrbInteractionSurface";
+import { OrbMouseCamera } from "../interaction/OrbMouseCamera";
 import { OrbTouchTwist } from "../interaction/OrbTouchTwist";
 import { useOrbClick } from "../interaction/use-orb-click";
 import { useOrbHover } from "../interaction/use-orb-hover";
@@ -370,6 +371,9 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
         onRectSelect={handleOrbRectSelect}
       />
       <OrbTouchTwist />
+      <OrbMouseCamera
+        rectSelectionEnabled={orbSelectionTool === "rectangle"}
+      />
       {panelsReady ? (
         <GraphPanelsLayer bundle={bundle} queries={queries} canvas={canvas} />
       ) : null}
