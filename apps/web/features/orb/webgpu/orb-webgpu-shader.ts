@@ -320,7 +320,7 @@ fn landingFieldNoise(
 ) -> f32 {
   _ = motion;
   _ = instanceIndex;
-  return landingFbm(p, colorTime);
+  return landingFbm(p, colorTime * 0.25);
 }
 
 fn landingMotionNoise(
@@ -329,21 +329,41 @@ fn landingMotionNoise(
   colorTime: f32,
 ) -> f32 {
   let speed = max(motion.w, 0.001);
-  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * speed));
+  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * 0.25 * speed));
 }
 
 fn landingBaseColor() -> vec3f {
   return computeFrame.baseColor.rgb;
 }
 
-fn landingNoiseColor(colorTime: f32) -> vec3f {
+// Organic palette sample. Two ingredients beyond a simple lerp through
+// 8 palette stops:
+//
+//  1. Per-particle phase offset (phaseOffset). Each particle sees the
+//     palette wave at a *different* moment in the cycle, so at any
+//     instant the cloud spans warm and cool colors instead of all
+//     biasing toward whichever stop the global clock is currently on.
+//     Feeding the FBM field noise as the phase makes the offsets
+//     spatially coherent — neighbors cluster on similar palette stops,
+//     distant patches sit on different stops, producing visible color
+//     "regions" that drift apart and merge as the field evolves.
+//
+//  2. Cosine ease on the inter-stop transition. The prior linear
+//     mix(palette[i], palette[i+1], fract(seg)) reads as muddy at the
+//     50% midpoint; the cosine variant dwells on each stop and
+//     transitions fast through the middle, which is what reads as
+//     the "burst" feel — colors pop, then settle, then pop again.
+fn landingNoiseColor(colorTime: f32, phaseOffset: f32) -> vec3f {
+  let shifted = colorTime + phaseOffset * LANDING_RAINBOW_PERIOD_SECONDS;
   let wrappedTime =
-    colorTime - floor(colorTime / LANDING_RAINBOW_PERIOD_SECONDS) *
+    shifted - floor(shifted / LANDING_RAINBOW_PERIOD_SECONDS) *
     LANDING_RAINBOW_PERIOD_SECONDS;
   let segment = wrappedTime / LANDING_RAINBOW_STOP_SECONDS;
   let index = u32(floor(segment)) % 8u;
   let nextIndex = (index + 1u) % 8u;
-  return mix(LANDING_PALETTE[index], LANDING_PALETTE[nextIndex], fract(segment));
+  let t = fract(segment);
+  let eased = 0.5 - 0.5 * cos(3.14159265 * t);
+  return mix(LANDING_PALETTE[index], LANDING_PALETTE[nextIndex], eased);
 }
 
 fn visualRadius(
@@ -435,7 +455,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let depthLight = clamp(0.64 + projected.z * 0.34 + rim * 0.22, 0.36, 1.16);
   let pulse = 0.5 + 0.5 * sin(computeFrame.colorTime * 4.2 + f32(i) * 0.037);
   let baseColor = landingBaseColor();
-  let noiseColor = landingNoiseColor(computeFrame.colorTime);
+  let noiseColor = landingNoiseColor(computeFrame.colorTime, fieldNoise);
   let vNoise = clamp(fieldNoise, 0.0, 1.0);
   let neighborhood = 1.0 + 0.45 * (vNoise - 0.5);
   let burstColor = clamp(
