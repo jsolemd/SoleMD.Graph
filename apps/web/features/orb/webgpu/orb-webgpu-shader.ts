@@ -296,11 +296,21 @@ fn simplexNoise4(v: vec4f) -> f32 {
 }
 
 fn landingFbm(p: vec3f, time: f32) -> f32 {
+  // Per-octave time multipliers introduce progression variance across
+  // spatial scales: the coarse, large-scale regions (octave 0, weight
+  // 0.5) drift at 0.4× of caller-supplied time so big color zones take
+  // their time crossing the cloud; the fine, small-scale details
+  // (octave 4, weight 0.03125) move at 1.5× so they dance with life
+  // around the slow base. The mean is 1.0 so overall pace tracks the
+  // caller's time scale, but the field now reads with varied region
+  // sizes evolving at varied rates — visible "spacing" and rhythm.
+  let TIME_SCALES = array<f32, 5>(0.4, 0.7, 1.0, 1.4, 1.5);
   var x = p;
   var value = 0.0;
   var amplitude = 0.5;
   for (var octave = 0u; octave < 5u; octave = octave + 1u) {
-    value = value + amplitude * simplexNoise4(vec4f(x, time));
+    let octaveTime = time * TIME_SCALES[octave];
+    value = value + amplitude * simplexNoise4(vec4f(x, octaveTime));
     x = x * 2.0 + vec3f(100.0);
     amplitude = amplitude * 0.5;
   }
@@ -333,6 +343,16 @@ fn landingMotionNoise(
 
 fn landingBaseColor() -> vec3f {
   return computeFrame.baseColor.rgb;
+}
+
+// Cheap deterministic per-particle hash in [0, 1). Driven by the
+// instance index so the value is stable across frames — gives every
+// particle its own private "personality" that we can use to vary
+// burst reach and palette amplification, breaking the lockstep look
+// that comes from every hot particle bulging and saturating by the
+// same amount.
+fn particleHash(i: u32) -> f32 {
+  return fract(sin(f32(i) * 91.7382) * 43758.5453);
 }
 
 // Sample the global "noise color" from the rainbow palette LUT. The
@@ -405,12 +425,20 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
     colorTime,
   );
   // vNoise is the same per-particle "hotness" used downstream for color
-  // (baseColor + vNoise*4*(noiseColor - baseColor)). Computing it here
-  // lets the same value drive both *which particles bulge outward* and
-  // *which particles take palette color*, so the visible breathing
-  // rhythm reads as "the colored particles are the ones bursting away
-  // from the cloud."
+  // (baseColor + vNoise*amp*(noiseColor - baseColor)). Computing it
+  // here lets the same value drive both *which particles bulge
+  // outward* and *which particles take palette color*, so the visible
+  // breathing rhythm reads as "the colored particles are the ones
+  // bursting away from the cloud."
   let vNoise = clamp(fieldNoise, 0.0, 1.0);
+  // Per-particle "personality": same value drives bulge reach and
+  // palette amp so the most-saturated particles also bulge most, just
+  // some particles always do so more dramatically than others. Keeps
+  // the overall mean reach/amp identical to before; the variance is
+  // additive, not amplified.
+  let pHash = particleHash(i);
+  let burstScale = 0.06 + pHash * 0.08;     // mean 0.10, range 0.06..0.14
+  let burstAmp = 3.0 + pHash * 2.0;          // mean 4.0,  range 3.0..5.0
   let liveDrift = landingMotionNoise(i, motion, colorTime);
   let normal = normalize(p.xyz + vec3f(0.0001, 0.0001, 0.0001));
   // Yaw angular velocity (rad/sec, smoothed in the runtime) is packed
@@ -423,16 +451,14 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   // the hand-off back to the FBM-driven idle motion.
   let yawOmega = computeFrame.baseColor.w;
   let tangential = vec3f(p.z, 0.0, -p.x) * yawOmega * 0.018;
-  // Burst reach: positive-only outward push proportional to vNoise.
-  // amplitude*fieldNoise alone is symmetric (negative noise pulls in,
-  // positive pushes out), so it gave a balanced "wobble." Adding a
-  // vNoise-only positive term lets the hot, colored particles physically
-  // expand away from the cloud — the breathing/bursting feel — while
-  // the cool side continues its symmetric inward-outward drift. At
-  // vNoise = 1 this contributes a 10% radial reach, layered on top of
-  // the 5% from amplitude*fieldNoise.
+  // Burst reach: positive-only outward push proportional to vNoise,
+  // scaled per particle by burstScale (0.06..0.14, mean 0.10). The
+  // symmetric amplitude*fieldNoise wobble stays for the cool side's
+  // inward-outward drift; the burstScale*vNoise term only pushes the
+  // hot, colored particles outward — and varies in strength per
+  // particle so the bulging silhouette reads as ragged, alive, varied.
   let displaced = vec4f(
-    p.xyz * (1.0 + amplitude * fieldNoise + vNoise * 0.10 + liveDrift * 0.012) +
+    p.xyz * (1.0 + amplitude * fieldNoise + vNoise * burstScale + liveDrift * 0.012) +
       normal * liveDrift * 0.010 +
       motion.xyz * speed * depth * liveDrift +
       tangential,
@@ -461,11 +487,11 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let noiseColor = landingNoiseColor(computeFrame.colorTime);
   // Maze-verbatim per-particle lerp: stay near baseColor when vNoise
   // is low; spike toward the global noiseColor when vNoise is high.
-  // The 4.0 amplification is intentional — clamp+overshoot gives the
-  // "burst" reach into saturated palette stops on high-noise particles.
-  // (vNoise was declared above so the same hotness drives displacement.)
+  // burstAmp (3..5, mean 4) replaces the prior fixed * 4.0 — same
+  // average overshoot but per-particle variance, so some hot particles
+  // saturate harder than others at the same vNoise.
   let burstColor = clamp(
-    baseColor + vNoise * 4.0 * (noiseColor - baseColor),
+    baseColor + vNoise * burstAmp * (noiseColor - baseColor),
     vec3f(0.0),
     vec3f(1.0),
   );
