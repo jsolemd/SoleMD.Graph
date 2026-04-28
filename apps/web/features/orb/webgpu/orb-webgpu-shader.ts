@@ -481,7 +481,14 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   );
   let rim = pow(1.0 - clamp(dot(rotatedNormal, vec3f(0.0, 0.0, 1.0)), 0.0, 1.0), 2.0);
   let frontFade = smoothstep(-0.54, 0.66, projected.z);
-  let depthLight = clamp(0.64 + projected.z * 0.34 + rim * 0.22, 0.36, 1.16);
+  // Depth lighting: brightness ramps with post-rotation z. Slope 0.44
+  // (was 0.34) gives a bit more distance between foreground and
+  // background; floor 0.30 (was 0.36) lets back-of-cloud particles
+  // actually settle into a dimmer band; ceiling 1.18 (was 1.16) gives
+  // the front a touch more headroom. Net effect: at typical z = ±0.62
+  // (the blob's effective radius), a ~15% brighter front and ~15%
+  // dimmer back vs prior — visible separation, not aggressive.
+  let depthLight = clamp(0.64 + projected.z * 0.44 + rim * 0.22, 0.30, 1.18);
   let pulse = 0.5 + 0.5 * sin(computeFrame.colorTime * 4.2 + f32(i) * 0.037);
   let baseColor = landingBaseColor();
   let noiseColor = landingNoiseColor(computeFrame.colorTime);
