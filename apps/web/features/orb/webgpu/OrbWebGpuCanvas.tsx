@@ -64,14 +64,31 @@ export function OrbWebGpuCanvas({
     (s) => s.rotationSpeedMultiplier,
   );
   const chunks = useOrbGeometryMutationStore((s) => s.chunks);
-  const focus = useOrbFocusVisualStore((s) => ({
-    focusIndex: s.focusIndex,
-    hoverIndex: s.hoverIndex,
-    evidenceIndices: s.evidenceIndices,
-    neighborIndices: s.neighborIndices,
-    scopeIndices: s.scopeIndices,
-    selectionIndices: s.selectionIndices,
-  }));
+  const focusIndex = useOrbFocusVisualStore((s) => s.focusIndex);
+  const hoverIndex = useOrbFocusVisualStore((s) => s.hoverIndex);
+  const evidenceIndices = useOrbFocusVisualStore((s) => s.evidenceIndices);
+  const neighborIndices = useOrbFocusVisualStore((s) => s.neighborIndices);
+  const scopeIndices = useOrbFocusVisualStore((s) => s.scopeIndices);
+  const selectionIndices = useOrbFocusVisualStore((s) => s.selectionIndices);
+
+  const focus = useMemo(
+    () => ({
+      evidenceIndices,
+      focusIndex,
+      hoverIndex,
+      neighborIndices,
+      scopeIndices,
+      selectionIndices,
+    }),
+    [
+      evidenceIndices,
+      focusIndex,
+      hoverIndex,
+      neighborIndices,
+      scopeIndices,
+      selectionIndices,
+    ],
+  );
 
   const particleArrays = useMemo(
     () =>
