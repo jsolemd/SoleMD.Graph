@@ -18,7 +18,7 @@ export const ORB_WEBGPU_EVIDENCE_FLAG = 1 << 5;
 export const ORB_WEBGPU_SCOPE_DIM_FLAG = 1 << 6;
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-const DEFAULT_RADIUS = 0.0043;
+const DEFAULT_RADIUS = 0.0018;
 const BLOB_X_SCALE = 0.64;
 const BLOB_Y_SCALE = 0.61;
 const BLOB_Z_SCALE = 0.56;

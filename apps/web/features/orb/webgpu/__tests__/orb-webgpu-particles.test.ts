@@ -61,7 +61,8 @@ describe("orb WebGPU particle packing", () => {
       ),
     ).toBeGreaterThan(0.4);
     expect(Math.abs(arrays.velocities[1 * 4]!)).toBeGreaterThan(0);
-    expect(arrays.positions[1 * 4 + 3]).toBeGreaterThan(0.0065);
+    expect(arrays.positions[1 * 4 + 3]).toBeGreaterThan(0.0018);
+    expect(arrays.positions[1 * 4 + 3]).toBeLessThan(0.0024);
     expect(arrays.attributes[1 * 4]).toBeGreaterThan(0);
     expect(arrays.attributes[1 * 4 + 3]).toBeGreaterThanOrEqual(0.2);
     expect(arrays.attributes[1 * 4 + 3]).toBeLessThanOrEqual(1);

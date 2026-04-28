@@ -95,10 +95,7 @@ struct DisplayParticle {
 
 const LANDING_RAINBOW_STOP_SECONDS = ${toWgslFloat(LANDING_RAINBOW_STOP_SECONDS)};
 const LANDING_RAINBOW_PERIOD_SECONDS = ${toWgslFloat(LANDING_RAINBOW_PERIOD_SECONDS)};
-const ORB_NOISE_DOMAIN_SCALE = 3.1;
-const ORB_COLOR_NOISE_FLOOR = 0.02;
-const ORB_COLOR_NOISE_CEILING = 0.34;
-const ORB_COLOR_NOISE_WEIGHT = 0.42;
+const ORB_NOISE_DOMAIN_SCALE = 4.5;
 const LANDING_PALETTE = array<vec3f, 8>(
     ${LANDING_PALETTE_WGSL}
 );
@@ -330,7 +327,7 @@ fn landingNoiseColor(colorTime: f32) -> vec3f {
 
 fn visualRadius(baseRadius: f32, z: f32, flag: u32, colorTime: f32) -> f32 {
   let pulse = 0.5 + 0.5 * sin(colorTime * 4.2);
-  var radius = baseRadius * clamp(1.0 + z * 0.20, 0.74, 1.24);
+  var radius = baseRadius * clamp(1.0 + z * 0.10, 0.88, 1.10);
   if ((flag & ${ORB_WEBGPU_SCOPE_DIM_FLAG}u) != 0u) {
     radius = radius * 0.82;
   }
@@ -392,9 +389,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let pulse = 0.5 + 0.5 * sin(computeFrame.colorTime * 4.2 + f32(i) * 0.037);
   let baseColor = landingBaseColor();
   let noiseColor = landingNoiseColor(computeFrame.colorTime);
-  let vNoise =
-    smoothstep(ORB_COLOR_NOISE_FLOOR, ORB_COLOR_NOISE_CEILING, fieldNoise) *
-    ORB_COLOR_NOISE_WEIGHT;
+  let vNoise = clamp(fieldNoise, 0.0, 1.0);
   let burstColor = clamp(
     baseColor + vNoise * 4.0 * (noiseColor - baseColor),
     vec3f(0.0),
@@ -406,14 +401,13 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
     flag,
     computeFrame.colorTime,
   );
-  radius = radius * (1.0 + liveDrift * 0.030 + vNoise * 0.11);
+  radius = radius * (1.0 + liveDrift * 0.020);
   var color = burstColor;
-  color = mix(color * depthLight, color * 1.34 + vec3f(0.04), rim * 0.38);
+  color = mix(color * depthLight, color * 1.20 + vec3f(0.02), rim * 0.18);
   var alpha =
-    (0.47 + depthLight * 0.17 + vNoise * 0.10) *
-    clamp(attr.w, 0.2, 1.0) *
-    mix(0.30, 1.0, frontFade);
-  var halo = 0.15 + attr.w * 0.026 + vNoise * 0.05;
+    (0.92 + depthLight * 0.24) *
+    clamp(attr.w, 0.2, 1.0);
+  var halo = 0.0;
   var ring = 0.0;
 
   if ((flag & ${ORB_WEBGPU_SCOPE_DIM_FLAG}u) != 0u) {
@@ -496,13 +490,12 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
   let alpha =
     in.color.a *
     spriteAlpha *
-    in.effects.w *
     clamp(1.0 + halo * 0.18 + ring * 0.32, 0.0, 1.0);
-  let rimColor = in.color.rgb * 1.35 + vec3f(0.04);
+  let rimColor = in.color.rgb * 1.30 + vec3f(0.02);
   let rgb =
-    in.color.rgb * (sprite.rgb + halo * 0.10) +
+    in.color.rgb * sprite.rgb +
     rimColor * ring * 0.42 +
-    rimColor * in.effects.z * 0.12;
+    rimColor * halo * 0.20;
   return vec4f(rgb * alpha, alpha);
 }
 

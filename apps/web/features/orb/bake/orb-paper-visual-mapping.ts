@@ -1,9 +1,9 @@
 import type { PaperAttrs } from "./use-paper-attributes-baker";
 import type { PaperCorpusStats } from "../stores/geometry-mutation-store";
 
-export const ORB_PAPER_SIZE_MIN = 0.8;
-export const ORB_PAPER_SIZE_MAX = 2.6;
-export const ORB_PAPER_SIZE_GAMMA = 0.65;
+export const ORB_PAPER_SIZE_MIN = 0.92;
+export const ORB_PAPER_SIZE_MAX = 1.3;
+export const ORB_PAPER_SIZE_GAMMA = 1.0;
 
 export const ORB_PAPER_SPEED_FAST = 1.75;
 export const ORB_PAPER_SPEED_SLOW = 0.55;
