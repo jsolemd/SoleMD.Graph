@@ -5,6 +5,7 @@ import {
   ORB_WEBGPU_HOVER_FLAG,
   ORB_WEBGPU_NEIGHBOR_FLAG,
   ORB_WEBGPU_SCOPE_FLAG,
+  ORB_WEBGPU_SCOPE_DIM_FLAG,
   ORB_WEBGPU_SELECTION_FLAG,
   buildOrbWebGpuFlagArray,
   buildOrbWebGpuParticleArrays,
@@ -77,5 +78,7 @@ describe("orb WebGPU particle packing", () => {
     expect(flags[5]! & ORB_WEBGPU_NEIGHBOR_FLAG).toBeTruthy();
     expect(flags[6]! & ORB_WEBGPU_SCOPE_FLAG).toBeTruthy();
     expect(flags[7]! & ORB_WEBGPU_SELECTION_FLAG).toBeTruthy();
+    expect(flags[0]! & ORB_WEBGPU_SCOPE_DIM_FLAG).toBeTruthy();
+    expect(flags[6]! & ORB_WEBGPU_SCOPE_DIM_FLAG).toBeFalsy();
   });
 });

@@ -22,6 +22,9 @@ The first implementation slice is active on `/graph`:
 - Particle display uses instanced billboards, not sized WebGPU points.
 - Hover, click, and rectangle selection use async compute readback.
 - Staging/readback buffers are separate from hot particle buffers.
+- The first visual-parity pass adds depth-aware billboards, a curated
+  cluster palette, core/halo/ring shader components, and explicit
+  `scopeDim` flagging for non-scope particles.
 - The old orb-specific WebGL picker, R3F camera controls, snapshot
   bridge, and DataTexture mutation subscribers have been removed from
   the `/graph` orb path.

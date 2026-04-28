@@ -13,9 +13,24 @@ export const ORB_WEBGPU_SELECTION_FLAG = 1 << 2;
 export const ORB_WEBGPU_SCOPE_FLAG = 1 << 3;
 export const ORB_WEBGPU_NEIGHBOR_FLAG = 1 << 4;
 export const ORB_WEBGPU_EVIDENCE_FLAG = 1 << 5;
+export const ORB_WEBGPU_SCOPE_DIM_FLAG = 1 << 6;
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const DEFAULT_RADIUS = 0.0065;
+const clusterPalette = [
+  [0.50, 0.72, 0.90],
+  [0.92, 0.58, 0.54],
+  [0.52, 0.76, 0.63],
+  [0.90, 0.73, 0.42],
+  [0.70, 0.63, 0.87],
+  [0.43, 0.76, 0.82],
+  [0.90, 0.56, 0.72],
+  [0.72, 0.78, 0.44],
+  [0.62, 0.70, 0.90],
+  [0.86, 0.66, 0.50],
+  [0.54, 0.80, 0.74],
+  [0.78, 0.62, 0.76],
+] as const;
 
 export interface OrbWebGpuParticleArrays {
   count: number;
@@ -88,6 +103,10 @@ export function buildOrbWebGpuFlagArray(
   >,
 ): Uint32Array {
   const flags = new Uint32Array(count);
+  const hasScope = focus.scopeIndices.length > 0;
+  if (hasScope) {
+    flags.fill(ORB_WEBGPU_SCOPE_DIM_FLAG);
+  }
   for (const index of focus.evidenceIndices) {
     if (isResidentIndex(index, count)) flags[index] |= ORB_WEBGPU_EVIDENCE_FLAG;
   }
@@ -95,7 +114,10 @@ export function buildOrbWebGpuFlagArray(
     if (isResidentIndex(index, count)) flags[index] |= ORB_WEBGPU_NEIGHBOR_FLAG;
   }
   for (const index of focus.scopeIndices) {
-    if (isResidentIndex(index, count)) flags[index] |= ORB_WEBGPU_SCOPE_FLAG;
+    if (isResidentIndex(index, count)) {
+      flags[index] |= ORB_WEBGPU_SCOPE_FLAG;
+      flags[index] &= ~ORB_WEBGPU_SCOPE_DIM_FLAG;
+    }
   }
   for (const index of focus.selectionIndices) {
     if (isResidentIndex(index, count)) flags[index] |= ORB_WEBGPU_SELECTION_FLAG;
@@ -186,30 +208,17 @@ function normalizeGraphCoordinate(value: number | undefined): number {
 }
 
 function colorFromCluster(clusterId: number, weight: number): [number, number, number] {
-  const hue = (((clusterId * 47) % 360) + 360) % 360;
-  const saturation = 0.58 + weight * 0.18;
-  const lightness = 0.58 + weight * 0.12;
-  return hslToRgb(hue / 360, saturation, lightness);
-}
+  const baseIndex = Math.abs(clusterId) % clusterPalette.length;
+  const nextIndex = (baseIndex + 5) % clusterPalette.length;
+  const base = clusterPalette[baseIndex]!;
+  const next = clusterPalette[nextIndex]!;
+  const mixAmount = ((Math.abs(clusterId) * 0.37) % 1) * 0.28;
+  const lift = 0.08 + weight * 0.16;
 
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  const hueToRgb = (p: number, q: number, tIn: number) => {
-    let t = tIn;
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p + (q - p) * 6 * t;
-    if (t < 1 / 2) return q;
-    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-    return p;
-  };
-
-  if (s === 0) return [l, l, l];
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
   return [
-    hueToRgb(p, q, h + 1 / 3),
-    hueToRgb(p, q, h),
-    hueToRgb(p, q, h - 1 / 3),
+    mix(mix(base[0], next[0], mixAmount), 1, lift),
+    mix(mix(base[1], next[1], mixAmount), 1, lift),
+    mix(mix(base[2], next[2], mixAmount), 1, lift),
   ];
 }
 
@@ -232,4 +241,8 @@ function isResidentIndex(index: number | null | undefined, count: number): index
     index < count &&
     index < ORB_PARTICLE_CAPACITY
   );
+}
+
+function mix(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
 }

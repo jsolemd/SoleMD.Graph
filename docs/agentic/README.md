@@ -125,3 +125,7 @@ find by scanning the list.
   Cross-skill alignment pass for `module`, `aesthetic`, and
   `animation-authoring` so future agents reconstruct the landing/runtime
   architecture from the current canonical surface instead of stale references.
+- [2026-04-28-solemd-graph-webgpu-orb-visual-parity-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-04-28-solemd-graph-webgpu-orb-visual-parity-ledger.md)
+  WebGPU orb visual parity pass: shader/resource modularization,
+  storage-buffer visual flags, cluster palette, depth-aware billboards, and
+  the pre-physics implementation queue.
