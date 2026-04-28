@@ -48,6 +48,7 @@ export interface OrbWebGpuRuntime {
   ): Promise<number[]>;
   captureSnapshot(): Promise<Blob | null>;
   applyTwist(deltaRadians: number): void;
+  nudgeRotation(deltaRadians: number): void;
   applyZoom(factor: number): void;
   applyPan(deltaX: number, deltaY: number): void;
   resetView(): void;
@@ -243,6 +244,11 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.applyTwist(deltaRadians, performance.now());
     this.writeFrameUniforms(performance.now() / 1000, 0);
+  }
+
+  nudgeRotation(deltaRadians: number): void {
+    if (this.disposed || !Number.isFinite(deltaRadians)) return;
+    this.rotationController.nudgeRotation(deltaRadians, performance.now());
   }
 
   applyZoom(factor: number): void {

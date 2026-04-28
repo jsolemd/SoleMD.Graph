@@ -14,10 +14,12 @@ import { clampFinite } from "./orb-webgpu-layout";
 export const ORB_ZOOM_DEFAULT = 1;
 export const ORB_ZOOM_MIN = 0.5;
 export const ORB_ZOOM_MAX = 4;
-// 250 ms half-life — the time it takes the eased value to cover half
-// the remaining distance to target. Matches the audit's recommendation
-// for "calm but responsive" camera moves.
-const ZOOM_HALF_LIFE_SECONDS = 0.25;
+// 120 ms half-life — snappy enough that wheel and +/- inputs feel
+// connected to the screen, slow enough that keyboard-repeat doesn't
+// flash discrete steps. Pan uses 250 ms because translation reads as
+// motion at any speed; zoom needs the faster lock-in to feel like a
+// real camera dolly.
+const ZOOM_HALF_LIFE_SECONDS = 0.12;
 
 export interface OrbWebGpuZoomTickInput {
   dtSeconds: number;

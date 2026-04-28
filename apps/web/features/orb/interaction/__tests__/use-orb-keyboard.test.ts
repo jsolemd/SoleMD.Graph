@@ -32,6 +32,7 @@ function pressKey(key: string, options: KeyboardOptions = {}): KeyboardEvent {
 function buildHandle(): jest.Mocked<OrbWebGpuControlHandle> {
   return {
     applyTwist: jest.fn(),
+    nudgeRotation: jest.fn(),
     applyZoom: jest.fn(),
     applyPan: jest.fn(),
     resetView: jest.fn(),
@@ -64,7 +65,8 @@ describe("useOrbKeyboard", () => {
     expect(handle.applyPan).toHaveBeenCalledWith(-ORB_PAN_KEY_NDC, 0);
     expect(handle.applyPan).toHaveBeenCalledWith(0, -ORB_PAN_KEY_NDC);
     expect(handle.applyPan).toHaveBeenCalledWith(0, ORB_PAN_KEY_NDC);
-    expect(handle.applyTwist).toHaveBeenCalledTimes(2);
+    expect(handle.nudgeRotation).toHaveBeenCalledTimes(2);
+    expect(handle.applyTwist).not.toHaveBeenCalled();
     expect(handle.resetView).toHaveBeenCalledTimes(1);
   });
 

@@ -59,19 +59,22 @@ export function useOrbKeyboard({
           event.preventDefault();
           handle?.applyZoom(1 / ORB_ZOOM_KEY_FACTOR);
           return;
+        // nudgeRotation (eased) instead of applyTwist (instant) so
+        // browser key-repeat blends to a continuous glide. Mouse drag
+        // and touch twist still use applyTwist for direct manipulation.
         case "<":
         case ",":
         case "q":
         case "Q":
           event.preventDefault();
-          handle?.applyTwist(-ORB_ROTATE_KEY_RADIANS);
+          handle?.nudgeRotation(-ORB_ROTATE_KEY_RADIANS);
           return;
         case ">":
         case ".":
         case "e":
         case "E":
           event.preventDefault();
-          handle?.applyTwist(ORB_ROTATE_KEY_RADIANS);
+          handle?.nudgeRotation(ORB_ROTATE_KEY_RADIANS);
           return;
         case "0":
         case "r":

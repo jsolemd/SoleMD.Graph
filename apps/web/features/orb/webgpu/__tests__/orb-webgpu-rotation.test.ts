@@ -72,4 +72,32 @@ describe("OrbWebGpuRotationController", () => {
     expect(reduced).toBeCloseTo(0);
     expect(rotation.state).toBe("paused-selection");
   });
+
+  it("nudgeRotation eases toward the requested delta over multiple ticks", () => {
+    const rotation = new OrbWebGpuRotationController();
+    const target = (5 * Math.PI) / 180;
+    rotation.nudgeRotation(target, 0);
+
+    const afterOne = rotation.tick({
+      dtSeconds: 1 / 60,
+      pauseMotion: false,
+      rotationSpeedMultiplier: 0,
+      selectionActive: false,
+      timestampMs: 16,
+    });
+    expect(afterOne).toBeGreaterThan(0);
+    expect(afterOne).toBeLessThan(target);
+
+    let last = afterOne;
+    for (let i = 1; i < 240; i += 1) {
+      last = rotation.tick({
+        dtSeconds: 1 / 60,
+        pauseMotion: false,
+        rotationSpeedMultiplier: 0,
+        selectionActive: false,
+        timestampMs: 16 + i * 16,
+      });
+    }
+    expect(last).toBeCloseTo(target, 4);
+  });
 });

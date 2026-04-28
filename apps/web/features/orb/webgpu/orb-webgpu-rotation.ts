@@ -17,12 +17,19 @@ export interface OrbWebGpuRotationInput {
   timestampMs: number;
 }
 
+// Half-life of the keyboard rotation ease. Tuned so a 30 Hz key-repeat
+// at +/- 5 degrees per keypress reads as a continuous glide instead of
+// 30 staccato jumps per second. Direct-manipulation paths (mouse drag,
+// touch twist) bypass this ease via applyTwist.
+const NUDGE_HALF_LIFE_SECONDS = 0.12;
+
 export class OrbWebGpuRotationController {
   private reducedOrPaused = false;
   private dragReleaseAtMs: number | null = null;
   private selectionActive = false;
   private stateValue: OrbWebGpuRotationState = "running";
   private value = 0;
+  private nudgeAccumulator = 0;
 
   get rotation(): number {
     return this.value;
@@ -35,6 +42,19 @@ export class OrbWebGpuRotationController {
   applyTwist(deltaRadians: number, timestampMs: number): void {
     if (!Number.isFinite(deltaRadians)) return;
     this.value = normalizeRadians(this.value + deltaRadians);
+    if (this.reducedOrPaused || this.selectionActive) return;
+    this.stateValue = "suspended-drag";
+    this.dragReleaseAtMs = timestampMs;
+  }
+
+  // Eased twist for keyboard inputs. Adds to a pending accumulator that
+  // gets applied to value over multiple frames via exponential decay.
+  // Multiple keypresses while the prior nudge is still in-flight stack
+  // additively, so a held key produces a continuous glide rather than
+  // a series of instant snaps.
+  nudgeRotation(deltaRadians: number, timestampMs: number): void {
+    if (!Number.isFinite(deltaRadians)) return;
+    this.nudgeAccumulator += deltaRadians;
     if (this.reducedOrPaused || this.selectionActive) return;
     this.stateValue = "suspended-drag";
     this.dragReleaseAtMs = timestampMs;
@@ -66,6 +86,13 @@ export class OrbWebGpuRotationController {
             ROTATION_RUNNING_RPS *
             input.rotationSpeedMultiplier,
       );
+    }
+
+    if (Math.abs(this.nudgeAccumulator) > 1e-5 && input.dtSeconds > 0) {
+      const decay = Math.pow(0.5, input.dtSeconds / NUDGE_HALF_LIFE_SECONDS);
+      const apply = this.nudgeAccumulator * (1 - decay);
+      this.value = normalizeRadians(this.value + apply);
+      this.nudgeAccumulator -= apply;
     }
 
     return this.value;
