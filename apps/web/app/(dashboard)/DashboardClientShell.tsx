@@ -33,6 +33,7 @@ import {
 import type { FieldController } from "@/features/field/controller/FieldController";
 import { installBlobMutationSubscriber } from "@/features/orb/bake/install-blob-mutation-subscriber";
 import { OrbCameraControls } from "@/features/orb/camera/OrbCameraControls";
+import { OrbSnapshotBridge } from "@/features/orb/capture/OrbSnapshotBridge";
 import { installBlobPointsSubscriber } from "@/features/orb/interaction/install-blob-points-subscriber";
 import {
   OrbInteractionContext,
@@ -191,7 +192,12 @@ export function DashboardClientShell({
                 blobPointsSubscriber={blobPointsSubscriber}
                 cameraRef={cameraRef}
                 canvasChildren={
-                  fieldMode === "orb" ? <OrbCameraControls /> : null
+                  fieldMode === "orb" ? (
+                    <>
+                      <OrbCameraControls />
+                      <OrbSnapshotBridge />
+                    </>
+                  ) : null
                 }
                 className="fixed inset-0"
                 onControllerReady={handleControllerReady}

@@ -1,3 +1,18 @@
+jest.mock('@/features/graph/lib/cosmograph-selection', () => ({
+  SELECTED_POINT_INDICES_SCOPE_SQL:
+    'index IN (SELECT index FROM selected_point_indices)',
+  combineScopeSqlClauses: (
+    ...clauses: Array<string | null | undefined>
+  ): string | null => {
+    const normalized = clauses
+      .map((clause) => clause?.trim())
+      .filter((clause): clause is string => Boolean(clause))
+    if (normalized.length === 0) return null
+    if (normalized.length === 1) return normalized[0]
+    return normalized.map((clause) => `(${clause})`).join(' AND ')
+  },
+}))
+
 import { useDashboardStore } from '../dashboard-store'
 
 type DashboardState = ReturnType<typeof useDashboardStore.getState>
@@ -52,6 +67,118 @@ describe('selection-slice', () => {
       useDashboardStore.getState().setCurrentPointScopeSql('year > 2020')
       expect(useDashboardStore.getState().currentScopeRevision).toBe(revBefore)
     })
+
+    it('can force a revision when table-backed scope contents changed', () => {
+      const selectedSql = 'index IN (SELECT index FROM selected_point_indices)'
+      useDashboardStore.getState().setCurrentPointScopeSql(selectedSql)
+      const revBefore = useDashboardStore.getState().currentScopeRevision
+
+      useDashboardStore.getState().setCurrentPointScopeSql(selectedSql, {
+        forceRevision: true,
+      })
+
+      expect(useDashboardStore.getState().currentScopeRevision).toBe(revBefore + 1)
+    })
+  })
+
+  describe('visibility scope clauses', () => {
+    it('sets filter scope SQL without changing selected point count', () => {
+      const revBefore = useDashboardStore.getState().currentScopeRevision
+
+      useDashboardStore.getState().setVisibilityScopeClause({
+        kind: 'categorical',
+        sourceId: 'filter:journal',
+        column: 'journal',
+        value: 'Nature',
+        sql: "journal = 'Nature'",
+      })
+
+      const state = useDashboardStore.getState()
+      expect(state.currentPointScopeSql).toBe("journal = 'Nature'")
+      expect(state.currentScopeRevision).toBe(revBefore + 1)
+      expect(state.selectedPointCount).toBe(0)
+      expect(state.selectedPointRevision).toBe(0)
+      expect(state.visibilityScopeClauses['filter:journal']?.value).toBe('Nature')
+    })
+
+    it('ANDs active filter and timeline scope SQL', () => {
+      useDashboardStore.getState().setVisibilityScopeClause({
+        kind: 'categorical',
+        sourceId: 'filter:journal',
+        column: 'journal',
+        value: 'Nature',
+        sql: "journal = 'Nature'",
+      })
+      useDashboardStore.getState().setVisibilityScopeClause({
+        kind: 'timeline',
+        sourceId: 'timeline:year',
+        column: 'year',
+        value: [2020, 2024],
+        sql: 'year BETWEEN 2020 AND 2024',
+      })
+
+      expect(useDashboardStore.getState().currentPointScopeSql).toBe(
+        "(journal = 'Nature') AND (year BETWEEN 2020 AND 2024)",
+      )
+    })
+
+    it('combines locked explicit selection with visibility scope', () => {
+      useDashboardStore.getState().setSelectedPointCount(3)
+      useDashboardStore.getState().setVisibilityScopeClause({
+        kind: 'timeline',
+        sourceId: 'timeline:year',
+        column: 'year',
+        value: [2020, 2024],
+        sql: 'year BETWEEN 2020 AND 2024',
+      })
+
+      useDashboardStore.getState().lockSelection()
+
+      expect(useDashboardStore.getState().currentPointScopeSql).toBe(
+        '(index IN (SELECT index FROM selected_point_indices)) AND (year BETWEEN 2020 AND 2024)',
+      )
+    })
+
+    it('clears one visibility source without clearing the others', () => {
+      useDashboardStore.getState().setVisibilityScopeClause({
+        kind: 'categorical',
+        sourceId: 'filter:journal',
+        column: 'journal',
+        value: 'Nature',
+        sql: "journal = 'Nature'",
+      })
+      useDashboardStore.getState().setVisibilityScopeClause({
+        kind: 'timeline',
+        sourceId: 'timeline:year',
+        column: 'year',
+        value: [2020, 2024],
+        sql: 'year BETWEEN 2020 AND 2024',
+      })
+
+      useDashboardStore.getState().clearVisibilityScopeClause('filter:journal')
+
+      expect(useDashboardStore.getState().currentPointScopeSql).toBe(
+        'year BETWEEN 2020 AND 2024',
+      )
+      expect(
+        useDashboardStore.getState().visibilityScopeClauses['filter:journal'],
+      ).toBeUndefined()
+    })
+
+    it('clears all visibility sources', () => {
+      useDashboardStore.getState().setVisibilityScopeClause({
+        kind: 'categorical',
+        sourceId: 'filter:journal',
+        column: 'journal',
+        value: 'Nature',
+        sql: "journal = 'Nature'",
+      })
+
+      useDashboardStore.getState().clearVisibilityScopeClauses()
+
+      expect(useDashboardStore.getState().currentPointScopeSql).toBeNull()
+      expect(useDashboardStore.getState().visibilityScopeClauses).toEqual({})
+    })
   })
 
   describe('setSelectedPointCount', () => {
@@ -76,6 +203,15 @@ describe('selection-slice', () => {
       const revBefore = useDashboardStore.getState().selectedPointRevision
       useDashboardStore.getState().setSelectedPointCount(10)
       expect(useDashboardStore.getState().selectedPointRevision).toBe(revBefore)
+    })
+
+    it('can force a revision when the explicit set changes but the count does not', () => {
+      useDashboardStore.getState().setSelectedPointCount(10)
+      const revBefore = useDashboardStore.getState().selectedPointRevision
+      useDashboardStore.getState().setSelectedPointCount(10, {
+        forceRevision: true,
+      })
+      expect(useDashboardStore.getState().selectedPointRevision).toBe(revBefore + 1)
     })
   })
 

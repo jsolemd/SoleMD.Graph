@@ -11,15 +11,17 @@ import {
   sql,
 } from '@uwdata/mosaic-sql'
 import { getColumnMeta } from '@/features/graph/lib/columns'
-import { buildSelectedViewPredicate } from '@/features/graph/duckdb/sql-helpers'
+import {
+  SELECTED_POINT_INDICES_SCOPE_SQL,
+  combineScopeSqlClauses,
+} from '@/features/graph/lib/selection-query-state'
 import type { VisibilityFocus } from '@/features/graph/stores/slices/visibility-slice'
 
 const VISIBILITY_SOURCE_PREFIXES = ["filter:", "timeline:", "budget:"] as const
 const BUDGET_SCOPE_SOURCE_PREFIXES = ["filter:", "timeline:"] as const
 
 export const BUDGET_FOCUS_SOURCE_ID = 'budget:focus-cluster'
-/** Predicate for the selected_point_indices temp table — single source of truth in sql-helpers. */
-export const SELECTED_POINT_INDICES_SCOPE_SQL = buildSelectedViewPredicate()
+export { SELECTED_POINT_INDICES_SCOPE_SQL }
 
 export function isVisibilitySelectionSourceId(
   sourceId: string | null | undefined,
@@ -236,23 +238,7 @@ export function buildCurrentPointScopeSql(args: {
   )
 }
 
-export function combineScopeSqlClauses(
-  ...clauses: Array<string | null | undefined>
-): string | null {
-  const normalizedClauses = clauses
-    .map((clause) => clause?.trim() ?? '')
-    .filter((clause) => clause.length > 0)
-
-  if (normalizedClauses.length === 0) {
-    return null
-  }
-
-  if (normalizedClauses.length === 1) {
-    return normalizedClauses[0] ?? null
-  }
-
-  return normalizedClauses.map((clause) => `(${clause})`).join(' AND ')
-}
+export { combineScopeSqlClauses }
 
 function buildSelectionScopeSql(
   selection: Selection | null | undefined,
@@ -357,20 +343,30 @@ export function buildCategoricalFilterClause(
   column: string,
   value: string,
 ): SelectionClause {
-  const columnMeta = getColumnMeta(column)
-  const predicate =
-    value === 'null'
-      ? isNull(column)
-      : columnMeta?.isMultiValue
-        ? sql`list_contains(string_split_regex(CAST(${sqlColumn(column)} AS VARCHAR), '\\s*,\\s*'), ${literal(value)})`
-        : eq(column, literal(value))
-
   return {
     source,
     value,
-    predicate,
+    predicate: buildCategoricalFilterPredicate(column, value),
     meta: { type: 'point' },
   }
+}
+
+export function buildCategoricalFilterScopeSql(
+  column: string,
+  value: string,
+): string {
+  return duckDBCodeGenerator.toString(
+    buildCategoricalFilterPredicate(column, value),
+  )
+}
+
+function buildCategoricalFilterPredicate(column: string, value: string) {
+  const columnMeta = getColumnMeta(column)
+  return value === 'null'
+    ? isNull(column)
+    : columnMeta?.isMultiValue
+      ? sql`list_contains(string_split_regex(CAST(${sqlColumn(column)} AS VARCHAR), '\\s*,\\s*'), ${literal(value)})`
+      : eq(column, literal(value))
 }
 
 export function buildNumericRangeFilterClause(
@@ -381,7 +377,23 @@ export function buildNumericRangeFilterClause(
   return {
     source,
     value: range,
-    predicate: isBetween(column, range),
+    predicate: buildNumericRangeFilterPredicate(column, range),
     meta: { type: 'point' },
   }
+}
+
+export function buildNumericRangeFilterScopeSql(
+  column: string,
+  range: [number, number],
+): string {
+  return duckDBCodeGenerator.toString(
+    buildNumericRangeFilterPredicate(column, range),
+  )
+}
+
+function buildNumericRangeFilterPredicate(
+  column: string,
+  range: [number, number],
+) {
+  return isBetween(column, range)
 }

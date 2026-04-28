@@ -253,10 +253,12 @@ export class BlobController extends FieldController {
     uniforms.uPointDepthAttenuation.value +=
       (depthAttenuationTarget - uniforms.uPointDepthAttenuation.value) *
       driftBlend;
-    uniforms.uOrbFocusActive.value +=
-      ((sceneState.orbFocusActive ? 1 : 0) -
-        uniforms.uOrbFocusActive.value) *
-      driftBlend;
+    if (sceneState.orbFocusActive) {
+      uniforms.uOrbFocusActive.value +=
+        (1 - uniforms.uOrbFocusActive.value) * driftBlend;
+    } else {
+      uniforms.uOrbFocusActive.value = 0;
+    }
 
     syncBlobColorCycle({
       material,

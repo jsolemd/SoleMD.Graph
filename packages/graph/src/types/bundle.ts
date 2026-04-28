@@ -23,6 +23,7 @@ export interface GraphBundleContractFileSet {
   paper_documents?: string
   cluster_exemplars?: string
   universe_links?: string
+  orb_entity_edges?: string
   manifest?: string
 }
 

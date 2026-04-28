@@ -237,6 +237,39 @@ export async function queryInfoHistogramsBatch(
   return result
 }
 
+export async function queryNumericColumnValues(
+  conn: AsyncDuckDBConnection,
+  args: {
+    layer: GraphLayer
+    scope: GraphInfoScope
+    column: string
+    currentPointScopeSql: string | null
+  }
+): Promise<number[]> {
+  if (getColumnMetaForLayer(args.column, args.layer)?.type !== 'numeric') {
+    return []
+  }
+
+  const { tableName, scopedPredicate } = getSafeScopedContext(args)
+  const safeColumn = resolveInfoColumn(args.layer, args.column)
+  const rows = await queryRows<{ value: number | null }>(
+    conn,
+    `SELECT CAST(${safeColumn} AS DOUBLE) AS value
+       FROM ${tableName}
+      WHERE ${scopedPredicate}
+        AND ${safeColumn} IS NOT NULL`
+  )
+
+  return rows.flatMap((row) => {
+    if (row.value == null) {
+      return []
+    }
+
+    const value = Number(row.value)
+    return Number.isFinite(value) ? [value] : []
+  })
+}
+
 export async function queryNumericStatsBatch(
   conn: AsyncDuckDBConnection,
   args: {

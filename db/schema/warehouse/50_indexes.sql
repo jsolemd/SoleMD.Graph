@@ -22,6 +22,20 @@ CREATE INDEX IF NOT EXISTS idx_ingest_file_tasks_release_family_status
         status,
         updated_at
     );
+CREATE INDEX IF NOT EXISTS idx_s2_dataset_cursors_current_release
+    ON solemd.s2_dataset_cursors (current_source_release_id, family_name);
+CREATE INDEX IF NOT EXISTS idx_s2_dataset_diff_manifests_range
+    ON solemd.s2_dataset_diff_manifests (
+        start_release_key,
+        end_release_key,
+        dataset_name
+    );
+CREATE INDEX IF NOT EXISTS idx_s2_dataset_diff_files_status
+    ON solemd.s2_dataset_diff_files (
+        operation,
+        file_status,
+        updated_at
+    );
 
 CREATE INDEX IF NOT EXISTS idx_corpus_domain_status
     ON solemd.corpus (domain_status);
@@ -42,6 +56,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_authors_orcid
     WHERE orcid IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_authors_source_author_id
     ON solemd.authors (source_author_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_authors_anonymous_normalized_name
+    ON solemd.authors (normalized_name)
+    WHERE source_author_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_authors_normalized_name
     ON solemd.authors (normalized_name);
 
@@ -117,22 +134,57 @@ CREATE INDEX IF NOT EXISTS idx_s2_paper_references_raw_linkage
 CREATE INDEX IF NOT EXISTS idx_s2_paper_references_raw_reverse
     ON solemd.s2_paper_references_raw (source_release_id, cited_paper_id, citing_paper_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pubtator_entity_annotations_stage_digest_key
+    ON pubtator.entity_annotations_stage (
+        source_release_id,
+        pmid,
+        start_offset,
+        end_offset,
+        entity_type,
+        (digest(concept_id_raw, 'sha256')),
+        resource
+    );
 CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_stage_release_pmid
     ON pubtator.entity_annotations_stage (source_release_id, pmid);
 CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_stage_corpus
     ON pubtator.entity_annotations_stage (corpus_id)
     WHERE corpus_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pubtator_entity_annotations_digest_key
+    ON pubtator.entity_annotations (
+        corpus_id,
+        start_offset,
+        end_offset,
+        entity_type,
+        (digest(concept_id_raw, 'sha256')),
+        resource
+    );
 CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_concept
     ON pubtator.entity_annotations (corpus_id, concept_id_raw);
 CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_pmid
     ON pubtator.entity_annotations (pmid, start_offset)
     WHERE pmid IS NOT NULL;
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pubtator_relations_stage_digest_key
+    ON pubtator.relations_stage (
+        source_release_id,
+        pmid,
+        (digest(subject_entity_id, 'sha256')),
+        relation_type,
+        (digest(object_entity_id, 'sha256')),
+        relation_source
+    );
 CREATE INDEX IF NOT EXISTS idx_pubtator_relations_stage_release_pmid
     ON pubtator.relations_stage (source_release_id, pmid);
 CREATE INDEX IF NOT EXISTS idx_pubtator_relations_stage_corpus
     ON pubtator.relations_stage (corpus_id)
     WHERE corpus_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pubtator_relations_digest_key
+    ON pubtator.relations (
+        corpus_id,
+        (digest(subject_entity_id, 'sha256')),
+        relation_type,
+        (digest(object_entity_id, 'sha256'))
+    );
 CREATE INDEX IF NOT EXISTS idx_pubtator_relations_reverse
     ON pubtator.relations (corpus_id, object_entity_id, relation_type, subject_entity_id);
 

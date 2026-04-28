@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilteringClient } from "@cosmograph/cosmograph/cosmograph/crossfilter/filtering-client";
 import { Bars, type BarData } from "@cosmograph/ui";
 import { Text } from "@mantine/core";
 import {
   buildCategoricalFilterClause,
+  buildCategoricalFilterScopeSql,
   clearSelectionClause,
   getSelectionValueForSource,
 } from "@/features/graph/lib/cosmograph-selection";
+import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoFacetRow } from "@solemd/graph";
 import { formatNumber } from "@/lib/helpers";
 import { panelTextDimStyle } from "@/features/graph/components/panels/PanelShell";
@@ -53,9 +55,20 @@ export function FilterBarWidget({
     tableName,
     baselineScope,
     baselineCacheKey,
+    baselineCurrentPointScopeSql,
+    baselineReady,
     scopeSql,
     isSubset,
   } = useWidgetSelectors("filter", column);
+  const storedScopeClause = useDashboardStore(
+    (state) => state.visibilityScopeClauses[sourceId],
+  );
+  const setVisibilityScopeClause = useDashboardStore(
+    (state) => state.setVisibilityScopeClause,
+  );
+  const clearVisibilityScopeClause = useDashboardStore(
+    (state) => state.clearVisibilityScopeClause,
+  );
 
   const [error, setError] = useState<string | null>(null);
   const [widgetRevision, setWidgetRevision] = useState(0);
@@ -68,16 +81,44 @@ export function FilterBarWidget({
   const selectedValueRef = useRef<string | null>(null);
 
   const selectedValue = useMemo(
-    () =>
-      getSelectionValueForSource<string>(cosmograph?.pointsSelection, sourceId),
+    () => {
+      const nativeValue = getSelectionValueForSource<string>(
+        cosmograph?.pointsSelection,
+        sourceId,
+      );
+      if (nativeValue != null) {
+        return nativeValue;
+      }
+      return storedScopeClause?.kind === "categorical"
+        ? storedScopeClause.value
+        : null;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
-    [cosmograph, currentScopeRevision, sourceId],
+    [cosmograph, currentScopeRevision, sourceId, storedScopeClause],
   );
 
   selectedValueRef.current = selectedValue;
 
+  const commitCategoricalFilter = useCallback(
+    (value: string | null) => {
+      if (!value) {
+        clearVisibilityScopeClause(sourceId);
+        return;
+      }
+
+      setVisibilityScopeClause({
+        kind: "categorical",
+        sourceId,
+        column,
+        value,
+        sql: buildCategoricalFilterScopeSql(column, value),
+      });
+    },
+    [clearVisibilityScopeClause, column, setVisibilityScopeClause, sourceId],
+  );
+
   useEffect(() => {
-    if (!containerRef.current || !cosmograph) {
+    if (!containerRef.current) {
       return;
     }
 
@@ -92,31 +133,38 @@ export function FilterBarWidget({
       onClick: (item?: BarData) => {
         const client = clientRef.current;
         const value = item?.label;
-        if (!client || !value) {
+        if (!value) {
           return;
         }
 
         if (selectedValueRef.current === value) {
-          clearSelectionClause(cosmograph.pointsSelection, source);
+          clearSelectionClause(cosmograph?.pointsSelection, source);
+          commitCategoricalFilter(null);
           return;
         }
 
-        cosmograph.pointsSelection.update(
-          buildCategoricalFilterClause(client, column, value),
-        );
+        commitCategoricalFilter(value);
+        if (cosmograph && client) {
+          cosmograph.pointsSelection.update(
+            buildCategoricalFilterClause(client, column, value),
+          );
+        }
       },
     });
     widget.setLoadingState();
 
     let client: FilteringClient | null = null;
-    void initCrossfilterClient(cosmograph, { sourceId, column, tableName }).then(
-      (result) => {
-        if (result) {
-          client = result;
-          clientRef.current = result;
-        }
-      },
-    );
+    clientRef.current = null;
+    if (cosmograph) {
+      void initCrossfilterClient(cosmograph, { sourceId, column, tableName }).then(
+        (result) => {
+          if (result) {
+            client = result;
+            clientRef.current = result;
+          }
+        },
+      );
+    }
 
     widgetRef.current = widget;
     datasetReadyRef.current = false;
@@ -130,7 +178,7 @@ export function FilterBarWidget({
         clientRef.current = null;
       }
     };
-  }, [column, cosmograph, source, sourceId, tableName]);
+  }, [column, commitCategoricalFilter, cosmograph, source, sourceId, tableName]);
 
   useEffect(() => {
     const widget = widgetRef.current;
@@ -139,6 +187,12 @@ export function FilterBarWidget({
     }
 
     const requestId = ++datasetRequestIdRef.current;
+    if (!baselineReady) {
+      widget.setLoadingState();
+      datasetReadyRef.current = false;
+      return;
+    }
+
     const datasetCacheKey = getWidgetDatasetCacheKeyWithRevision(
       bundleChecksum,
       activeLayer,
@@ -176,7 +230,7 @@ export function FilterBarWidget({
                 scope: baselineScope,
                 column,
                 maxItems: NATIVE_BARS_DATA_LIMIT,
-                currentPointScopeSql: null,
+                currentPointScopeSql: baselineCurrentPointScopeSql,
               }),
             );
 
@@ -229,6 +283,8 @@ export function FilterBarWidget({
   }, [
     activeLayer,
     baselineCacheKey,
+    baselineCurrentPointScopeSql,
+    baselineReady,
     baselineScope,
     bundleChecksum,
     column,

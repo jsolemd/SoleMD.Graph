@@ -91,8 +91,8 @@ export interface LayerUniforms {
   uTime: { value: number };
   uTimeFactor: { value: number };
   uWidth: { value: number };
-  // Slice 8/C: per-particle dynamic state texture (R = scope, G =
-  // focus/hover excitation, B/A reserved). Bound to the same module-
+  // Slice 8/C/F: per-particle dynamic state texture (R = scope, G =
+  // focus/hover excitation, B = evidence pulse, A reserved). Bound to the same module-
   // singleton DataTexture for every layer; only orb-mode layers gate
   // the sampler on via uScopeDimEnabled.
   uParticleStateTex: { value: Texture };

@@ -23,13 +23,18 @@ import * as THREE from "three";
  *
  *   R: filter / timeline in-scope (1.0 = in, 0.0 = out)         [slice 8]
  *   G: focus / selection excitation (1.0 = click focus,
- *      0.5 = hover)                                              [slice C]
- *      PROBE-5 hard wall: G-lane writers must derive state from
- *      useGraphStore.selectedNode only. Reading selected_point_indices
- *      or currentPointScopeSql from a G-lane writer is a slice C
- *      contract violation; see
- *      docs/future/orb-3d-cosmograph-parity-plan.md PROBE-5.
- *   B: evidence / search pulse                                   [reserved]
+ *      0.75 = explicit orb selection or active filter scope,
+ *      0.5 = hover)                                              [slices C/E]
+ *      PROBE-5 hard wall: click-focus writers derive state from
+ *      useGraphStore.selectedNode only. Explicit selection excitation is
+ *      bridged once by `useOrbSelectionResolver` from the canonical
+ *      `selected_point_indices` table; local orb gestures may seed that
+ *      same store optimistically, but must not create a second visual path.
+ *      Active filter/timeline scope is bridged once by
+ *      `useOrbScopeResolver` so filtered-in resident particles read with
+ *      the same visual language as explicit selection without mutating
+ *      `selected_point_indices`.
+ *   B: evidence / search pulse                                    [slice F]
  *   A: future band / stage / ring state                          [reserved]
  *
  * 64 KiB total per 16k-particle field. The migration target when
@@ -150,6 +155,18 @@ export function clearLane(lane: ParticleStateLane): void {
   const value = LANE_DEFAULTS[lane];
   for (let i = laneOffset; i < data.length; i += PARTICLE_STATE_LANES) {
     data[i] = value;
+  }
+  getParticleStateTexture().needsUpdate = true;
+}
+
+export function clearLanes(lanes: readonly ParticleStateLane[]): void {
+  if (lanes.length === 0) return;
+  const data = getParticleStateData();
+  for (let index = 0; index < PARTICLE_STATE_CAPACITY; index += 1) {
+    const base = index * PARTICLE_STATE_LANES;
+    for (const lane of lanes) {
+      data[base + LANE_OFFSETS[lane]] = LANE_DEFAULTS[lane];
+    }
   }
   getParticleStateTexture().needsUpdate = true;
 }

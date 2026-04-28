@@ -4,7 +4,9 @@ from uuid import UUID
 
 import asyncpg
 
+from app.corpus.artifacts import ENTITY_AGGREGATE, PAPER_SCOPE, RELATION_AGGREGATE
 from app.corpus.models import CorpusPlan
+from app.corpus.rollups import selection_rollup_refs
 
 
 PHASE_NAME = "selection_summary"
@@ -16,8 +18,12 @@ async def refresh_selection_summary(
     corpus_selection_run_id: UUID,
     plan: CorpusPlan,
 ) -> None:
+    refs = await selection_rollup_refs(
+        connection,
+        corpus_selection_run_id=corpus_selection_run_id,
+    )
     await connection.execute(
-        """
+        f"""
         INSERT INTO solemd.paper_selection_summary (
             corpus_id,
             corpus_selection_run_id,
@@ -54,20 +60,21 @@ async def refresh_selection_summary(
         )
         WITH release_scope AS (
             SELECT
-                raw.corpus_id,
-                coalesce(solemd.clean_venue(raw.venue_raw), '') AS normalized_venue,
+                scope.corpus_id,
+                scope.normalized_venue,
                 CASE
-                    WHEN raw.year IS NULL THEN NULL
-                    ELSE raw.year::SMALLINT
+                    WHEN scope.year IS NULL THEN NULL
+                    ELSE scope.year::SMALLINT
                 END AS publication_year,
-                coalesce(raw.is_open_access, false) AS has_open_access,
-                raw.pmc_id IS NOT NULL AS has_pmc_id,
-                (raw.pmc_id IS NOT NULL OR raw.pmid IS NOT NULL OR raw.doi_norm IS NOT NULL)
+                scope.is_open_access AS has_open_access,
+                scope.pmc_id IS NOT NULL AS has_pmc_id,
+                (scope.pmc_id IS NOT NULL OR scope.pmid IS NOT NULL OR scope.doi_norm IS NOT NULL)
                     AS has_locator_candidate,
-                raw.abstract IS NOT NULL AS has_abstract
-            FROM solemd.s2_papers_raw raw
-            WHERE raw.source_release_id = $2
-              AND raw.corpus_id IS NOT NULL
+                scope.has_abstract,
+                scope.reference_out_count,
+                scope.influential_reference_count
+            FROM {refs[PAPER_SCOPE].qualified_name} scope
+            WHERE scope.corpus_id IS NOT NULL
         ),
         signal_rollup AS (
             SELECT
@@ -138,38 +145,24 @@ async def refresh_selection_summary(
         ),
         entity_counts AS (
             SELECT
-                annotations.corpus_id,
-                count(*)::INTEGER AS entity_annotation_count
-            FROM pubtator.entity_annotations_stage annotations
-            WHERE annotations.source_release_id = $3
-            GROUP BY annotations.corpus_id
+                entity_rollup.corpus_id,
+                sum(entity_rollup.signal_count)::INTEGER AS entity_annotation_count
+            FROM {refs[ENTITY_AGGREGATE].qualified_name} entity_rollup
+            WHERE entity_rollup.corpus_id IS NOT NULL
+            GROUP BY entity_rollup.corpus_id
         ),
         relation_counts AS (
             SELECT
-                relations.corpus_id,
-                count(*)::INTEGER AS relation_count
-            FROM pubtator.relations_stage relations
-            WHERE relations.source_release_id = $3
-            GROUP BY relations.corpus_id
-        ),
-        reference_counts AS (
-            SELECT
-                citing_raw.corpus_id,
-                coalesce(sum(refs.reference_out_count), 0)::INTEGER AS reference_out_count,
-                coalesce(sum(refs.influential_reference_count), 0)::INTEGER
-                    AS influential_reference_count
-            FROM solemd.s2_paper_reference_metrics_raw refs
-            JOIN solemd.s2_papers_raw citing_raw
-              ON citing_raw.source_release_id = $2
-             AND citing_raw.paper_id = refs.citing_paper_id
-             AND citing_raw.corpus_id IS NOT NULL
-            WHERE refs.source_release_id = $2
-            GROUP BY citing_raw.corpus_id
+                relation_rollup.corpus_id,
+                sum(relation_rollup.signal_count)::INTEGER AS relation_count
+            FROM {refs[RELATION_AGGREGATE].qualified_name} relation_rollup
+            WHERE relation_rollup.corpus_id IS NOT NULL
+            GROUP BY relation_rollup.corpus_id
         )
         SELECT
             release_scope.corpus_id,
             $1,
-            $4,
+            $2,
             corpus.domain_status,
             corpus.admission_reason,
             release_scope.normalized_venue,
@@ -194,92 +187,38 @@ async def refresh_selection_summary(
             release_scope.has_pmc_id,
             release_scope.has_locator_candidate,
             release_scope.has_abstract,
-            coalesce(reference_counts.reference_out_count, 0),
-            coalesce(reference_counts.influential_reference_count, 0),
+            release_scope.reference_out_count,
+            release_scope.influential_reference_count,
             (
-                CASE
-                    WHEN corpus.domain_status = 'mapped' THEN 100
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_mapped_journal_match, false) THEN 60
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_mapped_pattern_match, false) THEN 35
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_mapped_entity_match, false) THEN 45
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_mapped_relation_match, false) THEN 50
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_journal_match, false) THEN 25
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_pattern_match, false) THEN 10
-                    ELSE 0
-                END
+                CASE WHEN corpus.domain_status = 'mapped' THEN 100 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_mapped_journal_match, false) THEN 60 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_mapped_pattern_match, false) THEN 35 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_mapped_entity_match, false) THEN 45 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_mapped_relation_match, false) THEN 50 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_journal_match, false) THEN 25 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_pattern_match, false) THEN 10 ELSE 0 END
                 + least(coalesce(signal_rollup.vocab_entity_signal_count, 0), 10) * 8
                 + least(coalesce(entity_counts.entity_annotation_count, 0), 20) * 2
                 + least(coalesce(relation_counts.relation_count, 0), 10) * 4
-                + least(coalesce(reference_counts.reference_out_count, 0), 50)
-                + least(coalesce(reference_counts.influential_reference_count, 0), 10) * 4
-                + CASE
-                    WHEN release_scope.has_open_access THEN 10
-                    ELSE 0
-                END
-                + CASE
-                    WHEN release_scope.has_abstract THEN 10
-                    ELSE 0
-                END
+                + least(release_scope.reference_out_count, 50)
+                + least(release_scope.influential_reference_count, 10) * 4
+                + CASE WHEN release_scope.has_open_access THEN 10 ELSE 0 END
+                + CASE WHEN release_scope.has_abstract THEN 10 ELSE 0 END
             )::INTEGER,
             (
-                CASE
-                    WHEN corpus.domain_status = 'mapped' THEN 100
-                    ELSE 0
-                END
-                + CASE
-                    WHEN release_scope.has_pmc_id THEN 80
-                    ELSE 0
-                END
-                + CASE
-                    WHEN release_scope.has_locator_candidate THEN 15
-                    ELSE 0
-                END
-                + CASE
-                    WHEN release_scope.has_open_access THEN 20
-                    ELSE 0
-                END
-                + CASE
-                    WHEN release_scope.has_abstract THEN 15
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_mapped_journal_match, false) THEN 12
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_mapped_pattern_match, false) THEN 8
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_mapped_entity_match, false) THEN 20
-                    ELSE 0
-                END
-                + CASE
-                    WHEN coalesce(signal_rollup.has_mapped_relation_match, false) THEN 25
-                    ELSE 0
-                END
+                CASE WHEN corpus.domain_status = 'mapped' THEN 100 ELSE 0 END
+                + CASE WHEN release_scope.has_pmc_id THEN 80 ELSE 0 END
+                + CASE WHEN release_scope.has_locator_candidate THEN 15 ELSE 0 END
+                + CASE WHEN release_scope.has_open_access THEN 20 ELSE 0 END
+                + CASE WHEN release_scope.has_abstract THEN 15 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_mapped_journal_match, false) THEN 12 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_mapped_pattern_match, false) THEN 8 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_mapped_entity_match, false) THEN 20 ELSE 0 END
+                + CASE WHEN coalesce(signal_rollup.has_mapped_relation_match, false) THEN 25 ELSE 0 END
                 + least(coalesce(entity_counts.entity_annotation_count, 0), 20) * 4
                 + least(coalesce(relation_counts.relation_count, 0), 10) * 8
                 + least(coalesce(signal_rollup.vocab_entity_signal_count, 0), 10) * 4
-                + least(coalesce(reference_counts.influential_reference_count, 0), 10) * 4
+                + least(release_scope.influential_reference_count, 10) * 4
             )::INTEGER,
             now()
         FROM release_scope
@@ -291,8 +230,6 @@ async def refresh_selection_summary(
           ON entity_counts.corpus_id = release_scope.corpus_id
         LEFT JOIN relation_counts
           ON relation_counts.corpus_id = release_scope.corpus_id
-        LEFT JOIN reference_counts
-          ON reference_counts.corpus_id = release_scope.corpus_id
         ON CONFLICT (corpus_id) DO UPDATE
         SET corpus_selection_run_id = EXCLUDED.corpus_selection_run_id,
             selector_version = EXCLUDED.selector_version,
@@ -327,7 +264,5 @@ async def refresh_selection_summary(
             updated_at = EXCLUDED.updated_at
         """,
         corpus_selection_run_id,
-        plan.s2_source_release_id,
-        plan.pt3_source_release_id,
         plan.selector_version,
     )

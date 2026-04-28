@@ -22,6 +22,7 @@ export const DEFAULT_BUNDLE_CONTRACT: GraphBundleContract = {
     // still not a first-load artifact.
     evidence: [
       'universe_links',
+      'orb_entity_edges',
       'citation_neighborhood',
       'pubtator_annotations',
       'pubtator_relations',
@@ -37,6 +38,7 @@ export const DEFAULT_BUNDLE_CONTRACT: GraphBundleContract = {
     paper_documents: 'paper_documents.parquet',
     cluster_exemplars: 'cluster_exemplars.parquet',
     universe_links: 'universe_links.parquet',
+    orb_entity_edges: 'orb_entity_edges.parquet',
     manifest: 'manifest.json',
   },
 }

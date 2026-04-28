@@ -4,7 +4,9 @@ from uuid import UUID
 
 import asyncpg
 
+from app.corpus.artifacts import ENTITY_AGGREGATE, PAPER_SCOPE, RELATION_AGGREGATE
 from app.corpus.models import CorpusPlan
+from app.corpus.rollups import selection_rollup_refs
 
 
 PHASE_NAME = "mapped_promotion"
@@ -16,6 +18,10 @@ async def refresh_mapped_promotion(
     corpus_selection_run_id: UUID,
     plan: CorpusPlan,
 ) -> None:
+    refs = await selection_rollup_refs(
+        connection,
+        corpus_selection_run_id=corpus_selection_run_id,
+    )
     await connection.execute(
         """
         DELETE FROM solemd.corpus_selection_signals
@@ -25,33 +31,35 @@ async def refresh_mapped_promotion(
         corpus_selection_run_id,
         PHASE_NAME,
     )
-    await _insert_mapped_journal_signals(
-        connection,
-        corpus_selection_run_id=corpus_selection_run_id,
-        s2_source_release_id=plan.s2_source_release_id,
-    )
-    await _insert_mapped_pattern_signals(
-        connection,
-        corpus_selection_run_id=corpus_selection_run_id,
-        s2_source_release_id=plan.s2_source_release_id,
-    )
-    await _insert_mapped_entity_rule_signals(
-        connection,
-        corpus_selection_run_id=corpus_selection_run_id,
-        s2_source_release_id=plan.s2_source_release_id,
-        pt3_source_release_id=plan.pt3_source_release_id,
-        direct_entity_confidences=plan.selection_policy.mapped.direct_entity_confidences,
-    )
-    await _insert_mapped_relation_rule_signals(
-        connection,
-        corpus_selection_run_id=corpus_selection_run_id,
-        s2_source_release_id=plan.s2_source_release_id,
-        pt3_source_release_id=plan.pt3_source_release_id,
-    )
+    if plan.selection_policy.mapped.enable_journal_match:
+        await _insert_mapped_journal_signals(
+            connection,
+            corpus_selection_run_id=corpus_selection_run_id,
+            paper_scope_table=refs[PAPER_SCOPE].qualified_name,
+        )
+    if plan.selection_policy.mapped.enable_venue_pattern_match:
+        await _insert_mapped_pattern_signals(
+            connection,
+            corpus_selection_run_id=corpus_selection_run_id,
+            paper_scope_table=refs[PAPER_SCOPE].qualified_name,
+        )
+    if plan.selection_policy.mapped.enable_entity_rule_match:
+        await _insert_mapped_entity_rule_signals(
+            connection,
+            corpus_selection_run_id=corpus_selection_run_id,
+            entity_aggregate_table=refs[ENTITY_AGGREGATE].qualified_name,
+            direct_entity_confidences=plan.selection_policy.mapped.direct_entity_confidences,
+        )
+    if plan.selection_policy.mapped.enable_relation_rule_match:
+        await _insert_mapped_relation_rule_signals(
+            connection,
+            corpus_selection_run_id=corpus_selection_run_id,
+            relation_aggregate_table=refs[RELATION_AGGREGATE].qualified_name,
+        )
     await _apply_mapped_status(
         connection,
         corpus_selection_run_id=corpus_selection_run_id,
-        s2_source_release_id=plan.s2_source_release_id,
+        paper_scope_table=refs[PAPER_SCOPE].qualified_name,
         direct_entity_confidences=plan.selection_policy.mapped.direct_entity_confidences,
         second_gate_entity_confidences=plan.selection_policy.mapped.second_gate_entity_confidences,
         min_publication_year=plan.selection_policy.mapped.min_publication_year,
@@ -62,22 +70,10 @@ async def _insert_mapped_journal_signals(
     connection: asyncpg.Connection,
     *,
     corpus_selection_run_id: UUID,
-    s2_source_release_id: int,
+    paper_scope_table: str,
 ) -> None:
     await connection.execute(
-        """
-        WITH release_scope AS (
-            SELECT
-                raw.corpus_id,
-                raw.venue_raw,
-                coalesce(solemd.clean_venue(raw.venue_raw), '') AS normalized_venue
-            FROM solemd.s2_papers_raw raw
-            JOIN solemd.corpus corpus
-              ON corpus.corpus_id = raw.corpus_id
-            WHERE raw.source_release_id = $2
-              AND raw.corpus_id IS NOT NULL
-              AND corpus.domain_status = 'corpus'
-        )
+        f"""
         INSERT INTO solemd.corpus_selection_signals (
             corpus_selection_run_id,
             corpus_id,
@@ -92,24 +88,25 @@ async def _insert_mapped_journal_signals(
         )
         SELECT
             $1,
-            release_scope.corpus_id,
+            scope.corpus_id,
             'mapped_promotion',
             'mapped_journal_match',
             'journal_inventory',
             'normalized_venue',
-            release_scope.normalized_venue,
+            scope.normalized_venue,
             1,
             true,
             jsonb_build_object(
-                'normalized_venue', release_scope.normalized_venue,
-                'venue_raw', release_scope.venue_raw
+                'normalized_venue', scope.normalized_venue,
+                'venue_raw', scope.venue_raw
             )
-        FROM release_scope
-        JOIN pg_temp.selector_journal_names journals
-          ON journals.normalized_venue = release_scope.normalized_venue
+        FROM {paper_scope_table} scope
+        JOIN solemd.corpus corpus
+          ON corpus.corpus_id = scope.corpus_id
+         AND corpus.domain_status = 'corpus'
+        WHERE scope.has_journal_match
         """,
         corpus_selection_run_id,
-        s2_source_release_id,
     )
 
 
@@ -117,22 +114,10 @@ async def _insert_mapped_pattern_signals(
     connection: asyncpg.Connection,
     *,
     corpus_selection_run_id: UUID,
-    s2_source_release_id: int,
+    paper_scope_table: str,
 ) -> None:
     await connection.execute(
-        """
-        WITH release_scope AS (
-            SELECT
-                raw.corpus_id,
-                raw.venue_raw,
-                coalesce(solemd.clean_venue(raw.venue_raw), '') AS normalized_venue
-            FROM solemd.s2_papers_raw raw
-            JOIN solemd.corpus corpus
-              ON corpus.corpus_id = raw.corpus_id
-            WHERE raw.source_release_id = $2
-              AND raw.corpus_id IS NOT NULL
-              AND corpus.domain_status = 'corpus'
-        )
+        f"""
         INSERT INTO solemd.corpus_selection_signals (
             corpus_selection_run_id,
             corpus_id,
@@ -147,25 +132,26 @@ async def _insert_mapped_pattern_signals(
         )
         SELECT
             $1,
-            release_scope.corpus_id,
+            scope.corpus_id,
             'mapped_promotion',
             'mapped_pattern_match',
-            patterns.pattern_key,
+            pattern_match.value ->> 'pattern_key',
             'like_pattern',
-            patterns.like_pattern,
+            pattern_match.value ->> 'like_pattern',
             1,
             true,
             jsonb_build_object(
-                'normalized_venue', release_scope.normalized_venue,
-                'venue_raw', release_scope.venue_raw
+                'normalized_venue', scope.normalized_venue,
+                'venue_raw', scope.venue_raw
             )
-        FROM release_scope
-        JOIN pg_temp.selector_journal_patterns patterns
-          ON release_scope.normalized_venue LIKE patterns.like_pattern
-        WHERE patterns.promotes_to_mapped
+        FROM {paper_scope_table} scope
+        JOIN solemd.corpus corpus
+          ON corpus.corpus_id = scope.corpus_id
+         AND corpus.domain_status = 'corpus'
+        CROSS JOIN LATERAL jsonb_array_elements(scope.pattern_matches) AS pattern_match(value)
+        WHERE coalesce((pattern_match.value ->> 'promotes_to_mapped')::BOOLEAN, false)
         """,
         corpus_selection_run_id,
-        s2_source_release_id,
     )
 
 
@@ -173,58 +159,11 @@ async def _insert_mapped_entity_rule_signals(
     connection: asyncpg.Connection,
     *,
     corpus_selection_run_id: UUID,
-    s2_source_release_id: int,
-    pt3_source_release_id: int,
+    entity_aggregate_table: str,
     direct_entity_confidences: tuple[str, ...],
 ) -> None:
     await connection.execute(
-        """
-        WITH reference_counts AS (
-            SELECT
-                raw.corpus_id,
-                coalesce(sum(metrics.reference_out_count), 0)::INTEGER AS reference_out_count
-            FROM solemd.s2_paper_reference_metrics_raw metrics
-            JOIN solemd.s2_papers_raw raw
-              ON raw.source_release_id = $3
-             AND raw.paper_id = metrics.citing_paper_id
-             AND raw.corpus_id IS NOT NULL
-            WHERE metrics.source_release_id = $3
-            GROUP BY raw.corpus_id
-        ),
-        entity_hits AS (
-            SELECT
-                raw.corpus_id,
-                rules.concept_id_raw,
-                rules.canonical_name,
-                rules.family_key,
-                rules.confidence,
-                rules.min_reference_count,
-                coalesce(reference_counts.reference_out_count, 0) AS reference_out_count,
-                min(annotations.mention_text) AS matched_mention_text,
-                count(*)::INTEGER AS signal_count
-            FROM pubtator.entity_annotations_stage annotations
-            JOIN solemd.s2_papers_raw raw
-              ON raw.source_release_id = $3
-             AND raw.pmid = annotations.pmid
-             AND raw.corpus_id IS NOT NULL
-            JOIN solemd.corpus corpus
-              ON corpus.corpus_id = raw.corpus_id
-             AND corpus.domain_status = 'corpus'
-            JOIN pg_temp.selector_entity_rules rules
-              ON rules.entity_type = annotations.entity_type
-             AND rules.concept_id_raw = annotations.concept_id_raw
-            LEFT JOIN reference_counts
-              ON reference_counts.corpus_id = raw.corpus_id
-            WHERE annotations.source_release_id = $2
-            GROUP BY
-                raw.corpus_id,
-                rules.concept_id_raw,
-                rules.canonical_name,
-                rules.family_key,
-                rules.confidence,
-                rules.min_reference_count,
-                reference_counts.reference_out_count
-        )
+        f"""
         INSERT INTO solemd.corpus_selection_signals (
             corpus_selection_run_id,
             corpus_id,
@@ -239,29 +178,31 @@ async def _insert_mapped_entity_rule_signals(
         )
         SELECT
             $1,
-            entity_hits.corpus_id,
+            entity_rollup.corpus_id,
             'mapped_promotion',
             'mapped_entity_rule_match',
-            entity_hits.family_key,
+            entity_rollup.rule_family_key,
             'concept_id_raw',
-            entity_hits.concept_id_raw,
-            entity_hits.signal_count,
+            entity_rollup.concept_id_raw,
+            entity_rollup.signal_count,
             (
-                entity_hits.confidence = ANY($4::TEXT[])
-                AND entity_hits.reference_out_count >= entity_hits.min_reference_count
+                entity_rollup.rule_confidence = ANY($2::TEXT[])
+                AND entity_rollup.reference_out_count >= entity_rollup.rule_min_reference_count
             ),
             jsonb_build_object(
-                'canonical_name', entity_hits.canonical_name,
-                'confidence', entity_hits.confidence,
-                'matched_mention_text', entity_hits.matched_mention_text,
-                'min_reference_count', entity_hits.min_reference_count,
-                'reference_out_count', entity_hits.reference_out_count
+                'canonical_name', entity_rollup.rule_canonical_name,
+                'confidence', entity_rollup.rule_confidence,
+                'matched_mention_text', entity_rollup.matched_mention_text,
+                'min_reference_count', entity_rollup.rule_min_reference_count,
+                'reference_out_count', entity_rollup.reference_out_count
             )
-        FROM entity_hits
+        FROM {entity_aggregate_table} entity_rollup
+        JOIN solemd.corpus corpus
+          ON corpus.corpus_id = entity_rollup.corpus_id
+         AND corpus.domain_status = 'corpus'
+        WHERE entity_rollup.rule_family_key IS NOT NULL
         """,
         corpus_selection_run_id,
-        pt3_source_release_id,
-        s2_source_release_id,
         list(direct_entity_confidences),
     )
 
@@ -270,56 +211,10 @@ async def _insert_mapped_relation_rule_signals(
     connection: asyncpg.Connection,
     *,
     corpus_selection_run_id: UUID,
-    s2_source_release_id: int,
-    pt3_source_release_id: int,
+    relation_aggregate_table: str,
 ) -> None:
     await connection.execute(
-        """
-        WITH reference_counts AS (
-            SELECT
-                raw.corpus_id,
-                coalesce(sum(metrics.reference_out_count), 0)::INTEGER AS reference_out_count
-            FROM solemd.s2_paper_reference_metrics_raw metrics
-            JOIN solemd.s2_papers_raw raw
-              ON raw.source_release_id = $3
-             AND raw.paper_id = metrics.citing_paper_id
-             AND raw.corpus_id IS NOT NULL
-            WHERE metrics.source_release_id = $3
-            GROUP BY raw.corpus_id
-        ),
-        relation_hits AS (
-            SELECT
-                raw.corpus_id,
-                rules.object_id_raw,
-                rules.canonical_name,
-                rules.family_key,
-                rules.min_reference_count,
-                coalesce(reference_counts.reference_out_count, 0) AS reference_out_count,
-                count(*)::INTEGER AS signal_count
-            FROM pubtator.relations_stage relations
-            JOIN solemd.s2_papers_raw raw
-              ON raw.source_release_id = $3
-             AND raw.pmid = relations.pmid
-             AND raw.corpus_id IS NOT NULL
-            JOIN solemd.corpus corpus
-              ON corpus.corpus_id = raw.corpus_id
-             AND corpus.domain_status = 'corpus'
-            JOIN pg_temp.selector_relation_rules rules
-              ON rules.subject_type = relations.subject_type
-             AND rules.relation_type = relations.relation_type
-             AND rules.object_type = relations.object_type
-             AND rules.object_id_raw = relations.object_entity_id
-            LEFT JOIN reference_counts
-              ON reference_counts.corpus_id = raw.corpus_id
-            WHERE relations.source_release_id = $2
-            GROUP BY
-                raw.corpus_id,
-                rules.object_id_raw,
-                rules.canonical_name,
-                rules.family_key,
-                rules.min_reference_count,
-                reference_counts.reference_out_count
-        )
+        f"""
         INSERT INTO solemd.corpus_selection_signals (
             corpus_selection_run_id,
             corpus_id,
@@ -334,24 +229,25 @@ async def _insert_mapped_relation_rule_signals(
         )
         SELECT
             $1,
-            relation_hits.corpus_id,
+            relation_rollup.corpus_id,
             'mapped_promotion',
             'mapped_relation_rule_match',
-            relation_hits.family_key,
+            relation_rollup.family_key,
             'object_id_raw',
-            relation_hits.object_id_raw,
-            relation_hits.signal_count,
-            relation_hits.reference_out_count >= relation_hits.min_reference_count,
+            relation_rollup.object_id_raw,
+            relation_rollup.signal_count,
+            relation_rollup.reference_out_count >= relation_rollup.min_reference_count,
             jsonb_build_object(
-                'canonical_name', relation_hits.canonical_name,
-                'min_reference_count', relation_hits.min_reference_count,
-                'reference_out_count', relation_hits.reference_out_count
+                'canonical_name', relation_rollup.canonical_name,
+                'min_reference_count', relation_rollup.min_reference_count,
+                'reference_out_count', relation_rollup.reference_out_count
             )
-        FROM relation_hits
+        FROM {relation_aggregate_table} relation_rollup
+        JOIN solemd.corpus corpus
+          ON corpus.corpus_id = relation_rollup.corpus_id
+         AND corpus.domain_status = 'corpus'
         """,
         corpus_selection_run_id,
-        pt3_source_release_id,
-        s2_source_release_id,
     )
 
 
@@ -359,18 +255,17 @@ async def _apply_mapped_status(
     connection: asyncpg.Connection,
     *,
     corpus_selection_run_id: UUID,
-    s2_source_release_id: int,
+    paper_scope_table: str,
     direct_entity_confidences: tuple[str, ...],
     second_gate_entity_confidences: tuple[str, ...],
     min_publication_year: int,
 ) -> None:
     await connection.execute(
-        """
+        f"""
         WITH release_scope AS (
-            SELECT raw.corpus_id, raw.year
-            FROM solemd.s2_papers_raw raw
-            WHERE raw.source_release_id = $2
-              AND raw.corpus_id IS NOT NULL
+            SELECT scope.corpus_id, scope.year
+            FROM {paper_scope_table} scope
+            WHERE scope.corpus_id IS NOT NULL
         ),
         mapped_rollup AS (
             SELECT
@@ -406,7 +301,7 @@ async def _apply_mapped_status(
                 release_scope.corpus_id,
                 CASE
                     WHEN release_scope.year IS NULL THEN true
-                    WHEN release_scope.year >= $5 THEN true
+                    WHEN release_scope.year >= $2 THEN true
                     ELSE false
                 END AS meets_quality_floor,
                 (
@@ -458,8 +353,7 @@ async def _apply_mapped_status(
         WHERE corpus.corpus_id = applied.corpus_id
         """,
         corpus_selection_run_id,
-        s2_source_release_id,
+        min_publication_year,
         list(direct_entity_confidences),
         list(second_gate_entity_confidences),
-        min_publication_year,
     )

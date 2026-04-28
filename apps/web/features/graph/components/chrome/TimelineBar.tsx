@@ -1,13 +1,15 @@
 "use client";
 
-import { memo, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import { motion } from "framer-motion";
 import { useGraphInstance } from "@/features/graph/cosmograph";
 import { Badge, Popover, Slider, Text, Tooltip } from "@mantine/core";
 import { Gauge } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
 import { TimelineWidget } from "@/features/graph/cosmograph/widgets/TimelineWidget";
+import type { GraphBundleQueries } from "@solemd/graph";
 import {
+  buildNumericRangeFilterScopeSql,
   clearSelectionClause,
   createSelectionSource,
 } from "@/features/graph/lib/cosmograph-selection";
@@ -29,6 +31,7 @@ import {
 } from "../panels/PanelShell";
 
 const TIMELINE_HEIGHT = 44;
+const TIMELINE_DEFAULT_EXTENT: [number, number] = [1945, 2024];
 
 const timelineStyle: React.CSSProperties = {
   height: TIMELINE_HEIGHT,
@@ -66,15 +69,68 @@ const speedSliderStyles = {
   },
 } as const;
 
-function TimelineBarComponent() {
+function TimelineBarComponent({
+  queries,
+  bundleChecksum,
+  overlayRevision,
+}: {
+  queries: GraphBundleQueries;
+  bundleChecksum: string;
+  overlayRevision: number;
+}) {
   const cosmograph = useGraphInstance();
   const timelineColumn = useDashboardStore((s) => s.timelineColumn);
   const timelineSelection = useDashboardStore((s) => s.timelineSelection);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
+  const setVisibilityScopeClause = useDashboardStore(
+    (s) => s.setVisibilityScopeClause,
+  );
+  const clearVisibilityScopeClause = useDashboardStore(
+    (s) => s.clearVisibilityScopeClause,
+  );
   const timelineSpeed = useDashboardStore((s) => s.timelineSpeed);
   const setTimelineSpeed = useDashboardStore((s) => s.setTimelineSpeed);
   const hasSelection = Array.isArray(timelineSelection);
   const [speedOpen, setSpeedOpen] = useState(false);
+
+  const commitTimelineSelection = useCallback(
+    (selection: [number, number] | undefined) => {
+      const sourceId = `timeline:${timelineColumn}`;
+      if (!selection) {
+        setTimelineSelection(undefined);
+        clearVisibilityScopeClause(sourceId);
+        return;
+      }
+
+      const normalized: [number, number] = [
+        Math.round(Math.min(selection[0], selection[1])),
+        Math.round(Math.max(selection[0], selection[1])),
+      ];
+      if (
+        normalized[0] === TIMELINE_DEFAULT_EXTENT[0] &&
+        normalized[1] === TIMELINE_DEFAULT_EXTENT[1]
+      ) {
+        setTimelineSelection(undefined);
+        clearVisibilityScopeClause(sourceId);
+        return;
+      }
+
+      setTimelineSelection(normalized);
+      setVisibilityScopeClause({
+        kind: "timeline",
+        sourceId,
+        column: timelineColumn,
+        value: normalized,
+        sql: buildNumericRangeFilterScopeSql(timelineColumn, normalized),
+      });
+    },
+    [
+      clearVisibilityScopeClause,
+      setTimelineSelection,
+      setVisibilityScopeClause,
+      timelineColumn,
+    ],
+  );
 
   /** Clicking the range pill toggles selection off (no separate X button = no layout shift). */
   const handleRangePillClick = () => {
@@ -83,7 +139,7 @@ function TimelineBarComponent() {
       cosmograph?.pointsSelection,
       createSelectionSource(`timeline:${timelineColumn}`),
     );
-    setTimelineSelection(undefined);
+    commitTimelineSelection(undefined);
   };
 
   const handleSliderChange = (step: number) => {
@@ -202,8 +258,12 @@ function TimelineBarComponent() {
         <TimelineWidget
           key={timelineColumn}
           column={timelineColumn}
+          queries={queries}
+          bundleChecksum={bundleChecksum}
+          overlayRevision={overlayRevision}
           animationSpeedMs={speedMultiplierToMs(timelineSpeed)}
-          onSelection={setTimelineSelection}
+          selectedRange={timelineSelection}
+          onSelection={commitTimelineSelection}
         />
       </div>
     </motion.div>

@@ -33,7 +33,10 @@ from app.ingest.cli import (
 from app.ingest.source_retention import (
     run_source_retention_operation,
 )
+from app.ingest.s2_diff import plan_s2_diffs, record_s2_diff_plan
+from app.ingest.s2_datasets_api import SemanticScholarDatasetsApiError
 from app.corpus.cli import (
+    enqueue_corpus_selection_phase_requests,
     enqueue_corpus_selection_request,
     enqueue_evidence_wave_request,
     parse_corpus_selection_request,
@@ -166,6 +169,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--provenance-ok",
         action="store_true",
         help="Confirm source provenance/re-downloadability before --action delete.",
+    )
+
+    s2_diff_parser = subparsers.add_parser(
+        "s2-diff-plan",
+        help="Query Semantic Scholar Datasets API diffs for one S2 release range.",
+    )
+    s2_diff_parser.add_argument("start_release")
+    s2_diff_parser.add_argument("end_release")
+    s2_diff_parser.add_argument(
+        "--family",
+        action="append",
+        dest="families",
+        default=None,
+        help="S2 family to plan. Defaults to enabled-by-default raw families.",
+    )
+    s2_diff_parser.add_argument(
+        "--record",
+        action="store_true",
+        help="Persist the diff manifest/file ledger in the warehouse.",
     )
 
     enqueue_evidence_text_parser = subparsers.add_parser(
@@ -335,6 +357,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(payload)
         return exit_code
+    if args.command == "s2-diff-plan":
+        try:
+            report = plan_s2_diffs(
+                settings,
+                start_release=args.start_release,
+                end_release=args.end_release,
+                family_allowlist=tuple(args.families) if args.families else None,
+            )
+        except (SemanticScholarDatasetsApiError, ValueError) as exc:
+            print(json.dumps({"error": str(exc)}, indent=2, sort_keys=True))
+            return 1
+        if args.record:
+
+            async def _record() -> None:
+                pools = await open_pools(settings, names=("ingest_write",))
+                try:
+                    async with pools.get("ingest_write").acquire() as connection:
+                        await record_s2_diff_plan(connection, report)
+                finally:
+                    await pools.close()
+
+            asyncio.run(_record())
+        print(report.to_json())
+        return 0
     if args.command == "enqueue-evidence-text":
         request = parse_paper_text_request(
             corpus_id=args.corpus_id,
@@ -374,7 +420,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             requested_by=args.requested_by,
             phase_allowlist=args.phases,
         )
-        enqueue_corpus_selection_request(request)
+        if args.command == "dispatch-corpus-selection":
+            enqueue_corpus_selection_phase_requests(request)
+        else:
+            enqueue_corpus_selection_request(request)
         broker.close()
         return 0
     if args.command == "run-corpus-selection-now":

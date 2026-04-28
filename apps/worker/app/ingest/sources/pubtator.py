@@ -87,10 +87,14 @@ def build_plan(settings: Settings, request: StartReleaseRequest) -> IngestPlan:
     if not release_dir.exists():
         raise SourceSchemaDrift(f"missing PubTator release directory {release_dir}")
 
-    allowlist = set(request.family_allowlist or ())
     families: list[FamilyPlan] = []
+    deferred: list[str] = []
+    allowlist = set(request.family_allowlist or ())
     for spec in family_specs_for_source("pt3"):
         if allowlist and spec.family not in allowlist:
+            continue
+        if not allowlist and not spec.enabled_by_default:
+            deferred.append(spec.family)
             continue
         try:
             files = read_manifest_file_plans(
@@ -126,6 +130,7 @@ def build_plan(settings: Settings, request: StartReleaseRequest) -> IngestPlan:
         release_checksum=release_manifest_checksum(release_dir),
         source_published_at=source_published_at,
         families=tuple(families),
+        deferred_families=tuple(deferred),
     )
 
 
@@ -349,9 +354,11 @@ def _stream_bioconcepts(
     # aggregated source when offsets are a constant sentinel: same paper +
     # same entity type + same concept collapses to one row, which matches the
     # live PubTator feed even when one raw identifier is reused across types
-    # (for example gene vs species taxonomy ids). Keep offsets at 0 so that
-    # the ``resource`` discriminator (bioconcepts vs biocxml) cleanly
-    # partitions the stage table without overlap in the unique index.
+    # (for example gene vs species taxonomy ids). The database uses a digest
+    # expression for the raw identifier portion of this key so pathological
+    # upstream IDs do not exceed PostgreSQL's btree tuple limit. Keep offsets
+    # at 0 so that the ``resource`` discriminator (bioconcepts vs biocxml)
+    # cleanly partitions the stage table without overlap in the unique index.
     with path.open("rb") as raw_handle:
         with gzip.GzipFile(fileobj=raw_handle, mode="rb") as compressed_handle:
             with io.TextIOWrapper(compressed_handle, encoding="utf-8") as handle:

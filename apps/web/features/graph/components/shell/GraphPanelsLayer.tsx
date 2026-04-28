@@ -92,9 +92,10 @@ export interface GraphPanelsLayerProps {
  * dashboard store + DuckDB and don't reach into Cosmograph WebGL state.
  *
  * Both the 2D shell (ShellPanels → DesktopShell/MobileShell) and the 3D orb
- * (OrbSurface) render this. Cosmograph-bound widgets (CanvasControls, color/
- * size legends, TimelineBar, native filter widgets) stay in ShellPanels and
- * remain 2D-only until the F/G slices land their orb counterparts.
+ * (OrbSurface) render this. Filter widgets author shared scope SQL and fall
+ * back to standalone native `@cosmograph/ui` controls when no
+ * CosmographProvider is mounted; canvas-only controls and native legends stay
+ * in the 2D ShellPanels layer.
  */
 export function GraphPanelsLayer({
   bundle,

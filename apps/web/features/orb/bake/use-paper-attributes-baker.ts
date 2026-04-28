@@ -199,6 +199,7 @@ export function usePaperAttributesBaker(
           `CREATE OR REPLACE TEMP TABLE paper_sample AS
              WITH sampled AS (
                SELECT
+                 index AS pointIndex,
                  id,
                  paperId,
                  clusterId,

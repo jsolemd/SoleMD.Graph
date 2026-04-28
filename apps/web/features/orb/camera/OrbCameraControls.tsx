@@ -10,7 +10,11 @@ import { BlobController } from "@/features/field/controller/BlobController";
 import { useFieldMode } from "@/features/field/renderer/field-mode-context";
 import { useFieldRuntime } from "@/features/field/renderer/field-runtime-context";
 import { useFieldCameraStore } from "@/features/graph/stores/field-camera-store";
-import { useShellStore } from "@/features/graph/stores";
+import {
+  useDashboardStore,
+  useShellStore,
+  type OrbSelectionTool,
+} from "@/features/graph/stores";
 import { useOrbInteraction } from "../interaction/orb-interaction-context";
 import { createOrbKeyboardHandler } from "./orb-keyboard-shortcuts";
 
@@ -111,24 +115,34 @@ const ORB_SMOOTH_TIME = 0.25;
 // distance 30 (clamped min) doesn't punch through the orb.
 const PINCH_DOLLY_RATE = 0.01;
 
-function applyControlsConfig(controls: CameraControlsImpl) {
+function applyControlsConfig(
+  controls: CameraControlsImpl,
+  orbSelectionTool: OrbSelectionTool,
+) {
   controls.enabled = true;
   controls.minDistance = ORB_MIN_DISTANCE;
   controls.maxDistance = ORB_MAX_DISTANCE;
   controls.smoothTime = ORB_SMOOTH_TIME;
   controls.dollyToCursor = false;
   // Bindings — see file docstring. Mouse / touchpad / touch parity.
-  controls.mouseButtons.left = ACTION.ROTATE;
+  // Rectangle-selection mode owns primary drag on `OrbInteractionSurface`,
+  // so left-drag / one-finger camera rotate are disabled only while that
+  // explicit tool is active. Wheel, right-drag, and two-finger pan/pinch
+  // remain camera controls.
+  controls.mouseButtons.left =
+    orbSelectionTool === "rectangle" ? ACTION.NONE : ACTION.ROTATE;
   controls.mouseButtons.middle = ACTION.DOLLY;
   controls.mouseButtons.right = ACTION.OFFSET;
   controls.mouseButtons.wheel = ACTION.DOLLY;
-  controls.touches.one = ACTION.TOUCH_ROTATE;
+  controls.touches.one =
+    orbSelectionTool === "rectangle" ? ACTION.NONE : ACTION.TOUCH_ROTATE;
   controls.touches.two = ACTION.TOUCH_DOLLY_OFFSET;
   controls.touches.three = ACTION.NONE;
 }
 
 export function OrbCameraControls() {
   const fieldMode = useFieldMode();
+  const orbSelectionTool = useDashboardStore((s) => s.orbSelectionTool);
   const { surfaceElement } = useOrbInteraction();
   const { sceneStateRef, controllersRef } = useFieldRuntime();
   // Read the live R3F camera directly. useThree returns the same
@@ -183,7 +197,7 @@ export function OrbCameraControls() {
     // across the (dashboard) layout, so this snapshot is safe.
     const sceneState = sceneStateRef.current;
 
-    applyControlsConfig(controls);
+    applyControlsConfig(controls, useDashboardStore.getState().orbSelectionTool);
     void controls.setTarget(0, 0, 0, false);
 
     // Stash + restore camera.near so landing's near plane is unaffected
@@ -222,7 +236,7 @@ export function OrbCameraControls() {
     // `fromJSON` restores library config fields including the button
     // bindings. Camera behavior is code-owned, so reassert config after
     // restoring user position / target / focal offset.
-    applyControlsConfig(controls);
+    applyControlsConfig(controls, useDashboardStore.getState().orbSelectionTool);
 
     return () => {
       try {
@@ -239,6 +253,12 @@ export function OrbCameraControls() {
       }
     };
   }, [camera, sceneStateRef, setSerialized]);
+
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    applyControlsConfig(controls, orbSelectionTool);
+  }, [orbSelectionTool]);
 
   // Pinch override — `wheel + ctrlKey` is the browser-synthesized pinch
   // gesture (trackpad pinch in Chrome / Firefox; browser pinch-zoom

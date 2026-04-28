@@ -67,6 +67,9 @@ class DispatchEvidenceWaveRequest(BaseModel):
 
 
 class CorpusAdmissionPolicy(BaseModel):
+    enable_journal_match: bool = True
+    enable_venue_pattern_match: bool = True
+    enable_vocab_entity_match: bool = True
     reason_precedence: tuple[str, ...] = (
         "journal_and_vocab",
         "journal_match",
@@ -77,6 +80,10 @@ class CorpusAdmissionPolicy(BaseModel):
 
 
 class MappedPolicy(BaseModel):
+    enable_journal_match: bool = True
+    enable_venue_pattern_match: bool = True
+    enable_entity_rule_match: bool = True
+    enable_relation_rule_match: bool = True
     min_publication_year: int = Field(default=1945, ge=0)
     direct_entity_confidences: tuple[EntityRuleConfidence, ...] = ("high", "moderate")
     second_gate_entity_confidences: tuple[EntityRuleConfidence, ...] = (
@@ -119,6 +126,7 @@ class CorpusPlan(BaseModel):
     venue_pattern_count: int = Field(ge=0)
     entity_rule_count: int = Field(ge=0)
     relation_rule_count: int = Field(ge=0)
+    materialization_bucket_count: int = Field(default=256, ge=1)
     plan_checksum: str = Field(min_length=64, max_length=64)
 
 

@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FilteringClient } from "@cosmograph/cosmograph/cosmograph/crossfilter/filtering-client";
 import { Histogram } from "@cosmograph/ui";
 import { Text } from "@mantine/core";
 import {
   buildNumericRangeFilterClause,
+  buildNumericRangeFilterScopeSql,
   clearSelectionClause,
   getSelectionValueForSource,
 } from "@/features/graph/lib/cosmograph-selection";
+import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoHistogramResult } from "@solemd/graph";
 import { normalizeRange, rangesEqual } from "@solemd/graph/cosmograph";
 import { formatNumber } from "@/lib/helpers";
@@ -58,9 +60,20 @@ export function FilterHistogramWidget({
     tableName,
     baselineScope,
     baselineCacheKey,
+    baselineCurrentPointScopeSql,
+    baselineReady,
     scopeSql,
     isSubset,
   } = useWidgetSelectors("filter", column);
+  const storedScopeClause = useDashboardStore(
+    (state) => state.visibilityScopeClauses[sourceId],
+  );
+  const setVisibilityScopeClause = useDashboardStore(
+    (state) => state.setVisibilityScopeClause,
+  );
+  const clearVisibilityScopeClause = useDashboardStore(
+    (state) => state.clearVisibilityScopeClause,
+  );
 
   const [error, setError] = useState<string | null>(null);
   const [widgetRevision, setWidgetRevision] = useState(0);
@@ -73,21 +86,51 @@ export function FilterHistogramWidget({
   const renderedDatasetKeyRef = useRef<string | null>(null);
 
   const selectedRange = useMemo(
-    () =>
-      getSelectionValueForSource<[number, number]>(
+    () => {
+      const nativeRange = getSelectionValueForSource<[number, number]>(
         cosmograph?.pointsSelection,
         sourceId,
-      ),
+      );
+      if (nativeRange != null) {
+        return nativeRange;
+      }
+      return storedScopeClause?.kind === "numeric"
+        ? storedScopeClause.value
+        : null;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
-    [cosmograph, currentScopeRevision, sourceId],
+    [cosmograph, currentScopeRevision, sourceId, storedScopeClause],
+  );
+  const step = YEAR_LIKE_COLUMNS.has(column) ? 1 : 0.01;
+  const commitNumericRangeFilter = useCallback(
+    (range: [number, number] | null, extent: [number, number] | null = extentRef.current) => {
+      if (!range) {
+        clearVisibilityScopeClause(sourceId);
+        return;
+      }
+
+      const normalized = extent ? normalizeRange(range, extent, step) : range;
+      if (extent && rangesEqual(normalized, extent)) {
+        clearVisibilityScopeClause(sourceId);
+        return;
+      }
+
+      setVisibilityScopeClause({
+        kind: "numeric",
+        sourceId,
+        column,
+        value: normalized,
+        sql: buildNumericRangeFilterScopeSql(column, normalized),
+      });
+    },
+    [clearVisibilityScopeClause, column, setVisibilityScopeClause, sourceId, step],
   );
 
   useEffect(() => {
-    if (!containerRef.current || !cosmograph) {
+    if (!containerRef.current) {
       return;
     }
 
-    const step = YEAR_LIKE_COLUMNS.has(column) ? 1 : 0.01;
     const widget = new Histogram(containerRef.current, {
       barCount: 20,
       allowSelection: true,
@@ -99,36 +142,45 @@ export function FilterHistogramWidget({
       onBrush: (range) => {
         const client = clientRef.current;
         const extent = extentRef.current;
-        if (!client || !extent) {
+
+        if (!range) {
+          clearSelectionClause(cosmograph?.pointsSelection, source);
+          commitNumericRangeFilter(null);
           return;
         }
 
-        if (!range) {
-          clearSelectionClause(cosmograph.pointsSelection, source);
+        if (!extent) {
           return;
         }
 
         const normalized = normalizeRange(range, extent, step);
         if (rangesEqual(normalized, extent)) {
-          clearSelectionClause(cosmograph.pointsSelection, source);
+          clearSelectionClause(cosmograph?.pointsSelection, source);
+          commitNumericRangeFilter(null);
           return;
         }
 
-        cosmograph.pointsSelection.update(
-          buildNumericRangeFilterClause(client, column, normalized),
-        );
+        commitNumericRangeFilter(normalized, extent);
+        if (cosmograph && client) {
+          cosmograph.pointsSelection.update(
+            buildNumericRangeFilterClause(client, column, normalized),
+          );
+        }
       },
     });
 
     let client: FilteringClient | null = null;
-    void initCrossfilterClient(cosmograph, { sourceId, column, tableName }).then(
-      (result) => {
-        if (result) {
-          client = result;
-          clientRef.current = result;
-        }
-      },
-    );
+    clientRef.current = null;
+    if (cosmograph) {
+      void initCrossfilterClient(cosmograph, { sourceId, column, tableName }).then(
+        (result) => {
+          if (result) {
+            client = result;
+            clientRef.current = result;
+          }
+        },
+      );
+    }
 
     widgetRef.current = widget;
     setWidgetRevision((current) => current + 1);
@@ -140,7 +192,15 @@ export function FilterHistogramWidget({
         clientRef.current = null;
       }
     };
-  }, [column, cosmograph, source, sourceId, tableName]);
+  }, [
+    column,
+    commitNumericRangeFilter,
+    cosmograph,
+    source,
+    sourceId,
+    step,
+    tableName,
+  ]);
 
   useEffect(() => {
     const widget = widgetRef.current;
@@ -149,6 +209,11 @@ export function FilterHistogramWidget({
     }
 
     const requestId = ++datasetRequestIdRef.current;
+    if (!baselineReady) {
+      widget.setLoadingState();
+      return;
+    }
+
     const datasetCacheKey = getWidgetDatasetCacheKeyWithRevision(
       bundleChecksum,
       activeLayer,
@@ -188,7 +253,7 @@ export function FilterHistogramWidget({
               scope: baselineScope,
               column,
               bins: 20,
-              currentPointScopeSql: null,
+              currentPointScopeSql: baselineCurrentPointScopeSql,
             });
 
             if (hasRenderableHistogramData(latestHistogram)) {
@@ -239,6 +304,8 @@ export function FilterHistogramWidget({
   }, [
     activeLayer,
     baselineCacheKey,
+    baselineCurrentPointScopeSql,
+    baselineReady,
     baselineScope,
     bundleChecksum,
     column,

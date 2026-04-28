@@ -29,6 +29,7 @@ from app.ingest.models import (
     SourceCode,
     StartReleaseRequest,
 )
+from app.ingest.s2_diff import mark_s2_family_base_loaded
 from app.ingest.sources import pubtator, semantic_scholar
 from app.telemetry.metrics import (
     observe_ingest_phase,
@@ -94,6 +95,7 @@ class SourceWriter:
         ],
         asyncio.Future | object,
     ] | None = None
+    parallel_family_groups: tuple[tuple[str, ...], ...] = ()
 
 
 SOURCE_ADAPTERS: dict[SourceCode, SourceAdapter] = {
@@ -112,7 +114,10 @@ SOURCE_WRITERS: dict[SourceCode, SourceWriter] = {
         load_family=s2_writer.load_family,
         load_family_distributed=s2_writer.load_family_distributed,
     ),
-    "pt3": SourceWriter(load_family=pubtator_writer.load_family),
+    "pt3": SourceWriter(
+        load_family=pubtator_writer.load_family,
+        parallel_family_groups=(("bioconcepts", "relations"),),
+    ),
 }
 
 
@@ -205,7 +210,232 @@ async def run_release_ingest(
                             work_item=f"{family_name}:{file_path.name}" if family_name is not None else file_path.name,
                         )
 
-                    for family_name in plan.family_names:
+                    async def load_parallel_family_group(
+                        family_group: tuple[str, ...],
+                    ) -> dict[str, CopyStats]:
+                        nonlocal family_name
+                        family_name = "+".join(family_group)
+                        group_family_plans = {
+                            item.family: item for item in plan.families if item.family in family_group
+                        }
+                        group_file_sizes = {
+                            file_plan.path: max(0, file_plan.byte_count)
+                            for item in group_family_plans.values()
+                            for file_plan in item.files
+                        }
+                        file_family_names = {
+                            file_plan.path: item.family
+                            for item in group_family_plans.values()
+                            for file_plan in item.files
+                        }
+                        group_file_total = sum(len(item.files) for item in group_family_plans.values())
+                        group_input_total_units = float(sum(group_file_sizes.values()))
+                        file_input_progress = {
+                            file_plan.path: 0
+                            for item in group_family_plans.values()
+                            for file_plan in item.files
+                        }
+                        completed_file_count = 0
+                        written_rows_by_family = {item: 0 for item in family_group}
+                        active_run.set_state(phase="loading", work_item=family_name)
+                        active_run.set_progress(
+                            progress_kind="current_work_item_files",
+                            completed_units=0,
+                            total_units=float(group_file_total),
+                        )
+                        active_run.set_progress(
+                            progress_kind="current_work_item_input_bytes",
+                            completed_units=0,
+                            total_units=group_input_total_units,
+                        )
+                        active_run.set_progress(
+                            progress_kind="current_work_item_rows",
+                            completed_units=0,
+                            total_units=0,
+                        )
+
+                        def update_group_progress() -> None:
+                            fractional_completed = 1.0
+                            if group_input_total_units > 0:
+                                completed_input_units = float(sum(file_input_progress.values()))
+                                active_run.set_progress(
+                                    progress_kind="current_work_item_input_bytes",
+                                    completed_units=completed_input_units,
+                                    total_units=group_input_total_units,
+                                )
+                                fractional_completed = completed_input_units / group_input_total_units
+                            elif group_file_total > 0:
+                                fractional_completed = completed_file_count / group_file_total
+                            active_run.set_progress(
+                                progress_kind="overall",
+                                completed_units=float(completed_family_count) + fractional_completed,
+                                total_units=total_progress_units,
+                            )
+
+                        def make_on_file_completed(
+                            group_family_name: str,
+                        ) -> Callable[[Path, int], None]:
+                            def on_file_completed(_file_path: Path, _written_rows: int) -> None:
+                                nonlocal completed_file_count
+                                raise_if_abort_requested()
+                                completed_file_count += 1
+                                file_input_progress[_file_path] = max(
+                                    file_input_progress.get(_file_path, 0),
+                                    group_file_sizes.get(_file_path, 0),
+                                )
+                                active_run.set_state(
+                                    phase="loading",
+                                    work_item=f"{group_family_name}:{_file_path.name}",
+                                )
+                                active_run.set_progress(
+                                    progress_kind="current_work_item_files",
+                                    completed_units=float(completed_file_count),
+                                    total_units=float(group_file_total),
+                                )
+                                update_group_progress()
+
+                            return on_file_completed
+
+                        def on_input_progress(_file_path: Path, input_bytes: int) -> None:
+                            raise_if_abort_requested()
+                            next_bytes = min(
+                                group_file_sizes.get(_file_path, 0),
+                                max(file_input_progress.get(_file_path, 0), input_bytes),
+                            )
+                            if next_bytes == file_input_progress.get(_file_path, 0):
+                                return
+                            file_input_progress[_file_path] = next_bytes
+                            active_run.set_state(
+                                phase="loading",
+                                work_item=(
+                                    f"{file_family_names.get(_file_path, family_name)}:"
+                                    f"{_file_path.name}"
+                                ),
+                            )
+                            update_group_progress()
+
+                        def make_on_rows_written(
+                            group_family_name: str,
+                        ) -> Callable[[Path, int], None]:
+                            def on_rows_written(_file_path: Path, batch_row_count: int) -> None:
+                                raise_if_abort_requested()
+                                written_rows_by_family[group_family_name] += batch_row_count
+                                active_run.set_state(
+                                    phase="loading",
+                                    work_item=f"{group_family_name}:{_file_path.name}",
+                                )
+                                active_run.set_progress(
+                                    progress_kind="current_work_item_rows",
+                                    completed_units=float(sum(written_rows_by_family.values())),
+                                    total_units=0,
+                                )
+
+                            return on_rows_written
+
+                        async def make_on_batch_processed(
+                            group_family_name: str,
+                            file_path: Path,
+                            batch_row_count: int,
+                        ) -> None:
+                            del batch_row_count
+                            raise_if_abort_requested()
+                            active_run.set_state(
+                                phase="loading",
+                                work_item=f"{group_family_name}:{file_path.name}",
+                            )
+
+                        family_loader = (
+                            writer.load_family_distributed
+                            if distributed_file_tasks
+                            and writer.load_family_distributed is not None
+                            else writer.load_family
+                        )
+
+                        async def load_one(group_family_name: str) -> CopyStats:
+                            return await _load_family_with_abort_monitor(
+                                load_family=family_loader,
+                                ingest_pool=ingest_pool,
+                                runtime_settings=runtime_settings,
+                                request=request,
+                                plan=plan,
+                                family_name=group_family_name,
+                                source_release_id=source_release_id,
+                                ingest_run_id=ingest_run_id,
+                                abort_requested=abort_requested,
+                                abort_error=abort_error,
+                                on_file_completed=make_on_file_completed(group_family_name),
+                                on_rows_written=make_on_rows_written(group_family_name),
+                                on_input_progress=on_input_progress,
+                                on_batch_processed=lambda file_path, batch_row_count: make_on_batch_processed(
+                                    group_family_name,
+                                    file_path,
+                                    batch_row_count,
+                                ),
+                            )
+
+                        async with asyncio.TaskGroup() as group:
+                            tasks = {
+                                item: group.create_task(load_one(item))
+                                for item in family_group
+                            }
+                        return {item: task.result() for item, task in tasks.items()}
+
+                    for family_group in _plan_family_execution_groups(
+                        plan,
+                        loaded_families=run.families_loaded,
+                        parallel_family_groups=writer.parallel_family_groups,
+                    ):
+                        if len(family_group) > 1:
+                            await _assert_not_aborted(control_connection, ingest_run_id)
+                            stats_by_family = await load_parallel_family_group(family_group)
+                            raise_if_abort_requested()
+                            await _assert_not_aborted(control_connection, ingest_run_id)
+                            async with control_connection.transaction():
+                                for loaded_family_name in family_group:
+                                    await adapter.promote_family(
+                                        control_connection,
+                                        plan,
+                                        loaded_family_name,
+                                        source_release_id,
+                                        ingest_run_id,
+                                    )
+                                    await _mark_family_loaded(
+                                        control_connection,
+                                        ingest_run_id,
+                                        loaded_family_name,
+                                    )
+                                    await _mark_s2_dataset_cursor_base_loaded(
+                                        control_connection,
+                                        request=request,
+                                        plan=plan,
+                                        family_name=loaded_family_name,
+                                        source_release_id=source_release_id,
+                                    )
+                            completed_family_count += len(family_group)
+                            active_run.set_progress(
+                                progress_kind="overall",
+                                completed_units=float(completed_family_count),
+                                total_units=total_progress_units,
+                            )
+                            for loaded_family_name, stats in stats_by_family.items():
+                                record_ingest_family_load(
+                                    source_code=request.source_code,
+                                    family_name=loaded_family_name,
+                                    row_count=stats.row_count,
+                                    file_count=stats.file_count,
+                                )
+                                _emit_event(
+                                    "ingest.family.loaded",
+                                    ingest_run_id=ingest_run_id,
+                                    source_code=request.source_code,
+                                    release_tag=request.release_tag,
+                                    family=loaded_family_name,
+                                    row_count=stats.row_count,
+                                    file_count=stats.file_count,
+                                )
+                            continue
+
+                        family_name = family_group[0]
                         await _assert_not_aborted(control_connection, ingest_run_id)
                         if family_name in run.families_loaded:
                             continue
@@ -339,6 +569,13 @@ async def run_release_ingest(
                                 ingest_run_id,
                             )
                             await _mark_family_loaded(control_connection, ingest_run_id, family_name)
+                            await _mark_s2_dataset_cursor_base_loaded(
+                                control_connection,
+                                request=request,
+                                plan=plan,
+                                family_name=family_name,
+                                source_release_id=source_release_id,
+                            )
                         completed_family_count += 1
                         active_run.set_progress(
                             progress_kind="overall",
@@ -647,15 +884,22 @@ async def _open_or_resume_run(
                 "unfinished ingest run must resume before force_new_run is allowed"
             )
         if run.status != INGEST_STATUS_PUBLISHED and not request.force_new_run:
+            ignored_resume_families = _ignored_resume_families(
+                run.plan_manifest,
+                plan_payload,
+                loaded_families=run.families_loaded,
+            )
             if (
                 run.plan_manifest is not None
                 and _resume_contract_digest(
                     run.plan_manifest,
                     loaded_families=run.families_loaded,
+                    ignored_families=ignored_resume_families,
                 )
                 != _resume_contract_digest(
                     plan_payload,
                     loaded_families=run.families_loaded,
+                    ignored_families=ignored_resume_families,
                 )
             ):
                 raise PlanDrift(
@@ -764,9 +1008,62 @@ async def _mark_family_loaded(
     )
 
 
+async def _mark_s2_dataset_cursor_base_loaded(
+    connection: asyncpg.Connection,
+    *,
+    request: StartReleaseRequest,
+    plan: IngestPlan,
+    family_name: str,
+    source_release_id: int,
+) -> None:
+    if request.source_code != "s2":
+        return
+    await mark_s2_family_base_loaded(
+        connection,
+        plan=plan,
+        family_name=family_name,
+        source_release_id=source_release_id,
+    )
+
+
 def _plan_family_file_total(plan: IngestPlan, family_name: str) -> int:
     family = next(item for item in plan.families if item.family == family_name)
     return len(family.files)
+
+
+def _plan_family_execution_groups(
+    plan: IngestPlan,
+    *,
+    loaded_families: tuple[str, ...],
+    parallel_family_groups: tuple[tuple[str, ...], ...],
+) -> tuple[tuple[str, ...], ...]:
+    loaded = set(loaded_families)
+    family_names = plan.family_names
+    groups: list[tuple[str, ...]] = []
+    index = 0
+    while index < len(family_names):
+        family_name = family_names[index]
+        if family_name in loaded:
+            index += 1
+            continue
+        matched_group: tuple[str, ...] | None = None
+        for candidate in parallel_family_groups:
+            candidate_length = len(candidate)
+            if candidate_length <= 1:
+                continue
+            if tuple(family_names[index : index + candidate_length]) != candidate:
+                continue
+            if any(item in loaded for item in candidate):
+                continue
+            matched_group = candidate
+            break
+        if matched_group is None:
+            groups.append((family_name,))
+            index += 1
+            continue
+        groups.append(matched_group)
+        index += len(matched_group)
+    return tuple(groups)
 
 
 async def _assert_not_aborted(connection: asyncpg.Connection, ingest_run_id: UUID) -> None:
@@ -992,12 +1289,13 @@ def _resume_contract_digest(
     payload: dict,
     *,
     loaded_families: tuple[str, ...] = (),
+    ignored_families: frozenset[str] = frozenset(),
 ) -> str:
     loaded_family_set = set(loaded_families)
     canonical_families: list[dict[str, object]] = []
     for family in payload.get("families", ()):
         family_name = family.get("family")
-        if family_name in loaded_family_set:
+        if family_name in loaded_family_set or family_name in ignored_families:
             continue
         canonical_families.append(
             {
@@ -1025,6 +1323,37 @@ def _resume_contract_digest(
     return hashlib.sha256(
         json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
+
+
+def _ignored_resume_families(
+    persisted_payload: dict | None,
+    current_payload: dict,
+    *,
+    loaded_families: tuple[str, ...],
+) -> frozenset[str]:
+    if persisted_payload is None:
+        return frozenset()
+    loaded_family_set = set(loaded_families)
+    current_family_names = {
+        str(family.get("family"))
+        for family in current_payload.get("families", ())
+        if family.get("family")
+    }
+    current_deferred_names = {
+        str(family_name)
+        for family_name in current_payload.get("deferred_families", ())
+    }
+    ignored: set[str] = set()
+    for family in persisted_payload.get("families", ()):
+        family_name = family.get("family")
+        if not family_name:
+            continue
+        family_name = str(family_name)
+        if family_name in loaded_family_set or family_name in current_family_names:
+            continue
+        if family_name in current_deferred_names:
+            ignored.add(family_name)
+    return frozenset(ignored)
 
 
 def _emit_event(event_name: str, **fields: object) -> None:

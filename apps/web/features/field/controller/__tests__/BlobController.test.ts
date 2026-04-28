@@ -228,4 +228,28 @@ describe("BlobController", () => {
       controller.destroy();
     }
   });
+
+  it("snaps the orb focus dim gate off when focus clears", () => {
+    const controller = makeAttachedController();
+    const scene = createFieldSceneState();
+    scene.orbCameraActive = true;
+    scene.orbFocusActive = true;
+    scene.items.blob.visibility = 1;
+    const uniforms = controller.createLayerUniforms(false, new Texture());
+    if (controller.material) {
+      controller.material.uniforms = uniforms as ShaderMaterial["uniforms"];
+    }
+
+    try {
+      tickBlobController({ controller, scene, uniforms });
+      expect(uniforms.uOrbFocusActive.value).toBeGreaterThan(0);
+
+      scene.orbFocusActive = false;
+      tickBlobController({ controller, scene, uniforms });
+
+      expect(uniforms.uOrbFocusActive.value).toBe(0);
+    } finally {
+      controller.destroy();
+    }
+  });
 });

@@ -6,6 +6,8 @@ import type { CosmographRef } from "@cosmograph/react";
 
 import {
   PAN_KEY_PIXELS,
+  ZOOM_KEY_DURATION_MS,
+  ZOOM_KEY_FACTOR,
   createGraphKeyboardHandler,
 } from "../cosmograph-keyboard-shortcuts";
 
@@ -29,11 +31,18 @@ interface ApplyCall {
   y: number;
 }
 
+interface ZoomCall {
+  level: number;
+  duration: number | undefined;
+}
+
 function makeCosmograph(initial: FakeTransform = { k: 1, x: 0, y: 0 }): {
   cosmograph: CosmographRef;
   applies: ApplyCall[];
+  zooms: ZoomCall[];
 } {
   const applies: ApplyCall[] = [];
+  const zooms: ZoomCall[] = [];
   const eventTransform = new TransformCtor(initial.k, initial.x, initial.y);
   const selection = {} as object;
   const internal = {
@@ -56,8 +65,13 @@ function makeCosmograph(initial: FakeTransform = { k: 1, x: 0, y: 0 }): {
         },
       },
     },
+    getZoomLevel: () => eventTransform.k,
+    setZoomLevel: (level: number, duration?: number) => {
+      zooms.push({ level, duration });
+      eventTransform.k = level;
+    },
   };
-  return { cosmograph: internal as unknown as CosmographRef, applies };
+  return { cosmograph: internal as unknown as CosmographRef, applies, zooms };
 }
 
 function fireKey(
@@ -86,12 +100,12 @@ describe("createGraphKeyboardHandler", () => {
     fireKey(handler, { key: "ArrowLeft" });
 
     expect(applies).toEqual([
-      { k: 1.5, x: 100 + PAN_KEY_PIXELS, y: 200 },
+      { k: 1.5, x: 100 - PAN_KEY_PIXELS, y: 200 },
       { k: 1.5, x: 100, y: 200 },
     ]);
   });
 
-  it("ArrowUp / ArrowDown pan y (up = negative y)", () => {
+  it("ArrowUp / ArrowDown pan y by inverted d3 transform deltas", () => {
     const { cosmograph, applies } = makeCosmograph({ k: 1, x: 0, y: 0 });
     const handler = createGraphKeyboardHandler({
       getCosmograph: () => cosmograph,
@@ -101,7 +115,7 @@ describe("createGraphKeyboardHandler", () => {
     fireKey(handler, { key: "ArrowDown" });
 
     expect(applies).toEqual([
-      { k: 1, x: 0, y: -PAN_KEY_PIXELS },
+      { k: 1, x: 0, y: PAN_KEY_PIXELS },
       { k: 1, x: 0, y: 0 },
     ]);
   });
@@ -118,9 +132,9 @@ describe("createGraphKeyboardHandler", () => {
     fireKey(handler, { key: "s" });
 
     expect(applies).toEqual([
-      { k: 1, x: PAN_KEY_PIXELS, y: 0 },
+      { k: 1, x: -PAN_KEY_PIXELS, y: 0 },
       { k: 1, x: 0, y: 0 },
-      { k: 1, x: 0, y: -PAN_KEY_PIXELS },
+      { k: 1, x: 0, y: PAN_KEY_PIXELS },
       { k: 1, x: 0, y: 0 },
     ]);
   });
@@ -134,6 +148,48 @@ describe("createGraphKeyboardHandler", () => {
     expect(applies[0]?.k).toBe(4.2);
   });
 
+  it("+/= zoom in and -/_ zoom out through the native Cosmograph zoom API", () => {
+    const { cosmograph, applies, zooms } = makeCosmograph({
+      k: 2,
+      x: 50,
+      y: 50,
+    });
+    const handler = createGraphKeyboardHandler({
+      getCosmograph: () => cosmograph,
+    });
+
+    fireKey(handler, { key: "+" });
+    fireKey(handler, { key: "=" });
+    fireKey(handler, { key: "-" });
+    fireKey(handler, { key: "_" });
+
+    expect(applies).toEqual([]);
+    expect(zooms).toEqual([
+      { level: 2 * ZOOM_KEY_FACTOR, duration: ZOOM_KEY_DURATION_MS },
+      {
+        level: 2 * ZOOM_KEY_FACTOR * ZOOM_KEY_FACTOR,
+        duration: ZOOM_KEY_DURATION_MS,
+      },
+      { level: 2 * ZOOM_KEY_FACTOR, duration: ZOOM_KEY_DURATION_MS },
+      { level: 2, duration: ZOOM_KEY_DURATION_MS },
+    ]);
+  });
+
+  it("Escape clears inspection without changing the viewport", () => {
+    const { cosmograph, applies } = makeCosmograph();
+    const clearInspection = jest.fn();
+    const handler = createGraphKeyboardHandler({
+      getCosmograph: () => cosmograph,
+      clearInspection,
+    });
+
+    const r = fireKey(handler, { key: "Escape" });
+
+    expect(clearInspection).toHaveBeenCalledTimes(1);
+    expect(applies).toEqual([]);
+    expect(r.preventDefault).toHaveBeenCalled();
+  });
+
   it("ignores keys when an INPUT is focused", () => {
     const input = document.createElement("input");
     document.body.appendChild(input);
@@ -145,6 +201,22 @@ describe("createGraphKeyboardHandler", () => {
 
     const r = fireKey(handler, { key: "ArrowLeft" });
     expect(applies).toEqual([]);
+    expect(r.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("does not clear inspection when a textbox is focused", () => {
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+    const { cosmograph } = makeCosmograph();
+    const clearInspection = jest.fn();
+    const handler = createGraphKeyboardHandler({
+      getCosmograph: () => cosmograph,
+      clearInspection,
+    });
+
+    const r = fireKey(handler, { key: "Escape" });
+    expect(clearInspection).not.toHaveBeenCalled();
     expect(r.preventDefault).not.toHaveBeenCalled();
   });
 
@@ -169,14 +241,13 @@ describe("createGraphKeyboardHandler", () => {
     expect(r.preventDefault).not.toHaveBeenCalled();
   });
 
-  it("no-op for unrelated keys (Space, +, < / >)", () => {
+  it("no-op for unrelated keys (Space, < / >)", () => {
     const { cosmograph, applies } = makeCosmograph();
     const handler = createGraphKeyboardHandler({
       getCosmograph: () => cosmograph,
     });
 
     fireKey(handler, { key: " " });
-    fireKey(handler, { key: "+" });
     fireKey(handler, { key: "<" });
     fireKey(handler, { key: ">" });
 

@@ -126,6 +126,7 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
   const setTableView = useDashboardStore((s) => s.setTableView);
   const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
+  const clearVisibilityScopeClauses = useDashboardStore((s) => s.clearVisibilityScopeClauses);
   const {
     clearFocusedPoint,
     getPointsSelection,
@@ -140,8 +141,9 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
     selectNode(null);
     clearFocusedPoint();
     clearVisibilityFocus();
+    clearVisibilityScopeClauses();
     setCurrentPointScopeSql(null);
-    setSelectedPointCount(0);
+    setSelectedPointCount(0, { forceRevision: true });
     setActiveSelectionSourceId(null);
     setTimelineSelection(undefined);
     setTableView("dataset");
@@ -150,6 +152,7 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
   }, [
     clearFocusedPoint,
     clearVisibilityFocus,
+    clearVisibilityScopeClauses,
     selectNode,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
@@ -184,7 +187,7 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
       }
     }
 
-    setSelectedPointCount(nextSelectedPointCount);
+    setSelectedPointCount(nextSelectedPointCount, { forceRevision: true });
     setActiveSelectionSourceId(null);
     lockSelection();
     setCurrentPointScopeSql(

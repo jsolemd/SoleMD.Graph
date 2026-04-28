@@ -192,6 +192,9 @@ export interface GraphBundleQueries {
   getNumericStatsBatch: (
     args: GraphScopeQueryArgs & { columns: string[] }
   ) => Promise<Record<string, NumericStatsRow>>;
+  getNumericColumnValues: (
+    args: GraphScopeQueryArgs & { column: string }
+  ) => Promise<number[]>;
   searchPoints: (args: {
     layer: GraphLayer;
     column: string;

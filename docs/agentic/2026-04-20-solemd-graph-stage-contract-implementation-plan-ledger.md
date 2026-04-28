@@ -152,13 +152,13 @@ The review against `docs/rag` produced these constraints:
 
 ### Worker / warehouse changes landed
 
-- S2 default families now defer heavy optional inputs by default:
-  `authors`, `tldrs`, and `s2orc_v2`.
+- S2 default families are the corpus-decision core:
+  `publication_venues`, `authors`, `papers`, and `abstracts`; heavy tiered
+  inputs stay explicit.
 - S2 raw author ingest now writes the author-registry surface
   `solemd.s2_authors_raw`.
-- S2 citations now default to the aggregate raw surface
-  `solemd.s2_paper_reference_metrics_raw` instead of broad
-  `s2_paper_references_raw` edge persistence.
+- S2 citations are mapped-tier enrichment, not default raw/corpus-fill input.
+  The citation task path remains available for a later mapped-id-filtered pass.
 - PT3 raw ingest now resets only `pubtator.*_stage`, not canonical PT3.
 - Corpus runtime now has explicit
   `corpus_baseline_materialization` and
@@ -287,7 +287,7 @@ Current queue note:
 
 - PT3 is the active ingest run right now
 - S2 `2026-03-10` with families
-  `publication_venues`, `authors`, `papers`, `abstracts`, `citations`
+  `publication_venues`, `authors`, `papers`, `abstracts`
   has been re-enqueued under the updated worker image
 - operator decision for the next live pass: widen ingest to two processes so
   PT3 and S2 can overlap on the ingest queue under one metrics surface
@@ -316,7 +316,7 @@ Condensed operator map for the ingest root:
 ```text
 ingest queue
   +--> process 0 -> S2 2026-03-10
-  |       publication_venues -> authors -> papers -> abstracts -> citations
+  |       publication_venues -> authors -> papers -> abstracts
   |
   +--> process 1 -> PT3 2026-03-21
           biocxml -> bioconcepts -> relations

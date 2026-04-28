@@ -5,5 +5,8 @@ ALTER TABLE IF EXISTS solemd.schema_migration_ledger OWNER TO engine_warehouse_a
 CREATE SCHEMA IF NOT EXISTS pubtator;
 ALTER SCHEMA pubtator OWNER TO engine_warehouse_admin;
 
+CREATE SCHEMA IF NOT EXISTS solemd_scratch;
+ALTER SCHEMA solemd_scratch OWNER TO engine_warehouse_admin;
+
 CREATE SCHEMA IF NOT EXISTS umls;
 ALTER SCHEMA umls OWNER TO engine_warehouse_admin;

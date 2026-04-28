@@ -13,6 +13,12 @@ COMMENT ON TABLE solemd.ingest_runs IS
     'One row per ingest or rebuild cycle against a source release.';
 COMMENT ON TABLE solemd.ingest_file_tasks IS
     'Durable DB-backed file work queue for parallel ingest families; workers claim idempotent source files and finalizers merge completed stage rows.';
+COMMENT ON TABLE solemd.s2_dataset_cursors IS
+    'Semantic Scholar Datasets API current-state cursor per dataset. Full ingest seeds the base cursor; diff application must explicitly mark hot source deletion safe.';
+COMMENT ON TABLE solemd.s2_dataset_diff_manifests IS
+    'Semantic Scholar Datasets API diff manifest ledger returned by /datasets/v1/diffs/{start}/to/{end}/{dataset}.';
+COMMENT ON TABLE solemd.s2_dataset_diff_files IS
+    'Durable per-file ledger for S2 diff update/delete file URLs before streamed application.';
 COMMENT ON TABLE solemd.corpus IS
     'Stable canonical paper identity inventory for the warehouse.';
 COMMENT ON TABLE solemd.venues IS
@@ -72,6 +78,8 @@ COMMENT ON COLUMN solemd.ingest_file_tasks.stage_row_count IS
     'Exact completed stage row count recorded after a file reaches its durable checkpoint.';
 COMMENT ON COLUMN solemd.ingest_file_tasks.claim_token IS
     'Per-claim lease token. File workers must present the current token before heartbeat, stage merge, checkpoint, complete, or fail updates.';
+COMMENT ON COLUMN solemd.s2_dataset_cursors.hot_source_delete_safe_at IS
+    'Non-null only after the dataset has a tested diff-application path. Source retention refuses hot deletion without this marker.';
 COMMENT ON COLUMN solemd.corpus.domain_status IS
     'Human-readable curation status kept as TEXT for low-cardinality mapping review rows in the warehouse baseline.';
 COMMENT ON COLUMN solemd.paper_text.text_availability IS
@@ -84,6 +92,8 @@ COMMENT ON COLUMN solemd.venues.source_venue_id IS
     'Stable upstream Semantic Scholar publication-venue identifier when present.';
 COMMENT ON COLUMN solemd.authors.source_author_id IS
     'Stable upstream Semantic Scholar author identifier when present.';
+COMMENT ON INDEX solemd.uq_authors_anonymous_normalized_name IS
+    'Serializes anonymous S2 author fallback upserts during parallel mapped materialization.';
 COMMENT ON COLUMN solemd.s2_authors_raw.source_author_id IS
     'Stable upstream Semantic Scholar author identifier captured on the raw side before any canonical author promotion.';
 COMMENT ON COLUMN solemd.s2_paper_reference_metrics_raw.source_release_id IS

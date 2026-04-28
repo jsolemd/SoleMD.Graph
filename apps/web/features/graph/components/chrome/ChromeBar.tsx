@@ -177,6 +177,7 @@ export function ChromeBar() {
   const showTimeline = useDashboardStore((s) => s.showTimeline);
   const timelineColumn = useDashboardStore((s) => s.timelineColumn);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
+  const clearVisibilityScopeClause = useDashboardStore((s) => s.clearVisibilityScopeClause);
   const toggleTimeline = useDashboardStore((s) => s.toggleTimeline);
   const tableOpen = useDashboardStore((s) => s.tableOpen);
   const toggleTable = useDashboardStore((s) => s.toggleTable);
@@ -240,10 +241,18 @@ export function ChromeBar() {
         cosmograph?.pointsSelection,
         createSelectionSource(`timeline:${timelineColumn}`),
       );
+      clearVisibilityScopeClause(`timeline:${timelineColumn}`);
       setTimelineSelection(undefined);
     }
     toggleTimeline();
-  }, [cosmograph, setTimelineSelection, showTimeline, timelineColumn, toggleTimeline]);
+  }, [
+    clearVisibilityScopeClause,
+    cosmograph,
+    setTimelineSelection,
+    showTimeline,
+    timelineColumn,
+    toggleTimeline,
+  ]);
 
   const handleTableToggle = useCallback(() => {
     setActiveMenu(null);

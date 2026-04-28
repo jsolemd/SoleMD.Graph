@@ -128,6 +128,7 @@ export async function createGraphBundleSession(
       getInfoHistogram: infoQueries.getInfoHistogram,
       getInfoHistogramsBatch: infoQueries.getInfoHistogramsBatch,
       getNumericStatsBatch: infoQueries.getNumericStatsBatch,
+      getNumericColumnValues: infoQueries.getNumericColumnValues,
       getFacetSummary: infoQueries.getFacetSummary,
       getFacetSummaries: infoQueries.getFacetSummaries,
       searchPoints: queryController.searchPoints,

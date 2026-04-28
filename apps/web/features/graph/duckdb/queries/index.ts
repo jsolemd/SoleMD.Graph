@@ -24,6 +24,11 @@ export {
 export { queryPaperDocument, queryPaperDetail } from './paper-detail'
 export { queryPointSearch } from './search'
 export {
+  buildOrbClusterChordSql,
+  queryOrbClusterChords,
+  type OrbClusterChordRow,
+} from './orb-edges'
+export {
   queryInfoSummary,
   queryInfoBars,
   queryInfoBarsBatch,
@@ -31,6 +36,7 @@ export {
 export {
   queryInfoHistogram,
   queryInfoHistogramsBatch,
+  queryNumericColumnValues,
   queryNumericStatsBatch,
 } from './histograms'
 export type { NumericStatsRow } from '@solemd/graph'

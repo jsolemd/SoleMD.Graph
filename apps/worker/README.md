@@ -20,7 +20,8 @@ paper-text acquisition lanes now live here:
   `solemd.ingest_file_tasks` rows on the `ingest_file` queue before the
   release actor performs the final aggregate merge. It also owns
   source-retention planning for hot-storage cleanup after family-level
-  ingest checkpoints are durable.
+  ingest checkpoints are durable, plus the S2 Datasets API diff cursor and
+  manifest ledger.
 - `app/corpus_worker.py` is the dedicated Dramatiq worker root for the
   `corpus` queue and binds only the `ingest_write` pool.
 - `app/actors/corpus.py` owns the release-pair actor
@@ -28,7 +29,8 @@ paper-text acquisition lanes now live here:
   `corpus.dispatch_evidence_wave`.
 - `app/corpus/` owns selection policies, curated asset materialization,
   release-pair planning, selection runtime orchestration, mapped promotion,
-  summary refresh, and evidence-wave dispatch.
+  reusable selection rollups, mapped-surface materialization, summary refresh,
+  and evidence-wave dispatch.
 - `app/evidence/` owns the targeted paper-level evidence-text refresh lane
   backed by the PMC BioC API.
 - `app/actors/evidence.py` owns the paper-level actor
@@ -44,14 +46,14 @@ uv run --project apps/worker python -m app.main check
 uv run --project apps/worker python -m app.main enqueue-release s2 2026-03-10 --force-new-run
 uv run --project apps/worker python -m app.main dispatch-manifest pt3 2026-03-21
 uv run --project apps/worker python -m app.main source-retention s2 2026-03-10
-uv run --project apps/worker python -m app.main source-retention s2 2026-03-10 --execute --action delete --provenance-ok
+uv run --project apps/worker python -m app.main s2-diff-plan 2026-03-10 latest --family papers
 uv run --project apps/worker python -m app.main enqueue-corpus-selection 2026-03-10 2026-03-21 v1
 uv run --project apps/worker python -m app.main run-corpus-selection-now 2026-03-10 2026-03-21 v1
 uv run --project apps/worker python -m app.main enqueue-evidence-wave 2026-03-10 2026-03-21 v1 --max-papers 100
 uv run --project apps/worker python -m app.main run-evidence-wave-now 2026-03-10 2026-03-21 v1 --max-papers 100
 uv run --project apps/worker python -m app.main enqueue-evidence-text 123456 --requested-by operator
 uv run --project apps/worker python -m app.main run-evidence-text-now 123456 --force-refresh
-dramatiq_queue_prefetch=1 POOL_INGEST_MIN=1 POOL_INGEST_MAX=8 INGEST_MAX_CONCURRENT_FILES=1 uv run --project apps/worker dramatiq app.ingest_worker --processes 8 --threads 1 --queues ingest ingest_file
+dramatiq_queue_prefetch=1 POOL_INGEST_MIN=1 POOL_INGEST_MAX=8 INGEST_MAX_CONCURRENT_FILES=1 INGEST_MAX_CONCURRENT_BATCHES_PER_FILE=2 uv run --project apps/worker dramatiq app.ingest_worker --processes 8 --threads 1 --queues ingest ingest_file
 uv run --project apps/worker dramatiq app.corpus_worker --processes 1 --threads 1 --queues corpus
 uv run --project apps/worker dramatiq app.evidence_worker --processes 1 --threads 1 --queues evidence
 ```
@@ -68,30 +70,56 @@ VHD is exhausted, the same check also requires the parent drive of
 `WAREHOUSE_STORAGE_HOST_PATH` (default `/mnt/e/wsl2-solemd-graph.vhdx`) to have
 at least `WAREHOUSE_STORAGE_HOST_MIN_FREE_BYTES` (default `100 GiB`) free.
 `enqueue-release` and `dispatch-manifest` validate the same `StartReleaseRequest`
-payload shape before enqueueing.
-S2 citation fanout is enabled by default with
-`INGEST_DISTRIBUTED_FILE_TASKS_ENABLED=true`; keep an `ingest_file` consumer
-running whenever the ingest worker is allowed to process S2 citations. File
+payload shape before enqueueing. Default S2 ingest is the corpus-decision core:
+`publication_venues`, `authors`, `papers`, and `abstracts`.
+Default PT3 ingest is the mapped-corpus signal core: `bioconcepts` and
+`relations`; BioCXML is opt-in evidence-tier work.
+The PT3 core families are loaded as one parallel runtime group. Within each
+single-file PT3 lane, `INGEST_MAX_CONCURRENT_BATCHES_PER_FILE` controls bounded
+parallel COPY/merge consumers fed by the streaming gzip parser.
+S2 citation fanout is opt-in mapped enrichment; when an operator explicitly
+allows the `citations` family, keep an `ingest_file` consumer running. File
 task recovery is controlled by `INGEST_FILE_TASK_MAX_ATTEMPTS`,
 `INGEST_FILE_TASK_STALE_AFTER_SECONDS`, and
 `INGEST_FILE_TASK_POLL_INTERVAL_SECONDS`.
 `source-retention` is dry-run by default. It acquires the same release-level
-advisory lock as ingest, reads `source_releases` / `ingest_runs`, and prints
-which S2 source directories are `keep`, `archive_candidate`,
-`delete_candidate`, or `manual_review`. Mutation requires `--execute` plus an
-explicit action. `--action delete` also requires `--provenance-ok`; manifests
-unregistered directories are never deleted automatically. Deferred registered
-families are also kept until their owner tier consumes or waives them:
-`tldrs` and `embeddings-specter_v2` belong to mapped rollout, while
-`s2orc_v2` belongs to evidence. `--action archive` is a same-filesystem rename
-only; off-device copies must be verified outside the worker before using the
-guarded delete path.
-`enqueue-corpus-selection` / `run-corpus-selection-now` and
+advisory lock as ingest, reads `source_releases` / `ingest_runs` /
+`s2_dataset_cursors`, and prints which S2 source directories are `keep`,
+`archive_candidate`, or `manual_review`. Mutation requires `--execute` plus an
+explicit action. `--action delete` also requires `--provenance-ok` and a
+hot-delete-safe S2 diff cursor; manifests and unregistered directories are
+never deleted automatically. Deferred registered families are kept until their
+owner tier consumes or waives them. `citations`, `tldrs`, and
+`embeddings-specter_v2` belong to mapped rollout, while `s2orc_v2` belongs to
+evidence. `--action archive` is a same-filesystem rename only; off-device
+copies must be verified outside the worker before using the guarded delete
+path.
+`s2-diff-plan` queries the Semantic Scholar Datasets API and can optionally
+record the returned update/delete file URLs with `--record`. Run API-backed
+commands through `solemd op-run graph -- ...` so `S2_API_KEY` is injected
+without writing it to disk.
+`enqueue-corpus-selection` / `dispatch-corpus-selection` /
+`run-corpus-selection-now` and
 `enqueue-evidence-wave` / `run-evidence-wave-now` use the shared validated
 corpus request models before enqueueing or executing the selection/evidence
 runtime in-process. `enqueue-evidence-text` and `run-evidence-text-now` use the same
 validated `AcquirePaperTextRequest` payload shape before either enqueueing or
 executing the PMC BioC-backed refresh path.
+Corpus selection builds run-scoped UNLOGGED rollups in `solemd_scratch` and
+tracks them in logged `solemd.corpus_selection_artifacts` rows, so a crash can
+resume from the current run rather than losing the scratch-table map. Mapped
+surface materialization uses logged hash-bucket chunk rows in
+`solemd.corpus_selection_chunks`; `CORPUS_MATERIALIZATION_BUCKET_COUNT`
+controls the bucket count and is part of the selection plan checksum, while
+`CORPUS_MATERIALIZATION_MAX_PARALLEL_CHUNKS` controls bounded asyncpg
+parallelism for the mapped bucket drain.
+`CORPUS_MATERIALIZATION_CHUNK_MAX_ATTEMPTS` caps poison-bucket retries before a
+chunk remains terminal failed for operator review. `CORPUS_ARTIFACT_RETENTION_RUNS`
+keeps the most recent run artifacts for the same S2/PT3/selector pair and drops
+older scratch tables after publish. `enqueue-corpus-selection` still enqueues one
+full release-pair job; `dispatch-corpus-selection` enqueues
+`corpus.dispatch_selection_phases`, which chains one phase per Dramatiq message
+through `corpus.run_selection_phase`.
 
 Telemetry is now worker-owned under `app/telemetry/`.
 

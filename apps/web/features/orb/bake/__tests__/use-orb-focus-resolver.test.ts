@@ -16,7 +16,7 @@ import { useOrbFocusResolver } from "../use-orb-focus-resolver";
 import { useOrbHoverResolver } from "../use-orb-hover-resolver";
 
 interface QueryResult {
-  rows: Array<{ particleIdx: number }>;
+  rows: Array<{ particleIdx: number; isFocus?: boolean }>;
 }
 
 function buildQueries(runReadOnlyQuery: jest.Mock): GraphBundleQueries {
@@ -91,7 +91,7 @@ describe("useOrbFocusResolver", () => {
   it("writes a full-intensity G lane spotlight for selectedNode", async () => {
     const runReadOnlyQuery = jest
       .fn<Promise<QueryResult>, [string]>()
-      .mockResolvedValue({ rows: [{ particleIdx: 5 }] });
+      .mockResolvedValue({ rows: [{ particleIdx: 5, isFocus: true }] });
     const queries = buildQueries(runReadOnlyQuery);
 
     renderHook(() => {
@@ -111,13 +111,47 @@ describe("useOrbFocusResolver", () => {
 
     expect(runReadOnlyQuery).toHaveBeenCalledTimes(1);
     expect(runReadOnlyQuery.mock.calls[0]?.[0]).toContain("paper-7");
+    expect(runReadOnlyQuery.mock.calls[0]?.[0]).toContain("base_links_web");
     expect(getParticleStateData()[gByte(5)]).toBe(255);
+  });
+
+  it("writes lower-intensity G lane highlights for focus neighbors", async () => {
+    const runReadOnlyQuery = jest
+      .fn<Promise<QueryResult>, [string]>()
+      .mockResolvedValue({
+        rows: [
+          { particleIdx: 5, isFocus: true },
+          { particleIdx: 6, isFocus: false },
+          { particleIdx: 9, isFocus: false },
+        ],
+      });
+    const queries = buildQueries(runReadOnlyQuery);
+
+    renderHook(() => {
+      useOrbFocusResolver({
+        enabled: true,
+        paperSampleReady: true,
+        particleCount: 16,
+        queries,
+      });
+      useOrbHoverResolver({ enabled: true, particleCount: 16 });
+    });
+
+    act(() => {
+      useGraphStore.getState().selectNode(buildPoint());
+    });
+    await flushRaf(3);
+
+    expect(useOrbFocusVisualStore.getState().neighborIndices).toEqual([6, 9]);
+    expect(getParticleStateData()[gByte(5)]).toBe(255);
+    expect(getParticleStateData()[gByte(6)]).toBe(96);
+    expect(getParticleStateData()[gByte(9)]).toBe(96);
   });
 
   it("clears the focused G lane when selectedNode clears", async () => {
     const runReadOnlyQuery = jest
       .fn<Promise<QueryResult>, [string]>()
-      .mockResolvedValue({ rows: [{ particleIdx: 5 }] });
+      .mockResolvedValue({ rows: [{ particleIdx: 5, isFocus: true }] });
     const queries = buildQueries(runReadOnlyQuery);
 
     renderHook(() => {
@@ -147,7 +181,7 @@ describe("useOrbFocusResolver", () => {
   it("clears focus when the selected paper is not resident", async () => {
     const runReadOnlyQuery = jest
       .fn<Promise<QueryResult>, [string]>()
-      .mockResolvedValueOnce({ rows: [{ particleIdx: 5 }] })
+      .mockResolvedValueOnce({ rows: [{ particleIdx: 5, isFocus: true }] })
       .mockResolvedValueOnce({ rows: [] });
     const queries = buildQueries(runReadOnlyQuery);
 

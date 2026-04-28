@@ -147,6 +147,29 @@ class Settings(BaseSettings):
         default="data/semantic-scholar",
         alias="SEMANTIC_SCHOLAR_DIR",
     )
+    semantic_scholar_api_base_url: str = Field(
+        default="https://api.semanticscholar.org/datasets/v1",
+        alias="SEMANTIC_SCHOLAR_API_BASE_URL",
+    )
+    semantic_scholar_api_key: str | None = Field(
+        default=None,
+        alias="S2_API_KEY",
+        repr=False,
+    )
+    semantic_scholar_api_timeout_seconds: float = Field(
+        default=60.0,
+        alias="SEMANTIC_SCHOLAR_API_TIMEOUT_SECONDS",
+        gt=0.0,
+    )
+    semantic_scholar_api_max_attempts: int = Field(
+        default=5,
+        alias="SEMANTIC_SCHOLAR_API_MAX_ATTEMPTS",
+        ge=1,
+    )
+    semantic_scholar_api_user_agent: str = Field(
+        default="SoleMD.Graph/ingest",
+        alias="SEMANTIC_SCHOLAR_API_USER_AGENT",
+    )
     pubtator_dir: str = Field(
         default="data/pubtator",
         alias="PUBTATOR_DIR",
@@ -164,6 +187,11 @@ class Settings(BaseSettings):
     ingest_max_concurrent_files: int = Field(
         default=4,
         alias="INGEST_MAX_CONCURRENT_FILES",
+        ge=1,
+    )
+    ingest_max_concurrent_batches_per_file: int = Field(
+        default=2,
+        alias="INGEST_MAX_CONCURRENT_BATCHES_PER_FILE",
         ge=1,
     )
     ingest_distributed_file_tasks_enabled: bool = Field(
@@ -250,6 +278,26 @@ class Settings(BaseSettings):
     corpus_wave_enqueue_batch_size: int = Field(
         default=250,
         alias="CORPUS_WAVE_ENQUEUE_BATCH_SIZE",
+    )
+    corpus_artifact_retention_runs: int = Field(
+        default=3,
+        alias="CORPUS_ARTIFACT_RETENTION_RUNS",
+        ge=1,
+    )
+    corpus_materialization_bucket_count: int = Field(
+        default=256,
+        alias="CORPUS_MATERIALIZATION_BUCKET_COUNT",
+        ge=1,
+    )
+    corpus_materialization_max_parallel_chunks: int = Field(
+        default=4,
+        alias="CORPUS_MATERIALIZATION_MAX_PARALLEL_CHUNKS",
+        ge=1,
+    )
+    corpus_materialization_chunk_max_attempts: int = Field(
+        default=3,
+        alias="CORPUS_MATERIALIZATION_CHUNK_MAX_ATTEMPTS",
+        ge=1,
     )
 
     model_config = SettingsConfigDict(

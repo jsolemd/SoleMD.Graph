@@ -4,6 +4,10 @@
 
 2026-04-25
 
+## Amended
+
+2026-04-27 - align with the WebGPU-only field/orb runtime decision.
+
 ## Context
 
 The earlier docset framed `/graph` and `/map` as two roughly peer
@@ -24,8 +28,9 @@ Make the 3D orb the primary product surface for `/graph`.
   results, info, pinned wiki, filters, timeline, and RAG evidence.
 - 2D remains a toggleable analytic lens over the same DuckDB/Zustand
   state.
-- New 3D rendering and physics use three.js WebGPU/TSL first.
-- WebGL2 remains a compatibility backend with explicit budgets.
+- New 3D rendering and physics use a WebGPU-only field runtime.
+- Unsupported browsers/devices receive a controlled unsupported state;
+  there is no WebGL2 field runtime backend.
 - Native Cosmograph remains the 2D lens runtime while it serves the
   product requirement.
 - Shared behavior is expressed in DuckDB views, Zustand slices, and
@@ -60,8 +65,9 @@ Revisit this decision only if:
 
 - Users consistently prefer the 2D lens for core prompt/search →
   evidence → wiki workflows after M5b.
-- WebGPU/TSL cannot meet the resident/physics budget on target
-  devices even with WebGL2/static fallbacks.
+- WebGPU cannot meet the resident/physics budget on target devices; in
+  that case, revisit the product decision instead of quietly adding a
+  WebGL fallback.
 - A new native graph runtime provides the 3D physics, picking,
   filtering, and panel integration with less local code than the
   planned Three/WebGPU path.

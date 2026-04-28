@@ -15,6 +15,7 @@ import {
   queryInfoHistogram,
   queryInfoHistogramsBatch,
   queryInfoSummary,
+  queryNumericColumnValues,
   queryNumericStatsBatch,
 } from '../queries'
 import type { NumericStatsRow } from '../queries'
@@ -58,6 +59,7 @@ export function createSessionInfoQueries({
     string,
     Promise<Record<string, NumericStatsRow>>
   >()
+  const numericValuesDatasetCache = createBoundedCache<string, Promise<number[]>>()
   const summaryDatasetCache = createBoundedCache<string, Promise<GraphInfoSummary>>()
 
   const getCachedDatasetFacetSummaries = (args: {
@@ -175,11 +177,33 @@ export function createSessionInfoQueries({
       { evictWhen: (result) => Object.keys(result).length === 0 },
     )
 
+  const getCachedDatasetNumericValues = (args: {
+    layer: Parameters<typeof queryNumericColumnValues>[1]['layer']
+    column: string
+  }) =>
+    cachedQuery(
+      numericValuesDatasetCache,
+      {
+        layer: args.layer,
+        column: args.column,
+        overlayRevision: getOverlayRevision(),
+      },
+      () =>
+        queryNumericColumnValues(conn, {
+          layer: args.layer,
+          scope: 'dataset',
+          column: args.column,
+          currentPointScopeSql: null,
+        }),
+      { evictWhen: (result) => result.length === 0 },
+    )
+
   return {
     reset() {
       facetDatasetCache.clear()
       histogramDatasetCache.clear()
       numericStatsDatasetCache.clear()
+      numericValuesDatasetCache.clear()
       summaryDatasetCache.clear()
     },
     getInfoSummary(args) {
@@ -303,6 +327,16 @@ export function createSessionInfoQueries({
       }
 
       return queryNumericStatsBatch(conn, args)
+    },
+    getNumericColumnValues(args) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
+        return getCachedDatasetNumericValues({
+          layer: args.layer,
+          column: args.column,
+        })
+      }
+
+      return queryNumericColumnValues(conn, args)
     },
     getFacetSummary(args) {
       const safeMaxItems = args.maxItems ?? 6

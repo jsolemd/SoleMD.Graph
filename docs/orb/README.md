@@ -1,6 +1,6 @@
 # Orb 3D — documentation index
 
-> **Status (2026-04-25 amendment).** The R3F `<GraphOrb>` /
+> **Status (2026-04-27 amendment).** The R3F `<GraphOrb>` /
 > `Graph3DSurface` / `/orb-dev` point-cloud prototype described
 > throughout this docset has been retired from the product path. The
 > current 3D primary is `OrbSurface` on the persistent FieldCanvas
@@ -8,6 +8,11 @@
 > 2D is the native Cosmograph mount via `DashboardShell` (the same
 > path `/map` uses). The renderer-mode toggle on `/graph` is
 > `'3d' | '2d'` with `'3d'` default.
+>
+> The field/orb WebGPU target is now WebGPU-only, not a WebGL2/WebGPU
+> compatibility migration. Unsupported browsers/devices get a controlled
+> unsupported state. The migration plan lives in
+> [`milestones/M7-webgpu-port.md`](milestones/M7-webgpu-port.md).
 >
 > Files in this docset that describe the abandoned R3F renderer are
 > kept for historical context but should not be used as the spec for
@@ -31,7 +36,8 @@ If you're new to this work, read **top-to-bottom**:
 2. [`01-architecture.md`](01-architecture.md) — single source of truth, native 3D workspace, optional 2D renderer.
 3. [`02-data-contract.md`](02-data-contract.md) — bundle schema, capability versioning.
 4. [`03-physics-model.md`](03-physics-model.md) — hybrid ambient + wake; one kernel contract, two implementations.
-5. [`10-force-vocabulary.md`](10-force-vocabulary.md) — `focus`, `scope`, `clusterFocus`, `entityFocus`, `evidencePulse`, `evidenceMark`, `pulseImpulse`, `tug`.
+5. [`17-rendering-stack-evolution.md`](17-rendering-stack-evolution.md) — WebGPU-only field runtime, hard gate, storage buffers, instanced billboards.
+6. [`10-force-vocabulary.md`](10-force-vocabulary.md) — `focus`, `scope`, `clusterFocus`, `entityFocus`, `evidencePulse`, `evidenceMark`, `pulseImpulse`, `tug`.
 6. [`11-three-layer-composition.md`](11-three-layer-composition.md) — how the effects compose.
 7. [`09-search-and-rag-excitation.md`](09-search-and-rag-excitation.md) — the headliner.
 
@@ -96,13 +102,14 @@ Every file in this docset honors:
 - **Anti-hairball guard** — search-first ingress, ranked list as
   authoritative surface, tiered/intent-revealed edges. From the
   canonical plan's product thesis; preserved verbatim.
-- **2026 stack first** — new orb work is WebGPU/TSL-first where
-  available, with a WebGL2 compatibility backend for devices that do
-  not support WebGPU. No CPU `d3-force-3d` runtime at resident scale.
-- **One semantic contract, backend-native implementations** — the
-  effect schedule is renderer-agnostic; the WebGPU path uses native
-  three.js WebGPU/TSL compute/storage buffers, while WebGL2 uses
-  `GPUComputationRenderer` ping-pong only as compatibility.
+- **WebGPU-only field runtime** — new field/orb work targets a hard
+  WebGPU gate, storage-buffer particle state, instanced billboard
+  rendering, compute picking, and WebGPU compute. Unsupported devices
+  get an unsupported state, not a WebGL2 field runtime.
+- **One semantic contract, one shipped field backend** — the effect
+  schedule remains product-semantic, but M7 implements it through a
+  WebGPU-only field runtime. The optional 2D lens remains a separate
+  Cosmograph/WebGL dependency until M8 or upstream support changes that.
 
 ## Conventions
 

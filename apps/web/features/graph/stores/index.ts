@@ -6,6 +6,7 @@ export {
 } from './dashboard-store'
 export type {
   ActivePanel,
+  OrbSelectionTool,
   PanelId,
   PromptMode,
   RendererMode,

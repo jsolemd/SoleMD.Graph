@@ -13,6 +13,8 @@ from app.ingest.models import StartReleaseRequest
 from app.ingest.runtime import run_release_ingest
 from corpus_test_support import (
     fetch_selection_run as _fetch_selection_run,
+    fetch_selection_artifacts as _fetch_selection_artifacts,
+    fetch_selection_chunks as _fetch_selection_chunks,
     fetch_selection_summary_rows as _fetch_selection_summary_rows,
     fetch_wave_members as _fetch_wave_members,
     latest_selection_run_id as _latest_selection_run_id,
@@ -83,6 +85,26 @@ async def test_corpus_selection_runtime_resumes_failed_run_deterministically(
         ]
         assert await _summary_count(warehouse_dsns["admin"], failed_run_id) == 0
 
+        admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+        try:
+            artifact = await admin_connection.fetchrow(
+                """
+                SELECT storage_schema, storage_table
+                FROM solemd.corpus_selection_artifacts
+                WHERE corpus_selection_run_id = $1
+                  AND artifact_kind = 'paper_scope'
+                """,
+                failed_run_id,
+            )
+            assert artifact is not None
+            await admin_connection.execute(
+                f"""
+                DROP TABLE "{artifact['storage_schema']}"."{artifact['storage_table']}"
+                """
+            )
+        finally:
+            await admin_connection.close()
+
         resumed_run_id = UUID(
             await run_corpus_selection(
                 request,
@@ -105,6 +127,17 @@ async def test_corpus_selection_runtime_resumes_failed_run_deterministically(
         "mapped_surface_materialization",
         "selection_summary",
     ]
+    artifacts = await _fetch_selection_artifacts(warehouse_dsns["admin"], resumed_run_id)
+    assert artifacts == [
+        ("entity_aggregate", "complete", 5, False),
+        ("mapped_entity_detail", "complete", 4, False),
+        ("mapped_relation_detail", "complete", 1, False),
+        ("paper_scope", "complete", 7, False),
+        ("relation_aggregate", "complete", 1, False),
+    ]
+    chunks = await _fetch_selection_chunks(warehouse_dsns["admin"], resumed_run_id)
+    assert all(status == "complete" for _, status, _ in chunks)
+    assert sum(int(row_counts.get("entity_annotations", 0)) for _, _, row_counts in chunks) == 4
 
     summary_rows = await _fetch_selection_summary_rows(warehouse_dsns["admin"], resumed_run_id)
     assert summary_rows == [
@@ -191,6 +224,177 @@ async def test_corpus_selection_runtime_resumes_failed_run_deterministically(
         ] == ["S2-106"]
     finally:
         await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_corpus_selection_phase_allowlist_does_not_publish_partial_run(
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
+    await _seed_selection_fixture(warehouse_dsns["admin"])
+
+    phase_request = StartCorpusSelectionRequest(
+        s2_release_tag="s2-2026-04-01",
+        pt3_release_tag="pt3-2026-04-01",
+        selector_version="selector-v1-phase",
+        requested_by="tester",
+        phase_allowlist=("assets",),
+    )
+    full_request = phase_request.model_copy(update={"phase_allowlist": None})
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        run_id = UUID(
+            await run_corpus_selection(
+                phase_request,
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+        )
+        partial_row = await _fetch_selection_run(warehouse_dsns["admin"], run_id)
+        assert partial_row["status"] != 7
+        assert partial_row["phases_completed"] == ["assets"]
+
+        resumed_run_id = UUID(
+            await run_corpus_selection(
+                full_request,
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+        )
+    finally:
+        await pools.close()
+
+    assert resumed_run_id == run_id
+    published_row = await _fetch_selection_run(warehouse_dsns["admin"], run_id)
+    assert published_row["status"] == 7
+
+
+@pytest.mark.asyncio
+async def test_mapped_materialization_stops_poison_chunk_after_retry_limit(
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+    monkeypatch,
+) -> None:
+    runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
+    await _seed_selection_fixture(warehouse_dsns["admin"])
+
+    async def fail_entity_insert(*args, **kwargs) -> int:
+        raise RuntimeError("poison mapped bucket")
+
+    monkeypatch.setattr(
+        "app.corpus.materialize_mapped._insert_bucket_entity_annotations",
+        fail_entity_insert,
+    )
+
+    request = StartCorpusSelectionRequest(
+        s2_release_tag="s2-2026-04-01",
+        pt3_release_tag="pt3-2026-04-01",
+        selector_version="selector-v1-poison",
+        requested_by="tester",
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        for _ in range(runtime_settings.corpus_materialization_chunk_max_attempts):
+            with pytest.raises(RuntimeError, match="poison mapped bucket"):
+                await run_corpus_selection(
+                    request,
+                    ingest_pool=pools.get("ingest_write"),
+                    runtime_settings=runtime_settings,
+                )
+
+        with pytest.raises(RuntimeError, match="retry limit reached"):
+            await run_corpus_selection(
+                request,
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+    finally:
+        await pools.close()
+
+    run_id = await _latest_selection_run_id(warehouse_dsns["admin"])
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        rows = await admin_connection.fetch(
+            """
+            SELECT status, attempts
+            FROM solemd.corpus_selection_chunks
+            WHERE corpus_selection_run_id = $1
+              AND phase_name = 'mapped_surface_materialization'
+              AND status = 'failed'
+            """,
+            run_id,
+        )
+    finally:
+        await admin_connection.close()
+    assert rows
+    assert all(
+        int(row["attempts"]) >= runtime_settings.corpus_materialization_chunk_max_attempts
+        for row in rows
+    )
+
+
+@pytest.mark.asyncio
+async def test_parallel_mapped_materialization_deduplicates_anonymous_authors(
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
+    await _seed_selection_fixture(warehouse_dsns["admin"])
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        await admin_connection.execute(
+            """
+            UPDATE solemd.s2_paper_authors_raw
+            SET source_author_id = NULL,
+                name_raw = 'Shared Anonymous Author'
+            WHERE paper_id IN ('S2-101', 'S2-102')
+            """
+        )
+    finally:
+        await admin_connection.close()
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        await run_corpus_selection(
+            StartCorpusSelectionRequest(
+                s2_release_tag="s2-2026-04-01",
+                pt3_release_tag="pt3-2026-04-01",
+                selector_version="selector-v1-anon-authors",
+                requested_by="tester",
+            ),
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        author_count = await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.authors
+            WHERE source_author_id IS NULL
+              AND normalized_name = solemd.normalize_lookup_key('Shared Anonymous Author')
+            """
+        )
+        linked_author_count = await admin_connection.fetchval(
+            """
+            SELECT count(DISTINCT paper_authors.author_id)
+            FROM solemd.paper_authors paper_authors
+            JOIN solemd.papers papers
+              ON papers.corpus_id = paper_authors.corpus_id
+            WHERE papers.s2_paper_id IN ('S2-101', 'S2-102')
+            """
+        )
+    finally:
+        await admin_connection.close()
+    assert author_count == 1
+    assert linked_author_count == 1
 
 
 @pytest.mark.asyncio

@@ -1,12 +1,14 @@
 import { create } from "zustand";
 
+import type { FieldPickRectMode } from "@/features/field/renderer/field-picking";
+
 /**
  * Published handle for the orb GPU picker.
  *
  * FieldScene's blob-points subscriber publishes a pickSync function when
  * the blob `<points>` and its ShaderMaterial are mounted; out-of-tree
- * surfaces (OrbInteractionSurface → useOrbClick) call it with
- * (clientX, clientY) and receive a particle index or PICK_NO_HIT.
+ * surfaces (OrbInteractionSurface → useOrbClick / useOrbRectSelection)
+ * call it with pointer coordinates and receive particle indices.
  *
  * Crossing the R3F tree boundary:
  *   - the subscriber lives inside the Canvas and owns the pick target,
@@ -27,6 +29,12 @@ import { create } from "zustand";
 
 export interface OrbPickerHandle {
   pickSync: (clientX: number, clientY: number) => number;
+  pickRectAsync: (rect: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  }, options?: { mode?: FieldPickRectMode }) => Promise<number[]>;
 }
 
 export interface OrbPickerStore {

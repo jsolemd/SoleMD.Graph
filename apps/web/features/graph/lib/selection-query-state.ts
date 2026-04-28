@@ -2,6 +2,9 @@ export function hasCurrentPointScopeSql(scopeSql?: string | null): boolean {
   return typeof scopeSql === "string" && scopeSql.trim().length > 0;
 }
 
+export const SELECTED_POINT_INDICES_SCOPE_SQL =
+  "index IN (SELECT index FROM selected_point_indices)";
+
 export function normalizeCurrentPointScopeSql(
   scopeSql?: string | null,
 ): string | null {
@@ -11,6 +14,24 @@ export function normalizeCurrentPointScopeSql(
   }
 
   return normalized;
+}
+
+export function combineScopeSqlClauses(
+  ...clauses: Array<string | null | undefined>
+): string | null {
+  const normalizedClauses = clauses
+    .map((clause) => clause?.trim() ?? "")
+    .filter((clause) => clause.length > 0);
+
+  if (normalizedClauses.length === 0) {
+    return null;
+  }
+
+  if (normalizedClauses.length === 1) {
+    return normalizedClauses[0] ?? null;
+  }
+
+  return normalizedClauses.map((clause) => `(${clause})`).join(" AND ");
 }
 
 interface ResolveTableSelectionStateArgs {

@@ -1,5 +1,6 @@
 import {
   clearLane,
+  clearLanes,
   getParticleStateData,
   getParticleStateTexture,
   LANE_DEFAULTS,
@@ -93,6 +94,21 @@ describe("field-particle-state-texture", () => {
       clearLane(lane);
       expect(getParticleStateData()[byteOffset(0, lane)]).toBe(LANE_DEFAULTS[lane]);
     }
+  });
+
+  it("clearLanes restores multiple lanes in one pass and preserves untouched lanes", () => {
+    writeLane("R", 4, 0);
+    writeLane("G", 4, 200);
+    writeLane("B", 4, 150);
+    writeLane("A", 4, 100);
+
+    clearLanes(["R", "G"]);
+
+    const data = getParticleStateData();
+    expect(data[byteOffset(4, "R")]).toBe(LANE_DEFAULTS.R);
+    expect(data[byteOffset(4, "G")]).toBe(LANE_DEFAULTS.G);
+    expect(data[byteOffset(4, "B")]).toBe(150);
+    expect(data[byteOffset(4, "A")]).toBe(100);
   });
 
   it("writeLane rejects out-of-range indices", () => {

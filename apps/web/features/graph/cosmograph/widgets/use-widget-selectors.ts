@@ -3,29 +3,33 @@
 import { useDeferredValue, useMemo } from "react";
 import { useCosmographInternal } from "@cosmograph/react";
 import {
-  buildVisibilityScopeSqlExcludingSource,
   createSelectionSource,
+  matchesSelectionSourceId,
 } from "@/features/graph/lib/cosmograph-selection";
-import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
+import {
+  SELECTED_POINT_INDICES_SCOPE_SQL,
+  combineScopeSqlClauses,
+  hasCurrentPointScopeSql,
+} from "@/features/graph/lib/selection-query-state";
 import { getLayerTableName } from "@/features/graph/duckdb/sql-helpers";
 import { useDashboardStore } from "@/features/graph/stores";
-import { resolveWidgetBaselineScope } from "./widget-baseline";
+import { useWidgetBaselineScope } from "./widget-baseline";
 
 /**
  * Shared store selectors + derived memos used by every crossfilter widget
  * (TimelineWidget, FilterHistogramWidget, FilterBarWidget).
  *
- * `currentScopeRevision` is deferred via `useDeferredValue` so that rapid
+ * `visibilityScopeClauses` is deferred via `useDeferredValue` so that rapid
  * brush drags batch scoped highlight re-queries instead of firing per frame.
- * The canvas filtering via `pointsSelection.update()` still fires immediately.
+ * The shared visibility scope state still updates immediately; Cosmograph's
+ * private crossfilter is mirrored only when a native 2D renderer is mounted.
  *
  * `cosmograph` is read via `useCosmographInternal()` (not the throwing
  * `useCosmograph()`) so the hook stays mountable from renderer-clean
  * surfaces — notably the 3D OrbSurface, which mounts FiltersPanel through
- * `GraphPanelsLayer` without a CosmographProvider in the tree. When
- * `cosmograph` is null, every widget consumer of this hook must early-
- * return; both `FilterBarWidget` and `FilterHistogramWidget` already do
- * (`if (!cosmograph) return;` in their layout effect).
+ * `GraphPanelsLayer` without a CosmographProvider in the tree. The widgets
+ * still mount native `@cosmograph/ui` controls in that mode; only the private
+ * Cosmograph crossfilter client is optional.
  */
 export function useWidgetSelectors(
   sourcePrefix: "timeline" | "filter",
@@ -36,14 +40,12 @@ export function useWidgetSelectors(
   const currentScopeRevision = useDashboardStore(
     (s) => s.currentScopeRevision,
   );
-  const selectionLocked = useDashboardStore((s) => s.selectionLocked);
   const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
-  const selectedPointRevision = useDashboardStore(
-    (s) => s.selectedPointRevision,
+  const visibilityScopeClauses = useDashboardStore(
+    (s) => s.visibilityScopeClauses,
   );
 
-  // Defer scope revision so scoped highlight queries batch during rapid brush
-  const deferredScopeRevision = useDeferredValue(currentScopeRevision);
+  const deferredVisibilityScopeClauses = useDeferredValue(visibilityScopeClauses);
 
   const sourceId = `${sourcePrefix}:${column}`;
   const source = useMemo(
@@ -54,23 +56,40 @@ export function useWidgetSelectors(
     () => getLayerTableName(activeLayer),
     [activeLayer],
   );
-  const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
-    () =>
-      resolveWidgetBaselineScope({
-        selectionLocked,
-        selectedPointCount,
-        selectedPointRevision,
-      }),
-    [selectedPointCount, selectedPointRevision, selectionLocked],
-  );
+  const {
+    scope: baselineScope,
+    cacheKey: baselineCacheKey,
+    currentPointScopeSql: baselineCurrentPointScopeSql,
+    ready: baselineReady,
+  } = useWidgetBaselineScope();
   const scopeSql = useMemo(
-    () =>
-      buildVisibilityScopeSqlExcludingSource(
-        cosmograph?.pointsSelection,
-        sourceId,
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- deferredScopeRevision batches rapid revision bumps
-    [cosmograph, deferredScopeRevision, sourceId],
+    () => {
+      const visibilityScopeSql = combineScopeSqlClauses(
+        ...Object.values(deferredVisibilityScopeClauses)
+          .filter(
+            (clause) => !matchesSelectionSourceId(clause.sourceId, sourceId),
+          )
+          .map((clause) => clause.sql),
+      );
+
+      return selectedPointCount > 0
+        ? combineScopeSqlClauses(
+            SELECTED_POINT_INDICES_SCOPE_SQL,
+            visibilityScopeSql,
+          )
+        : visibilityScopeSql
+          ? combineScopeSqlClauses(
+              baselineCurrentPointScopeSql,
+              visibilityScopeSql,
+            )
+          : null;
+    },
+    [
+      baselineCurrentPointScopeSql,
+      deferredVisibilityScopeClauses,
+      selectedPointCount,
+      sourceId,
+    ],
   );
   const isSubset = hasCurrentPointScopeSql(scopeSql);
 
@@ -83,6 +102,8 @@ export function useWidgetSelectors(
     tableName,
     baselineScope,
     baselineCacheKey,
+    baselineCurrentPointScopeSql,
+    baselineReady,
     scopeSql,
     isSubset,
   };

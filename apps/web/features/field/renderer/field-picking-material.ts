@@ -24,7 +24,13 @@ import type { LayerUniforms } from "../controller/FieldController";
  *
  * The fragment shader uses `precision highp float` so the 24-bit
  * vIndex → RGB encode survives mantissa rounding at the 16384 particle
- * upper bound.
+ * upper bound. Alpha carries an orb-relative view-depth bucket (1..255;
+ * 0 is the clear pixel) so rectangle selection can default to the
+ * front visible slab while Alt/Option-drag can intentionally select
+ * through the volume. The depth is relative to the rendered orb center,
+ * not absolute camera distance; the orb is only a few world units deep
+ * while the camera can sit hundreds of units away, so absolute depth
+ * collapses the front and back hemispheres into the same byte.
  *
  * Uniform references are SHARED with the display material (the caller
  * passes the blob's live `LayerUniforms`). This keeps uTime, uStream,
@@ -43,6 +49,7 @@ ${FIELD_ATTRIBUTE_DECLS}
 ${FIELD_UNIFORM_DECLS}
 
 varying float vIndex;
+varying float vPickDepth;
 
 ${FIELD_NOISE_HELPERS}
 
@@ -57,6 +64,9 @@ void main() {
   gl_Position = projectionMatrix * mvPosition;
   gl_PointSize = computeFieldPointSize(mvPosition);
   vIndex = aIndex;
+  float pointDepth = -mvPosition.z;
+  float centerDepth = -(modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).z;
+  vPickDepth = pointDepth - centerDepth;
 }
 `;
 
@@ -64,6 +74,9 @@ const PICKING_FRAGMENT_SHADER = `
 precision highp float;
 
 varying float vIndex;
+varying float vPickDepth;
+
+const float PICK_RELATIVE_DEPTH_HALF_RANGE = 8.0;
 
 void main() {
   // Round hit-test: discard outside the unit disk so picking matches
@@ -71,13 +84,22 @@ void main() {
   vec2 p = gl_PointCoord - vec2(0.5);
   if (dot(p, p) > 0.25) discard;
 
-  // Pack the dense index as 24-bit RGB. alpha=1.0 distinguishes a hit
-  // from the clear color (0,0,0,0) in the picking target.
+  // Pack the dense index as 24-bit RGB. Alpha is an orb-relative
+  // view-depth bucket, reserving 0 for the clear color / no-hit pixels.
+  // Lower bytes are closer to the camera.
   float idx = vIndex;
   float r = mod(idx, 256.0);
   float g = mod(floor(idx / 256.0), 256.0);
   float b = mod(floor(idx / 65536.0), 256.0);
-  gl_FragColor = vec4(r / 255.0, g / 255.0, b / 255.0, 1.0);
+  float normalizedDepth = clamp(
+    (vPickDepth + PICK_RELATIVE_DEPTH_HALF_RANGE) /
+      (PICK_RELATIVE_DEPTH_HALF_RANGE * 2.0),
+    0.0,
+    1.0
+  );
+  float depthByte =
+    floor(normalizedDepth * 254.0) + 1.0;
+  gl_FragColor = vec4(r / 255.0, g / 255.0, b / 255.0, depthByte / 255.0);
 }
 `;
 

@@ -145,11 +145,14 @@ empirically worse than 80 in modern PG.
 
 ### 0.8 Schemas
 
-Three schemas only:
+Four schemas only:
 
 - `solemd` — canonical warehouse, grounding, concepts, build control.
 - `pubtator` — raw PubTator3 ingest surfaces.
 - `umls` — raw UMLS Metathesaurus reference tables.
+- `solemd_scratch` — run-scoped UNLOGGED corpus-selection artifacts. Durable
+  resume state stays in logged `solemd.corpus_selection_artifacts`; this schema
+  only holds rebuildable scratch tables.
 
 No `raw`, `stage`, or `archive` schemas — the `s2_*_raw` tables already
 carry the raw-ingest role, and stage-and-swap uses `_next` / `_old`
@@ -379,6 +382,44 @@ Keys / indexes:
 - Btree `(source_release_id, ingest_run_id, family_name, status,
   updated_at)` — fanout progress, stale reset, and operator inspection.
 
+#### `solemd.s2_dataset_cursors`
+
+One row per Semantic Scholar dataset that SoleMD has accepted as the local
+current-state base. Full S2 ingest seeds this table as `base_loaded`. Diff
+planning updates `last_diff_checked_at` and `last_diff_plan_checksum`, but it
+does not make hot source files delete-safe. `hot_source_delete_safe_at` must
+remain null until the tested raw diff-application path for that family exists.
+
+Columns:
+- `dataset_name` TEXT, PK (`papers`, `abstracts`, `publication-venues`, ...)
+- `family_name` TEXT — SoleMD family registry name
+- `base_release_key` TEXT — full-release base
+- `current_release_key` TEXT — current local dataset state
+- `current_source_release_id` INTEGER, FK → `source_releases`
+- `cursor_status` TEXT (`base_loaded`, `diff_planned`, `diff_applying`,
+  `diff_loaded`, `blocked`)
+- `diff_apply_enabled` BOOLEAN
+- `hot_source_delete_safe_at` TIMESTAMPTZ nullable
+- `last_diff_checked_at` TIMESTAMPTZ nullable
+- `last_diff_plan_checksum` TEXT nullable
+- `updated_at` TIMESTAMPTZ
+
+#### `solemd.s2_dataset_diff_manifests` /
+#### `solemd.s2_dataset_diff_files`
+
+Durable Semantic Scholar Datasets API diff ledger. The manifest table records
+each sequential diff returned by
+`/datasets/v1/diffs/{start_release_id}/to/{end_release_id}/{dataset_name}`;
+the file table records every update/delete URL for later streamed application.
+
+Keys / indexes:
+- `s2_dataset_diff_manifests.s2_diff_manifest_id` UUID PK.
+- Unique `(dataset_name, start_release_key, end_release_key, diff_ordinal)`.
+- `s2_dataset_diff_files` PK
+  `(s2_diff_manifest_id, operation, file_ordinal)`, where operation is
+  `update` or `delete`.
+- Btree `(operation, file_status, updated_at)` for future worker fanout.
+
 #### `solemd.paper_text_acquisition_runs`
 
 One row per paper-level full-text acquisition attempt. Fillfactor 80.
@@ -405,7 +446,9 @@ Indexes:
 
 #### `solemd.s2_papers_raw`
 
-Normalized S2 paper metadata. Fillfactor 100 (append-only per release).
+Normalized S2 paper metadata. Fillfactor 100. This is a current-state table
+keyed by S2 paper id, not a duplicate full snapshot per release; unchanged rows
+are not rewritten just to advance an S2 diff cursor.
 
 Columns: `corpus_id` (nullable until canonical corpus materialization), `source_release_id`,
 `paper_id` TEXT (S2 paperId), `pmid` INTEGER, `doi_norm` TEXT, `pmc_id`
@@ -527,7 +570,10 @@ Columns (MAXALIGN order):
 - `resource` SMALLINT NOT NULL (source mask: PubTator3, etc.)
 
 Local indexes per partition:
-- PK `(corpus_id, start_offset, end_offset, concept_id_raw)`.
+- Unique digest key `(corpus_id, start_offset, end_offset, entity_type,
+  sha256(concept_id_raw), resource)`; raw `concept_id_raw` remains stored, but
+  btree uniqueness never indexes pathological multi-kilobyte source IDs
+  directly.
 - Btree `(corpus_id, concept_id_raw)` — concept-first scans.
 - Btree `(pmid, start_offset)` — used until backfill is complete; can
   drop after.
@@ -541,8 +587,13 @@ Columns: `corpus_id`, `source_release_id`, `pmid`, `relation_type` SMALLINT,
 `object_type` SMALLINT, `relation_source` SMALLINT.
 
 Local indexes per partition:
-- PK `(corpus_id, subject_entity_id, relation_type, object_entity_id)`.
+- Unique digest key `(corpus_id, sha256(subject_entity_id), relation_type,
+  sha256(object_entity_id))`; raw endpoint IDs remain stored, but btree
+  uniqueness never indexes pathological multi-kilobyte source IDs directly.
 - Btree `(corpus_id, object_entity_id, relation_type, subject_entity_id)`.
+- Materialization priority: when rows collide on `(corpus_id, subject,
+  relation, object)`, `relation_source = 1` is authoritative and
+  `relation_source = 2` only fills rows that source 1 did not already provide.
 
 #### `umls.*`
 
@@ -663,6 +714,11 @@ Indexes:
 - `orcid` TEXT unique-where-not-null.
 - `display_name`, `normalized_name` TEXT.
 - Fillfactor 90. Btree on `normalized_name`.
+- Unique btree on `source_author_id`.
+- Unique partial btree on `normalized_name WHERE source_author_id IS NULL`
+  serializes anonymous S2 author fallback upserts during parallel mapped
+  materialization. It does not collapse named S2 author identities with source
+  ids.
 
 #### `solemd.paper_authors`
 
@@ -839,6 +895,50 @@ The durable run/provenance ledger for release-pair corpus selection.
   - btree `(corpus_selection_run_id, corpus_id)`
   - btree `(corpus_id, corpus_selection_run_id)`
   - btree `(signal_kind, corpus_selection_run_id)`
+
+#### `solemd.corpus_selection_artifacts` + `solemd.corpus_selection_chunks`
+
+Operational ledgers for the optimized selector execution layer. These are
+logged control tables. The large derived rollups they reference live in
+`solemd_scratch` as UNLOGGED run-scoped tables.
+
+`corpus_selection_artifacts`
+
+- One row per run artifact kind:
+  `paper_scope`, `entity_aggregate`, `relation_aggregate`,
+  `mapped_entity_detail`, `mapped_relation_detail`.
+- Columns: source release ids, selector version, phase name, artifact kind,
+  storage schema/table, `is_logged`, lifecycle status, plan checksum, row and
+  byte counts, `detail JSONB`, timestamps, and failure message.
+- Artifact `detail` currently records `build_and_index_seconds`,
+  `grant_seconds`, and `analyze_seconds`; index timing is folded into builder
+  timing because index creation happens inside artifact-specific SQL builders.
+- Resume contract: a phase can skip only when its ledger row is `complete`, the
+  plan checksum matches, and the referenced scratch table still exists.
+- Retention contract: keep the latest
+  `CORPUS_ARTIFACT_RETENTION_RUNS` selection runs for the same S2/PT3/selector
+  pair and drop older scratch tables after publish.
+- Indexes:
+  - btree `(corpus_selection_run_id, status, artifact_kind)`
+  - btree `(s2_source_release_id, pt3_source_release_id, selector_version,
+    artifact_kind, created_at DESC)`
+
+`corpus_selection_chunks`
+
+- Logged mapped-materialization chunk ledger keyed by
+  `(corpus_selection_run_id, phase_name, bucket_id)`.
+- `bucket_id` is `hashtextextended(corpus_id::text, 0) %
+  materialization_bucket_count`; `corpus_id` is the permanent canonical paper
+  identity from `solemd.corpus`, not the run id.
+- Columns: `bucket_count`, status, attempts, started/completed timestamps,
+  per-surface `row_counts JSONB`, error message, and `updated_at`.
+- Resume contract: prior `running` or retryable `failed` chunks are reset to
+  `pending` at the start of the mapped materialization phase; chunks at
+  `CORPUS_MATERIALIZATION_CHUNK_MAX_ATTEMPTS` remain failed and block the phase
+  until the root cause is fixed. Workers claim pending buckets with
+  `FOR UPDATE SKIP LOCKED`.
+- Index:
+  - btree `(corpus_selection_run_id, phase_name, status, bucket_id)`
 
 #### `solemd.paper_selection_summary`
 

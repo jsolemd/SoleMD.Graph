@@ -4,10 +4,18 @@
 
 Filter / timeline state lives in DuckDB tables + Zustand slices,
 renderer-agnostic. Both `/graph` (orb) and `/map` (2D) subscribe.
-Today's `/map` widgets wrap native `@cosmograph/ui` components
-(`FilterBarWidget.tsx:4`, `FilterHistogramWidget.tsx:4`,
-`TimelineWidget.tsx:4`); they import Cosmograph internal
-crossfilter API (`init-crossfilter-client.ts:3`).
+The shared widget shell uses native Cosmograph surfaces:
+`@cosmograph/ui` `Bars`, `Histogram`, and `Timeline` when mounted
+without a 2D Cosmograph renderer, and integrated
+`@cosmograph/react` `CosmographTimeline` when a Cosmograph provider is
+present. The private Cosmograph crossfilter API remains adapterized in
+`init-crossfilter-client.ts` and is only used to mirror native 2D
+selection state when a 2D renderer exists.
+
+Widget interactions author shared visibility scope clauses first
+(`visibilityScopeClauses` → `currentPointScopeSql`). Explicit point
+selection remains separate through `selected_point_indices`; filters
+and timeline do not become persistent user selection intent.
 
 The **Mosaic crossfilter pipeline is portable** (canonical M1
 correction), but native Cosmograph widgets remain the preferred 2D
@@ -21,7 +29,7 @@ cannot carry the requirement.
 |---|---|---|
 | `init-crossfilter-client.ts` | KEEP_ADAPTERIZED — allowed only inside `features/graph/cosmograph/**`; wrap any private Cosmograph API here | current adapter |
 | `buildCategoricalFilterClause`, `buildNumericRangeFilterClause`, `buildCurrentPointScopeSql`, `buildBudgetScopeSql` | KEEP_RENDERER_AGNOSTIC | `apps/web/features/graph/lib/cosmograph-selection.ts` today; rename to `graph-selection.ts` only when actively touched |
-| `FilterBarWidget`, `FilterHistogramWidget`, `TimelineWidget`, `SelectionToolbar` shells | KEEP_NATIVE — use `@cosmograph/ui` / `@cosmograph/react` while they satisfy the requirement | current widgets |
+| `FilterBarWidget`, `FilterHistogramWidget`, `TimelineWidget`, `SelectionToolbar` shells | KEEP_NATIVE — use `@cosmograph/ui` / `@cosmograph/react` while they satisfy the requirement; Mantine slider/select fallbacks are not the canonical filter/timeline path | current widgets |
 | `useWidgetSelectors` calling `useCosmograph()` | KEEP_ADAPTERIZED — do not leak `useCosmograph()` outside the Cosmograph feature boundary | current hook |
 
 Contingency-only in-house widget stack if native widgets fail a
@@ -30,8 +38,9 @@ measured requirement:
   Cosmograph parity requirements.
 - **FilterHistogram** - direct Mosaic + canvas/SVG only if the native
   widget is unavailable.
-- **Timeline** - direct Mosaic + brush only if the native
-  `CosmographTimeline` cannot be used.
+- **Timeline** - direct Mosaic + brush only if neither integrated
+  `CosmographTimeline` nor standalone `@cosmograph/ui` `Timeline`
+  can satisfy the measured requirement.
 - **SelectionToolbar** - Mantine 8 ActionIcons; tool state remains in
   `useDashboardStore`.
 

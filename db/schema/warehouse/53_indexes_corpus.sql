@@ -40,6 +40,28 @@ CREATE INDEX IF NOT EXISTS idx_corpus_selection_signals_corpus_run
 CREATE INDEX IF NOT EXISTS idx_corpus_selection_signals_kind_run
     ON solemd.corpus_selection_signals (signal_kind, corpus_selection_run_id);
 
+CREATE INDEX IF NOT EXISTS idx_corpus_selection_artifacts_run_status
+    ON solemd.corpus_selection_artifacts (
+        corpus_selection_run_id,
+        status,
+        artifact_kind
+    );
+CREATE INDEX IF NOT EXISTS idx_corpus_selection_artifacts_pair_kind
+    ON solemd.corpus_selection_artifacts (
+        s2_source_release_id,
+        pt3_source_release_id,
+        selector_version,
+        artifact_kind,
+        created_at DESC
+    );
+CREATE INDEX IF NOT EXISTS idx_corpus_selection_chunks_claim
+    ON solemd.corpus_selection_chunks (
+        corpus_selection_run_id,
+        phase_name,
+        status,
+        bucket_id
+    );
+
 CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_status_corpus
     ON solemd.paper_selection_summary (current_status, corpus_id);
 CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_run_status_corpus

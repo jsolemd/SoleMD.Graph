@@ -6,6 +6,7 @@ export {
 } from './base-points'
 export { registerClusterViews } from './clusters'
 export { registerClusterExemplarView } from './details'
+export { registerOrbEntityEdgeViews } from './entity-edges'
 export {
   clearAllOverlayPointIds,
   clearOverlayProducerPointIds,

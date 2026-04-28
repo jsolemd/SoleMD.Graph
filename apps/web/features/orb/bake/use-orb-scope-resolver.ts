@@ -1,16 +1,21 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { GraphBundleQueries } from "@solemd/graph";
+import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
 import { useDashboardStore } from "@/features/graph/stores";
-import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
+import {
+  hasCurrentPointScopeSql,
+  normalizeCurrentPointScopeSql,
+} from "@/features/graph/lib/selection-query-state";
 import {
   clearLane,
   PARTICLE_STATE_CAPACITY,
   writeLane,
 } from "@/features/field/renderer/field-particle-state-texture";
 import { useOrbScopeMutationStore } from "../stores/scope-mutation-store";
+import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
+import { queryResidentParticleRows } from "./resident-particle-query";
 
 /**
  * Resolves the active filter / timeline scope clause to the per-
@@ -24,7 +29,10 @@ import { useOrbScopeMutationStore } from "../stores/scope-mutation-store";
  *   - `currentPointScopeSql` from the existing selection slice — the
  *     same Mosaic-rendered fragment that powers Cosmograph 2D scope.
  *     We do NOT reconstruct it from filter + timeline state.
- *   - `runReadOnlyQuery` from `GraphBundleQueries` for the lookup.
+ *   - `queryResidentParticleRows` over the active serialized DuckDB
+ *     connection for the lookup. This intentionally avoids the SQL
+ *     explorer's `runReadOnlyQuery` row cap; the visual mask needs one
+ *     row per rendered paper particle.
  *   - `paper_sample` (built by `usePaperAttributesBaker`) for the
  *     particleIdx ↔ id mapping. The resolver runs only after the
  *     paper baker has materialized that temp table.
@@ -71,7 +79,7 @@ function buildScopeResolutionSql(currentPointScopeSql: string): string {
 }
 
 export interface UseOrbScopeResolverOptions {
-  queries: GraphBundleQueries | null;
+  connection: AsyncDuckDBConnection | null;
   /** Particle count for the field geometry; bounds the mask writes. */
   particleCount: number;
   /** Disables the hook (no query) when false. */
@@ -85,9 +93,18 @@ export interface UseOrbScopeResolverOptions {
 }
 
 export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
-  const { queries, particleCount, enabled = true, paperSampleReady } = options;
+  const { connection, particleCount, enabled = true, paperSampleReady } = options;
+  const setScopeIndices = useOrbFocusVisualStore((s) => s.setScopeIndices);
   const currentPointScopeSql = useDashboardStore((s) => s.currentPointScopeSql);
   const currentScopeRevision = useDashboardStore((s) => s.currentScopeRevision);
+  const selectedPointRevision = useDashboardStore(
+    (s) => s.selectedPointRevision,
+  );
+  const selectedScopeRevision = currentPointScopeSql?.includes(
+    "selected_point_indices",
+  )
+    ? selectedPointRevision
+    : 0;
   const schedulerRef = useRef<{
     scheduleResolve: (sql: string | null) => void;
     cancel: () => void;
@@ -119,6 +136,7 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
 
     const applyFullVisibility = () => {
       clearLane("R");
+      setScopeIndices([]);
       useOrbScopeMutationStore.getState().bumpScopeRevision();
     };
 
@@ -128,11 +146,17 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
         return;
       }
 
-      if (!queries || !paperSampleReady || particleCount <= 0) return;
+      if (!connection || !paperSampleReady || particleCount <= 0) return;
 
       try {
-        const result = await queries.runReadOnlyQuery(buildScopeResolutionSql(sql));
-        if (cancelled || pendingSql !== undefined) return;
+        const rows = await queryResidentParticleRows<{
+          particleIdx: number;
+          in_scope: boolean | 0 | 1;
+        }>(connection, buildScopeResolutionSql(sql));
+        const liveSql = normalizeCurrentPointScopeSql(
+          useDashboardStore.getState().currentPointScopeSql,
+        );
+        if (cancelled || pendingSql !== undefined || liveSql !== sql) return;
 
         // Initialize all particles to in-scope only after the query
         // returns and is still current. If a newer scope arrived while
@@ -140,7 +164,8 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
         // until the latest scope lands.
         clearLane("R");
 
-        for (const row of result.rows) {
+        const scopeIndices: number[] = [];
+        for (const row of rows) {
           const idx = Number(row.particleIdx);
           if (
             !Number.isInteger(idx) ||
@@ -152,14 +177,22 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
           }
           if (row.in_scope === false || row.in_scope === 0) {
             writeLane("R", idx, 0);
+          } else {
+            scopeIndices.push(idx);
           }
         }
 
-        if (!cancelled) useOrbScopeMutationStore.getState().bumpScopeRevision();
+        if (!cancelled) {
+          setScopeIndices(scopeIndices);
+          useOrbScopeMutationStore.getState().bumpScopeRevision();
+        }
       } catch {
         // Defensive: a stale connection or torn-down bundle yields
         // an unsurprising failure here. Fall back to full visibility
         // rather than leaving the user with a frozen dim mask.
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("[OrbScopeResolver] Failed to resolve resident scope.");
+        }
         if (!cancelled && pendingSql === undefined) applyFullVisibility();
       }
     };
@@ -186,6 +219,11 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
 
       clearFrame();
       clearTimer();
+      if (pendingSql == null) {
+        pendingSql = undefined;
+        applyFullVisibility();
+        return;
+      }
       rafId = requestAnimationFrame(() => {
         rafId = null;
         timerId = setTimeout(dispatchPending, SCOPE_RESOLVE_DEBOUNCE_MS);
@@ -210,10 +248,10 @@ export function useOrbScopeResolver(options: UseOrbScopeResolverOptions): void {
         schedulerRef.current = null;
       }
     };
-  }, [enabled, queries, particleCount, paperSampleReady]);
+  }, [enabled, connection, particleCount, paperSampleReady, setScopeIndices]);
 
   useEffect(() => {
     if (!enabled) return;
     schedulerRef.current?.scheduleResolve(currentPointScopeSql);
-  }, [enabled, currentPointScopeSql, currentScopeRevision]);
+  }, [enabled, currentPointScopeSql, currentScopeRevision, selectedScopeRevision]);
 }

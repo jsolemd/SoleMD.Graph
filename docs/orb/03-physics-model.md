@@ -20,16 +20,17 @@
 - Runs only when an interaction (search, focus, scope, tug, RAG
   arrival) is active. Sleeps only when residual displacement, alpha,
   and active-effect latches all permit it.
-- M2 is WebGPU/TSL-first where available, with WebGL2
-  `GPUComputationRenderer` as the compatibility backend. There is no
-  CPU `d3-force-3d` simulation runtime at resident scale.
+- M7 is WebGPU-only. Unsupported browsers/devices do not mount the
+  field runtime. There is no CPU `d3-force-3d` simulation runtime at
+  resident scale and no WebGL2 force fallback.
 
 ## Center split (per Codex round 2 R2-6)
 
-`posTex` / WebGPU storage-buffer state is initialized from
-`bakedPosition`. Physics treats baked position as the home anchor.
-The render shader still has a center split so wake enter/exit can
-crossfade without a snap.
+WebGPU storage-buffer state is initialized from `bakedPosition`.
+Physics treats baked position as the home anchor. The render path still
+has a center split so wake enter/exit can crossfade without a snap.
+Historical names like `posTex` describe the old texture-shaped model;
+the WebGPU-only runtime stores live positions in buffers.
 
 When physics is wake-active:
 ```
@@ -183,15 +184,14 @@ sources).
 
 [10 Force vocabulary](10-force-vocabulary.md) implements the
 spatial-mode force per effect. [04 Renderer](04-renderer.md) reads
-`posTex` and applies the center split. [05 Picking](05-picking.md)
-reads the same. M2 implements WebGPU-first with WebGL2 fallback; M7
-hardens the WebGPU path and retirement gates.
+live position buffers and applies the center split. [05 Picking](05-picking.md)
+reads the same semantic state through compute picking. M7 implements the
+WebGPU-only field runtime.
 
 ## Invalidation
 
 - WebGPU becomes unavailable or unstable for the target user base ->
-  WebGL2 compatibility remains mandatory and resident budgets stay
-  conservative.
+  revisit the product decision; do not quietly add a WebGL fallback.
 - Spatial-hash repulsion is insufficient at scale → reintroduce
   Barnes-Hut octree → revise force equations + kernel
   implementation cost.

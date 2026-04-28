@@ -1,6 +1,25 @@
 import type { StateCreator } from 'zustand'
+import {
+  DEFAULT_EDGE_SOURCE_ENABLED,
+  DEFAULT_EDGE_TIER_ALPHAS,
+  DEFAULT_EDGE_TIER_BUDGETS,
+  DEFAULT_EDGE_TIER_ENABLED,
+  type EdgeSource,
+  type EdgeTier,
+} from '@/features/graph/lib/edge-types'
 import { hasSameRange } from '@/features/graph/lib/helpers'
 import type { DashboardState } from '../dashboard-store'
+
+export {
+  EDGE_SOURCES,
+  EDGE_SOURCE_BITMAP,
+  EDGE_TIERS,
+  DEFAULT_EDGE_SOURCE_ENABLED,
+  DEFAULT_EDGE_TIER_ALPHAS,
+  DEFAULT_EDGE_TIER_BUDGETS,
+  DEFAULT_EDGE_TIER_ENABLED,
+} from '@/features/graph/lib/edge-types'
+export type { EdgeSource, EdgeTier } from '@/features/graph/lib/edge-types'
 
 export interface LinksSlice {
   renderLinks: boolean
@@ -12,6 +31,10 @@ export interface LinksSlice {
   curvedLinks: boolean
   linkDefaultArrows: boolean
   scaleLinksOnZoom: boolean
+  edgeTierEnabled: Record<EdgeTier, boolean>
+  edgeSourceEnabled: Record<EdgeSource, boolean>
+  edgeTierBudgets: Record<EdgeTier, number>
+  edgeTierAlphas: Record<EdgeTier, number>
 
   setRenderLinks: (show: boolean) => void
   setLinkOpacity: (opacity: number) => void
@@ -22,6 +45,10 @@ export interface LinksSlice {
   setCurvedLinks: (curved: boolean) => void
   setLinkDefaultArrows: (arrows: boolean) => void
   setScaleLinksOnZoom: (scale: boolean) => void
+  setEdgeTierEnabled: (tier: EdgeTier, enabled: boolean) => void
+  setEdgeSourceEnabled: (source: EdgeSource, enabled: boolean) => void
+  setEdgeTierBudget: (tier: EdgeTier, budget: number) => void
+  setEdgeTierAlpha: (tier: EdgeTier, alpha: number) => void
 }
 
 export const createLinksSlice: StateCreator<DashboardState, [], [], LinksSlice> = (set) => ({
@@ -34,6 +61,10 @@ export const createLinksSlice: StateCreator<DashboardState, [], [], LinksSlice> 
   curvedLinks: false,
   linkDefaultArrows: false,
   scaleLinksOnZoom: false,
+  edgeTierEnabled: { ...DEFAULT_EDGE_TIER_ENABLED },
+  edgeSourceEnabled: { ...DEFAULT_EDGE_SOURCE_ENABLED },
+  edgeTierBudgets: { ...DEFAULT_EDGE_TIER_BUDGETS },
+  edgeTierAlphas: { ...DEFAULT_EDGE_TIER_ALPHAS },
 
   setRenderLinks: (show) => set((s) => (
     s.renderLinks === show ? s : { renderLinks: show }
@@ -66,4 +97,26 @@ export const createLinksSlice: StateCreator<DashboardState, [], [], LinksSlice> 
   setScaleLinksOnZoom: (scale) => set((s) => (
     s.scaleLinksOnZoom === scale ? s : { scaleLinksOnZoom: scale }
   )),
+  setEdgeTierEnabled: (tier, enabled) => set((s) => (
+    s.edgeTierEnabled[tier] === enabled
+      ? s
+      : { edgeTierEnabled: { ...s.edgeTierEnabled, [tier]: enabled } }
+  )),
+  setEdgeSourceEnabled: (source, enabled) => set((s) => (
+    s.edgeSourceEnabled[source] === enabled
+      ? s
+      : { edgeSourceEnabled: { ...s.edgeSourceEnabled, [source]: enabled } }
+  )),
+  setEdgeTierBudget: (tier, budget) => set((s) => {
+    const normalized = Math.max(0, Math.floor(budget))
+    return s.edgeTierBudgets[tier] === normalized
+      ? s
+      : { edgeTierBudgets: { ...s.edgeTierBudgets, [tier]: normalized } }
+  }),
+  setEdgeTierAlpha: (tier, alpha) => set((s) => {
+    const normalized = Math.max(0, Math.min(1, alpha))
+    return s.edgeTierAlphas[tier] === normalized
+      ? s
+      : { edgeTierAlphas: { ...s.edgeTierAlphas, [tier]: normalized } }
+  }),
 })

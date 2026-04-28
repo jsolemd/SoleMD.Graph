@@ -56,8 +56,11 @@ was a selected corpus derived from stable domain signals:
 
 - curated journal families
 - curated vocabulary and aliases
-- PubTator entity / relation evidence
-- citation / corroboration gates for ambiguous rule families
+- PubTator entity / relation evidence from the default PT3 `bioconcepts` and
+  `relations` families; BioCXML is deferred to evidence-tier selected-paper
+  enrichment
+- corroboration gates for ambiguous rule families; broad S2 citation ingest is
+  not a corpus-admission prerequisite
 
 This slice exists so downstream workers stop guessing whether "canonical"
 means:
@@ -381,7 +384,14 @@ Landed structure:
 - `apps/worker/app/corpus/wave_runtime.py`
 - `apps/worker/app/corpus/assets.py`
 - `apps/worker/app/corpus/policies.py`
+- `apps/worker/app/corpus/artifacts.py`
+- `apps/worker/app/corpus/rollups.py`
+- `apps/worker/app/corpus/rollup_builders.py`
 - `apps/worker/app/corpus/materialize.py`
+- `apps/worker/app/corpus/materialize_baseline.py`
+- `apps/worker/app/corpus/materialize_chunks.py`
+- `apps/worker/app/corpus/materialize_mapped.py`
+- `apps/worker/app/corpus/selection_run_store.py`
 - `apps/worker/app/corpus/selectors/corpus.py`
 - `apps/worker/app/corpus/selectors/mapped.py`
 - `apps/worker/app/corpus/selectors/provenance.py`
@@ -390,11 +400,10 @@ Landed structure:
 - `apps/worker/tests/test_corpus_cli.py`
 - `apps/worker/tests/test_corpus_runtime.py`
 
-Optional split points:
+Optional split point:
 
-- `apps/worker/app/corpus/sql/` for large query strings
-- `apps/worker/app/corpus/materialize/` if curated asset refresh and selection
-  staging become large enough to deserve a dedicated module
+- `apps/worker/app/corpus/sql/` if the run-scoped rollup queries outgrow the
+  current builder module.
 
 Note: the landed runtime now uses `selectors/corpus.py` and the phase name
 `corpus_admission`; older `candidate_*` wording in earlier drafts should be
@@ -415,7 +424,7 @@ All membership and promotion writes stay on `ingest_write`.
 
 ### Actor entrypoint
 
-Canonical actor:
+Canonical full-run actor:
 
 ```python
 corpus.start_selection(
@@ -427,14 +436,25 @@ corpus.start_selection(
 )
 ```
 
+Phase-job dispatcher:
+
+```python
+corpus.dispatch_selection_phases(...)
+corpus.run_selection_phase(...)
+```
+
 Notes:
 
 - The selector is keyed by the upstream release pair plus the selector /
   editorial asset version. It is not keyed by one source alone.
-- One Dramatiq message represents one full selection run.
-- There is no per-shard or per-rule Dramatiq fan-out.
-- If any step needs bounded concurrency internally, keep it inside the actor via
-  `asyncio.TaskGroup` or semaphore-bounded tasks.
+- `corpus.start_selection` keeps the direct one-message full-run path for local
+  execution and small release pairs.
+- `corpus.dispatch_selection_phases` chains the same validated request through
+  one `corpus.run_selection_phase` message per semantic phase. Each phase uses
+  the shared run id, plan checksum, artifact ledger, and phase completion
+  ledger.
+- There is no per-shard or per-rule Dramatiq fan-out. Bounded parallelism stays
+  inside the mapped-surface phase through hash-bucket chunk claims.
 
 Companion evidence-wave actor:
 
@@ -517,6 +537,42 @@ Implemented phases:
 - `mapped_surface_materialization`
 - `selection_summary`
 
+Current execution layer:
+
+- `assets` refreshes the logged curated vocab tables and selector temp assets.
+- `corpus_admission`, `mapped_promotion`, `corpus_baseline_materialization`,
+  and `selection_summary` reuse the same run-scoped selection rollups:
+  `paper_scope`, `entity_aggregate`, and `relation_aggregate`.
+- `mapped_surface_materialization` adds mapped-only detail rollups:
+  `mapped_entity_detail` and `mapped_relation_detail`, then drains mapped
+  surfaces by `corpus_id` hash bucket.
+- Rollups are UNLOGGED tables in `solemd_scratch`; their durable resume map is
+  logged in `solemd.corpus_selection_artifacts`.
+- Mapped materialization chunk state is logged in
+  `solemd.corpus_selection_chunks` and claimed with `FOR UPDATE SKIP LOCKED`.
+- `paper_selection_summary` remains the only durable final scoring/control
+  surface; any scoring scratch table is only an implementation detail if added
+  later.
+- `CORPUS_MATERIALIZATION_BUCKET_COUNT` is recorded in the plan checksum so a
+  run cannot silently resume with a different bucket contract.
+- `enqueue-corpus-selection` runs the six phases inside one release-pair actor;
+  `dispatch-corpus-selection` chains phase jobs via
+  `corpus.dispatch_selection_phases -> corpus.run_selection_phase`, preserving
+  the same run id and phase ledger while reducing the failure blast radius of
+  each Dramatiq message.
+- `CORPUS_MATERIALIZATION_MAX_PARALLEL_CHUNKS` bounds in-process asyncpg
+  parallelism for mapped bucket drains inside the mapped-surface phase.
+- `CORPUS_MATERIALIZATION_CHUNK_MAX_ATTEMPTS` caps poison-bucket retries. A
+  failed bucket with attempts at or above the cap is not auto-reset to pending;
+  the phase fails immediately until the underlying data/query issue is fixed.
+- `CORPUS_ARTIFACT_RETENTION_RUNS` keeps the latest N run artifacts for a
+  release pair/selector and drops older scratch tables after publish.
+- Artifact ledger `detail` records `build_and_index_seconds`, `grant_seconds`,
+  and `analyze_seconds`; `byte_size`, `row_count`, and timestamps remain the
+  durable observability surface for scratch rollups. Per-index timing and
+  statement-level `pg_stat_statements` tagging are deferred telemetry work, not
+  required for the first full corpus build.
+
 Recommended run-identity key:
 
 - `(s2_release_tag, pt3_release_tag, selector_version)`
@@ -571,6 +627,12 @@ Resume rule:
   `SelectorPlanDrift` or `AssetDrift`
 - `force_new_run=True` may create a new run only when the prior run is terminal
   and unpublished, never while another run is active
+- a completed phase revalidates any required artifact ledger rows before skip;
+  missing UNLOGGED scratch tables are rebuilt under the same run id rather than
+  treated as valid progress
+- mapped-materialization chunks are idempotent by bucket. Prior `running` or
+  retryable `failed` bucket rows are reset to `pending` when the phase resumes.
+  Terminal failed chunks at the attempt cap stay failed and block the phase.
 
 ### 3. Materialize selection inputs
 

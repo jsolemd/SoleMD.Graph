@@ -1,9 +1,9 @@
 # Reference — Codex review round 2
 
-> Historical reference. The 2026-04-25 amendment keeps the R2 facts
-> but changes the decisions they drive: native Cosmograph stays while
-> the project is non-commercial, and M2 becomes WebGPU/TSL-first with
-> WebGL2 compatibility instead of WebGL2-first. See
+> Historical reference. The 2026-04-25 amendment kept the R2 facts
+> but changed the decisions they drove: native Cosmograph stays while
+> the project is non-commercial. The 2026-04-27 amendment changes the
+> field/orb runtime to WebGPU-only with unsupported-browser state. See
 > [`../decisions/2026-04-24-cosmograph-license.md`](../decisions/2026-04-24-cosmograph-license.md)
 > and [`../decisions/2026-04-24-webgpu-target.md`](../decisions/2026-04-24-webgpu-target.md).
 
@@ -67,7 +67,8 @@ first, WebGL2-`GPUComputationRenderer` is the *real* primary.
 TSL targeting WGSL/GLSL doesn't make one WebGPU compute kernel
 automatically equivalent to a WebGL2 ping-pong fragment pipeline.
 
-**Resolution:** One contract, two implementations. Per
+**Resolution:** Superseded by one shipped field runtime: WebGPU-only.
+Per
 [`17-rendering-stack-evolution.md`](../17-rendering-stack-evolution.md),
 [`decisions/2026-04-24-webgpu-target.md`](../decisions/2026-04-24-webgpu-target.md).
 
@@ -80,7 +81,8 @@ Orb uses raw `ShaderMaterial` strings with custom noise,
 (`field-picking.ts:34`). M7 is a real rewrite.
 
 **Resolution:** [`17-rendering-stack-evolution.md`](../17-rendering-stack-evolution.md)
-§ TSL port reality check + [`milestones/M7-webgpu-port.md`](../milestones/M7-webgpu-port.md).
+particle rendering and storage-buffer rules +
+[`milestones/M7-webgpu-port.md`](../milestones/M7-webgpu-port.md).
 
 #### R2-6 — Hybrid noise + GPGPU works only with explicit center split
 

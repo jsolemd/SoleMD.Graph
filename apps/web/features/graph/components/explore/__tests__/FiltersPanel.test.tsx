@@ -7,6 +7,7 @@ import type {
   GraphInfoHistogramResult,
 } from "@solemd/graph";
 import { useDashboardStore } from "@/features/graph/stores";
+import { ORB_RESIDENT_POINT_SCOPE_SQL } from "@/features/graph/cosmograph/widgets/widget-baseline";
 
 const mockFilterBarWidget = jest.fn(() => null);
 const mockFilterHistogramWidget = jest.fn(() => null);
@@ -67,6 +68,7 @@ describe("FiltersPanel", () => {
   });
 
   it("batches visible categorical and numeric baseline fetches before hydrating widgets", async () => {
+    useDashboardStore.getState().setOrbResidentPointCount(16_384);
     const queries = {
       getInfoBarsBatch: jest.fn().mockResolvedValue({
         journal: [{ value: "Nature", count: 7 }],
@@ -88,6 +90,18 @@ describe("FiltersPanel", () => {
       expect(queries.getInfoBarsBatch).toHaveBeenCalledTimes(1);
       expect(queries.getInfoHistogramsBatch).toHaveBeenCalledTimes(1);
     });
+    expect(queries.getInfoBarsBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "current",
+        currentPointScopeSql: ORB_RESIDENT_POINT_SCOPE_SQL,
+      }),
+    );
+    expect(queries.getInfoHistogramsBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "current",
+        currentPointScopeSql: ORB_RESIDENT_POINT_SCOPE_SQL,
+      }),
+    );
 
     await waitFor(() => {
       const numericProps = mockFilterHistogramWidget.mock.lastCall?.[0] as
@@ -104,5 +118,35 @@ describe("FiltersPanel", () => {
       ]);
       expect(categoricalProps?.datasetLoading).toBe(false);
     });
+  });
+
+  it("does not hydrate widget datasets before the 3D resident sample is ready", async () => {
+    const queries = {
+      getInfoBarsBatch: jest.fn().mockResolvedValue({}),
+      getInfoHistogramsBatch: jest.fn().mockResolvedValue({}),
+    } as unknown as GraphBundleQueries;
+
+    render(
+      <FiltersPanel
+        queries={queries}
+        bundleChecksum="bundle-checksum"
+        overlayRevision={3}
+      />,
+    );
+
+    await waitFor(() => {
+      const numericProps = mockFilterHistogramWidget.mock.lastCall?.[0] as
+        | { datasetLoading?: boolean }
+        | undefined;
+      const categoricalProps = mockFilterBarWidget.mock.lastCall?.[0] as
+        | { datasetLoading?: boolean }
+        | undefined;
+
+      expect(numericProps?.datasetLoading).toBe(true);
+      expect(categoricalProps?.datasetLoading).toBe(true);
+    });
+
+    expect(queries.getInfoBarsBatch).not.toHaveBeenCalled();
+    expect(queries.getInfoHistogramsBatch).not.toHaveBeenCalled();
   });
 });

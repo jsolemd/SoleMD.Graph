@@ -1,7 +1,7 @@
 # S2 Datasets API — Incremental Diff-Based Ingest
 
-Status: Proposed, not started
-Date: 2026-04-24
+Status: Partially landed: API client, diff manifest ledger, and deletion guardrails are implemented; raw diff application remains gated.
+Date: 2026-04-26
 Owner: ingest lane (`apps/worker/app/ingest/*`)
 
 ## Motivation
@@ -25,15 +25,20 @@ truncate-and-reload cycle.
 
 ## Current state (facts, not aspiration)
 
-- Downloader: `data/download_s2_dataset.py` calls
-  `GET /datasets/v1/release/{release}/dataset/{name}` only; no diffs awareness.
+- Downloader/API client: `apps/worker/app/ingest/s2_datasets_api.py` calls
+  `GET /datasets/v1/diffs/{start}/to/{end}/{dataset}` with timeout,
+  retry, `Retry-After`, `User-Agent`, and optional `x-api-key` support.
 - Warehouse loader: `apps/worker/app/ingest/runtime.py` ingests one
   `(source_code, release_tag)` pair per run; `source_releases` table keyed by
   `release_tag: str`. `families_loaded` (models.py:68) checkpoints per-family
   progress.
 - Release selection: `config.py::s2_release_id` is hardcoded or env-pinned;
   no `/release/latest` awareness.
-- Warehouse write path: truncate-and-load per family — no upsert-by-PK today.
+- Warehouse write path: full ingest seeds `solemd.s2_dataset_cursors`.
+  Diff manifests and per-file URLs land in
+  `solemd.s2_dataset_diff_manifests` / `solemd.s2_dataset_diff_files`.
+  Raw upsert/delete application is still gated because consumers must honor
+  the cursor rather than filtering only on rewritten `source_release_id`.
 - On-disk layout: `/mnt/solemd-graph/data/semantic-scholar/releases/<tag>/
   <dataset>/<dataset>-NNNN.jsonl.gz` + per-dataset manifest with checksums.
 
@@ -62,13 +67,9 @@ in order.
 
 ### Warehouse loader
 
-Extend `apps/worker/app/ingest/models.py::SourceRelease`:
-
-```python
-release_tag: str           # existing
-parent_release_tag: str | None  # NEW: the release this diff was applied from
-diff_applied: bool = False  # NEW: true if ingested via diff, false if full
-```
+Use `solemd.s2_dataset_cursors` rather than adding release-row flags. The
+cursor is dataset-scoped because S2 families can advance independently and
+because `s2_papers_raw` is a current-state table keyed by paper id.
 
 Extend `apps/worker/app/ingest/runtime.py`:
 
@@ -140,10 +141,9 @@ Phased, smallest-blast-radius first.
 
 ### Phase 5 — retention
 
-- `apps/worker/app/ingest/source_retention.py` needs a new rule: a full
-  release can be archived/deleted once it's been promoted past and the
-  next N diffs are durable. Today it archives once `families_loaded`
-  proves durability; the same rule applies per diff-manifest.
+- `apps/worker/app/ingest/source_retention.py` now archives once
+  `families_loaded` proves durability, but refuses hot deletion until
+  `s2_dataset_cursors.hot_source_delete_safe_at` is non-null for the family.
 
 ## Open questions
 

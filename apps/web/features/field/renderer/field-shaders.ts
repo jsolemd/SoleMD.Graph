@@ -46,7 +46,8 @@ uniform float uSelection;
 // = filter / timeline scope membership in [0,1] (normalized texels).
 // uParticleStateTexSize is the side length in pixels (128 for the
 // 16k-particle baseline). R lane = scope; G lane = focus/hover
-// excitation. Lane defaults are R=1 and G/B/A=0, making the
+// excitation; B lane = evidence/search pulse. Lane defaults are R=1
+// and G/B/A=0, making the
 // resolver-idle path a bit-exact no-op.
 uniform sampler2D uParticleStateTex;
 uniform float uParticleStateTexSize;
@@ -205,6 +206,15 @@ void main() {
     vAlpha *= mix(1.0, 1.9, focusG);
     vColor = mix(vColor, vColor * 1.25, focusG);
     gl_PointSize *= mix(1.0, 1.45, focusG);
+
+    // Slice F: search / evidence pulse. B carries normalized intensity
+    // from the latest RAG result set. This is a render-only pulse: it
+    // makes answer evidence visible on the orb without mutating the
+    // selection table or the current filter/timeline scope.
+    float evidenceB = particleState.b;
+    vAlpha *= mix(1.0, 2.2, evidenceB);
+    vColor = mix(vColor, max(vColor, vec3(1.0, 0.72, 0.56)), evidenceB * 0.72);
+    gl_PointSize *= mix(1.0, 1.65, evidenceB);
   }
 }
 `;

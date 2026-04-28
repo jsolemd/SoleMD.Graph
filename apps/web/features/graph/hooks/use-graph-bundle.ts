@@ -147,6 +147,7 @@ export function useGraphBundle(bundle: GraphBundle | null): GraphBundleState {
           getInfoHistogram: session.getInfoHistogram,
           getInfoHistogramsBatch: session.getInfoHistogramsBatch,
           getNumericStatsBatch: session.getNumericStatsBatch,
+          getNumericColumnValues: session.getNumericColumnValues,
           getFacetSummary: session.getFacetSummary,
           getFacetSummaries: session.getFacetSummaries,
           searchPoints: session.searchPoints,

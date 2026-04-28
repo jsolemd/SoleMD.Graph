@@ -54,6 +54,8 @@ export function FilterPanelShell({
   const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
   const setTableView = useDashboardStore((s) => s.setTableView);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
+  const clearVisibilityScopeClause = useDashboardStore((s) => s.clearVisibilityScopeClause);
+  const clearVisibilityScopeClauses = useDashboardStore((s) => s.clearVisibilityScopeClauses);
   const unlockSelection = useDashboardStore((s) => s.unlockSelection);
   const [showAddSelect, setShowAddSelect] = useState(false);
   const [showAllFilters, setShowAllFilters] = useState(false);
@@ -90,10 +92,11 @@ export function FilterPanelShell({
   const handleResetAll = () => {
     cosmograph?.pointsSelection?.reset();
     cosmograph?.linksSelection?.reset();
+    clearVisibilityScopeClauses();
     selectNode(null);
     clearVisibilityFocus();
     setCurrentPointScopeSql(null);
-    setSelectedPointCount(0);
+    setSelectedPointCount(0, { forceRevision: true });
     setActiveSelectionSourceId(null);
     setTimelineSelection(undefined);
     setTableView("selection");
@@ -137,6 +140,7 @@ export function FilterPanelShell({
                         cosmograph?.pointsSelection,
                         createSelectionSource(`filter:${filter.column}`),
                       );
+                      clearVisibilityScopeClause(`filter:${filter.column}`);
                       removeFilter(filter.column);
                     }}
                     aria-label={`Remove ${meta.label} filter`}

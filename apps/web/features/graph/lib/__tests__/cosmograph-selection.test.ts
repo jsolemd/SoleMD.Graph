@@ -26,7 +26,9 @@ import {
   createSelectionSource,
   combineScopeSqlClauses,
   buildCurrentPointScopeSql,
+  buildCategoricalFilterScopeSql,
   buildNumericRangeFilterClause,
+  buildNumericRangeFilterScopeSql,
   BUDGET_FOCUS_SOURCE_ID,
   SELECTED_POINT_INDICES_SCOPE_SQL,
 } from '../cosmograph-selection'
@@ -225,6 +227,25 @@ describe('buildNumericRangeFilterClause', () => {
     expect(clause.value).toEqual([2000, 2024])
     expect(clause.predicate).toBeDefined()
     expect(clause.meta).toEqual({ type: 'point' })
+  })
+})
+
+describe('filter scope SQL builders', () => {
+  it('renders categorical predicates through the shared DuckDB generator', () => {
+    expect(buildCategoricalFilterScopeSql('journal', 'Nature')).toBe(
+      JSON.stringify({
+        type: 'BINARY',
+        op: '=',
+        left: 'journal',
+        right: { type: 'LITERAL', value: 'Nature' },
+      }),
+    )
+  })
+
+  it('renders numeric range predicates through the shared DuckDB generator', () => {
+    expect(buildNumericRangeFilterScopeSql('year', [2000, 2024])).toBe(
+      JSON.stringify({ type: 'BETWEEN', col: 'year', range: [2000, 2024] }),
+    )
   })
 })
 

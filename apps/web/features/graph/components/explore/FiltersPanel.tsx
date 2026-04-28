@@ -13,7 +13,7 @@ import {
   setCachedHistogramDataset,
 } from "@/features/graph/cosmograph/widgets/dataset-cache";
 import { NATIVE_BARS_DATA_LIMIT } from "@/features/graph/cosmograph/widgets/native-bars-adapter";
-import { resolveWidgetBaselineScope } from "@/features/graph/cosmograph/widgets/widget-baseline";
+import { useWidgetBaselineScope } from "@/features/graph/cosmograph/widgets/widget-baseline";
 import { useDashboardStore } from "@/features/graph/stores";
 import type {
   GraphBundleQueries,
@@ -75,9 +75,6 @@ function FiltersPanelComponent({
   overlayRevision: number;
 }) {
   const activeLayer = useDashboardStore((state) => state.activeLayer);
-  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
-  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
-  const selectedPointRevision = useDashboardStore((state) => state.selectedPointRevision);
   const [visibleFilters, setVisibleFilters] = useState<
     Array<{ column: string; type: string }>
   >([]);
@@ -98,21 +95,24 @@ function FiltersPanelComponent({
     () => visibleFilters.filter((filter) => filter.type === "numeric"),
     [visibleFilters],
   );
-  const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
-    () =>
-      resolveWidgetBaselineScope({
-        selectionLocked,
-        selectedPointCount,
-        selectedPointRevision,
-      }),
-    [selectedPointCount, selectedPointRevision, selectionLocked],
-  );
+  const {
+    scope: baselineScope,
+    cacheKey: baselineCacheKey,
+    currentPointScopeSql: baselineCurrentPointScopeSql,
+    ready: baselineReady,
+  } = useWidgetBaselineScope();
 
   useEffect(() => {
     setPrimedDatasets({});
     setPrimedHistograms({});
     setLoadingColumns({});
-  }, [activeLayer, baselineScope, bundleChecksum, overlayRevision]);
+  }, [
+    activeLayer,
+    baselineCacheKey,
+    baselineScope,
+    bundleChecksum,
+    overlayRevision,
+  ]);
 
   useEffect(() => {
     if (
@@ -120,6 +120,17 @@ function FiltersPanelComponent({
       visibleNumericFilters.length === 0
     ) {
       setLoadingColumns({});
+      return;
+    }
+
+    if (!baselineReady) {
+      setLoadingColumns(
+        Object.fromEntries(
+          [...visibleCategoricalFilters, ...visibleNumericFilters].map(
+            (filter) => [filter.column, true],
+          ),
+        ),
+      );
       return;
     }
 
@@ -190,7 +201,7 @@ function FiltersPanelComponent({
             scope: baselineScope,
             columns: missingColumns,
             maxItems: NATIVE_BARS_DATA_LIMIT,
-            currentPointScopeSql: null,
+            currentPointScopeSql: baselineCurrentPointScopeSql,
           })
         : Promise.resolve<Record<string, Array<{ value: string; count: number }>>>({}),
       missingHistogramColumns.length > 0
@@ -199,7 +210,7 @@ function FiltersPanelComponent({
             scope: baselineScope,
             columns: missingHistogramColumns,
             bins: 20,
-            currentPointScopeSql: null,
+            currentPointScopeSql: baselineCurrentPointScopeSql,
           })
         : Promise.resolve<Record<string, GraphInfoHistogramResult>>({}),
     ])
@@ -266,6 +277,8 @@ function FiltersPanelComponent({
   }, [
     activeLayer,
     baselineCacheKey,
+    baselineCurrentPointScopeSql,
+    baselineReady,
     baselineScope,
     bundleChecksum,
     overlayRevision,

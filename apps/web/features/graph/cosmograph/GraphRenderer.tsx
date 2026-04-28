@@ -77,6 +77,7 @@ export default function CosmographRenderer({
   const setCurrentPointScopeSql = useDashboardStore((s) => s.setCurrentPointScopeSql);
   const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
   const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
+  const clearVisibilityScopeClauses = useDashboardStore((s) => s.clearVisibilityScopeClauses);
   const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
   const applyVisibilityBudget = useDashboardStore((s) => s.applyVisibilityBudget);
   const isLocked = selectionLocked;
@@ -109,6 +110,13 @@ export default function CosmographRenderer({
     }
   }, [focusedPointIndex, markCameraSettled, syncZoomState]);
 
+  const clearInspection = useCallback(() => {
+    selectionRequestId.current += 1;
+    setFocusedPointIndex(null);
+    cosmographRef.current?.setFocusedPoint(undefined);
+    selectNode(null);
+  }, [selectNode, setFocusedPointIndex]);
+
   // Window-level keyboard shortcuts for the 2D map. Mounted only while
   // GraphRenderer is alive (which is precisely when the 2D Cosmograph
   // is the active renderer), so no fieldMode gate is needed at the
@@ -117,10 +125,11 @@ export default function CosmographRenderer({
   useEffect(() => {
     const handler = createGraphKeyboardHandler({
       getCosmograph: () => cosmographRef.current,
+      clearInspection,
     });
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [clearInspection]);
 
   type ZoomCallback = Parameters<typeof panGuardOnZoom>;
 
@@ -233,13 +242,15 @@ export default function CosmographRenderer({
       fitViewport(activeLayer);
     }
     clearVisibilityFocus();
+    clearVisibilityScopeClauses();
     setFocusedPointIndex(null);
     setCurrentPointScopeSql(null);
-    setSelectedPointCount(0);
+    setSelectedPointCount(0, { forceRevision: true });
     setActiveSelectionSourceId(null);
   }, [
     activeLayer,
     clearVisibilityFocus,
+    clearVisibilityScopeClauses,
     fitViewport,
     restoreViewport,
     setFocusedPointIndex,

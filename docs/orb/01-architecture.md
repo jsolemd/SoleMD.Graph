@@ -19,8 +19,8 @@
    │          │      mounted canvases              │          │
    │ Renderer │                                    │ Renderer │
    │   over   │                                    │   over   │
-   │ native   │                                    │   R3F    │
-   │Cosmograph│                                    │   +TSL   │
+   │ native   │                                    │ WebGPU   │
+   │Cosmograph│                                    │ runtime  │
    └──────────┘                                    └──────────┘
         │                                                │
         └───────── shared force vocabulary ──────────────┘
@@ -61,13 +61,14 @@ restated here as the *first* architectural rule:
   (paper baker, click handler, lands-mode field baker). Cheap to
   rewrite via `addUpdateRange` + `bufferSubData`. Visual output
   only.
-- **Physics lanes** (new): `posTex`, `velTex`, `massTex`,
-  `selectionMask`, `filterMask`, `excitationTex` (intensity +
-  decayStart), `pinMask`, plus foundational effect lanes:
-  `relationClassTex`, `radialBandTex`, `effectStageTex`,
-  `orbitPhaseTex`, and `residentReason`. Written by simulation pass /
-  interaction stores. Sidecar GPGPU textures, storage buffers, or
-  DataTextures. **Never** conflated with render attributes.
+- **Physics lanes** (new): position, velocity, mass, selection mask,
+  filter mask, excitation state (intensity + decayStart), pin mask,
+  plus foundational effect lanes: relation class, radial band, effect
+  stage, orbit phase, and resident reason. Written by simulation pass /
+  interaction stores. M7 stores live state in WebGPU storage buffers.
+  Historical texture names such as `posTex` / `selectionMask` describe
+  semantics, not the target storage primitive. **Never** conflated with
+  render attributes.
 
 Adding a feature = naming its lane + wiring its writer + wiring
 its reader. No glue layers. No lane overloads.
@@ -111,22 +112,20 @@ See [milestones/M1-canonical-views-and-mask-writer.md](milestones/M1-canonical-v
 for the `paperId↔particleIdx` mask writer that makes resident-LOD
 filter parity with `/map` work.
 
-## Force kernel contract (semantic schedule, native backends)
+## Force kernel contract (semantic schedule, WebGPU runtime)
 
 ```
-interface ForceKernel {
-  init(opts: { capacity: number; renderer: WebGLRenderer | WebGPURenderer }): void
-  step(input: ForceKernelInput): ForceKernelOutput
+interface SemanticPhysicsKernel {
+  resize(capacity: number): void
+  uploadGraph(input: GraphResidentSet): void
+  uploadInteraction(input: InteractionState): void
+  step(params: PhysicsStepParams): void
+  getBuffers(): ParticleBuffers
+  readSummary(): Promise<PhysicsSummary>
   dispose(): void
 }
 
-type ForceKernelInput = {
-  pos: GpuParticleBuffer
-  vel: GpuParticleBuffer
-  mass: GpuScalarBuffer
-  edges: EdgeBuffers    // citation + entity, with weights
-  masks: MaskBuffers    // filter, selection, pin, residentReason
-  effectLanes: EffectLaneBuffers
+type PhysicsStepParams = {
   schedule: ForceEffectSchedule
   alpha: number
   dt: number
@@ -143,35 +142,45 @@ type ForceEffectSchedule = Array<{
   payloadRef: string
 }>
 
-type ForceKernelOutput = {
-  posTex: Texture       // new positions
-  velTex: Texture       // new velocities
-  residualDisplacement: number  // for sleep heuristic
+type ParticleBuffers = {
+  position: GPUBuffer
+  velocity: GPUBuffer
+  attributes: GPUBuffer
+  flags: GPUBuffer
+  ids: GPUBuffer
+  edges: GPUBuffer
+}
+
+type InteractionReadbackBuffers = {
+  pickResult: GPUBuffer
+  pickStaging: GPUBuffer
+  selectionSummary: GPUBuffer
+  selectionSummaryStaging: GPUBuffer
 }
 ```
 
-- M2 ships a `ForceKernelRouter` with WebGPU/TSL as the preferred
-  backend where available and WebGL2 `GPUComputationRenderer`
-  compatibility where it is not.
-- The router owns capability selection only. It must not allocate
-  payload objects or rebuild pipelines inside the frame loop.
-- The WebGPU backend uses three.js WebGPU/TSL compute, storage
-  buffers, storage-buffer attributes, and a small number of dispatches
-  per tick. The WebGL2 backend uses ping-pong position/velocity
-  textures. Both read the same effect schedule, but kernels are
-  backend-native rather than source-shared.
-- Runtime swaps based on `navigator.gpu`, `WebGPURenderer`
-  initialization, measured capability, and a feature flag. WebGL2
-  remains a compatibility path until telemetry supports retirement.
+- M7 ships a WebGPU-only `SemanticPhysicsKernel`. It does not route to
+  WebGL2.
+- The WebGPU gate owns capability selection before the field runtime
+  mounts. Unsupported devices get an unsupported state.
+- `FieldGpuRuntime` owns one WebGPU canvas context, one `GPUDevice`, one
+  command submission path, and one presentation path for the field
+  canvas.
+- The kernel owns storage-buffer state and compute dispatch. It must not
+  allocate payload objects or rebuild pipelines inside the frame loop.
+- Readback/staging buffers are separate from hot particle buffers so
+  mapped buffers are never bound into render or compute passes.
+- TSL compute is acceptable where it stays clear. Hand-authored WGSL is
+  acceptable for force integration, compaction, picking, and debugging
+  when it is more direct.
 
 Layer 2 remains exclusive at the product level, but staged effects
 such as RAG narrative physics are represented as multiple scheduled
 writes/ramp windows under one generation.
 
-See [03-physics-model.md](03-physics-model.md) for the equations,
-[milestones/M2-orb-renderer-hybrid-physics.md](milestones/M2-orb-renderer-hybrid-physics.md)
-for the M2 implementation, [milestones/M7-webgpu-port.md](milestones/M7-webgpu-port.md)
-for WebGPU hardening and fallback-retirement gates.
+See [03-physics-model.md](03-physics-model.md) for the equations and
+[milestones/M7-webgpu-port.md](milestones/M7-webgpu-port.md) for the
+WebGPU-only runtime migration.
 
 ## Disposal
 

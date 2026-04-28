@@ -28,7 +28,7 @@ class SourceFamilySpec:
 
 S2_FAMILIES: tuple[SourceFamilySpec, ...] = (
     SourceFamilySpec("publication_venues", ("publication-venues",)),
-    SourceFamilySpec("authors", ("authors",), required=False, enabled_by_default=False),
+    SourceFamilySpec("authors", ("authors",), required=False),
     SourceFamilySpec("papers", ("papers",)),
     SourceFamilySpec("abstracts", ("abstracts",)),
     SourceFamilySpec("tldrs", ("tldrs",), required=False, enabled_by_default=False, tier="mapped"),
@@ -39,12 +39,12 @@ S2_FAMILIES: tuple[SourceFamilySpec, ...] = (
         enabled_by_default=False,
         tier="mapped",
     ),
-    SourceFamilySpec("citations", ("citations",)),
+    SourceFamilySpec("citations", ("citations",), enabled_by_default=False, tier="mapped"),
     SourceFamilySpec("s2orc_v2", ("s2orc_v2",), required=False, enabled_by_default=False, tier="evidence"),
 )
 
 PT3_FAMILIES: tuple[SourceFamilySpec, ...] = (
-    SourceFamilySpec("biocxml", ("biocxml",)),
+    SourceFamilySpec("biocxml", ("biocxml",), enabled_by_default=False, tier="evidence"),
     SourceFamilySpec("bioconcepts", ("bioconcepts2pubtator3.gz",)),
     SourceFamilySpec("relations", ("relation2pubtator3.gz",)),
 )

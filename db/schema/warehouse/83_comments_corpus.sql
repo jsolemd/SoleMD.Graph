@@ -9,6 +9,10 @@ COMMENT ON TABLE solemd.corpus_selection_runs IS
     'One row per release-pair corpus-selection run that refreshes corpus, mapped, and retired paper membership.';
 COMMENT ON TABLE solemd.corpus_selection_signals IS
     'Durable per-paper selection signal ledger keyed to one corpus-selection run.';
+COMMENT ON TABLE solemd.corpus_selection_artifacts IS
+    'Durable logged ledger for rebuildable corpus-selection scratch artifacts. Artifact tables are unlogged and run-scoped; this table survives crashes and drives resume/GC.';
+COMMENT ON TABLE solemd.corpus_selection_chunks IS
+    'Logged chunk ledger for parallel-safe mapped surface materialization by corpus_id hash bucket.';
 COMMENT ON TABLE solemd.paper_selection_summary IS
     'Compact per-paper selection summary refreshed from durable selection signals and release-scoped counts used for mapped rollout and evidence-wave ranking.';
 COMMENT ON TABLE solemd.corpus_wave_runs IS
@@ -29,6 +33,18 @@ COMMENT ON COLUMN solemd.corpus_selection_signals.signal_kind IS
     'Stable signal-family name such as journal_match, pattern_match, vocab_entity_match, or mapped_journal_match.';
 COMMENT ON COLUMN solemd.corpus_selection_signals.detail IS
     'Structured signal payload capturing matched alias, venue, concept, or other rule-family context.';
+
+COMMENT ON COLUMN solemd.corpus_selection_artifacts.artifact_kind IS
+    'Stable scratch artifact key such as paper_scope, entity_aggregate, relation_aggregate, mapped_entity_detail, or mapped_relation_detail.';
+COMMENT ON COLUMN solemd.corpus_selection_artifacts.storage_table IS
+    'Physical unlogged scratch table name in storage_schema. The table is rebuildable from raw/stage releases plus the plan checksum.';
+COMMENT ON COLUMN solemd.corpus_selection_artifacts.status IS
+    'Artifact lifecycle: building, complete, failed, stale, or dropped.';
+
+COMMENT ON COLUMN solemd.corpus_selection_chunks.bucket_id IS
+    'Hash bucket derived from corpus_id for bounded mapped-materialization chunk claims.';
+COMMENT ON COLUMN solemd.corpus_selection_chunks.row_counts IS
+    'Per-surface row counts written by the mapped materialization chunk.';
 
 COMMENT ON COLUMN solemd.paper_selection_summary.current_status IS
     'Current corpus membership state mirrored from solemd.corpus.domain_status for the owning selection run.';

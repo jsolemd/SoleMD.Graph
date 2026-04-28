@@ -15,6 +15,8 @@ verification themes:
 - **Performance**: 60 fps sustained on desktop at 16K resident
   particles for the relevant milestone's interactions. Mobile
   baseline 30 fps at 8K. Profile traces saved alongside.
+- **WebGPU gate**: unsupported browsers/devices never mount the
+  field/orb runtime and show a controlled unsupported state.
 - **Accessibility**: `prefers-reduced-motion`, Pause-motion,
   low-power all correctly suppress motion (per
   [15-accessibility-and-low-power.md](15-accessibility-and-low-power.md)).
@@ -64,7 +66,7 @@ Before making `/graph` default to the 3D workspace:
 | F3 | M5a | configurable temporary | 3D workspace visible to all users; telemetry collecting |
 | F4 | M5b | **3D** | product-target flip; 2D still toggleable as analytic lens |
 | F5 | M8 checkpoint | 3D | native 2D lens boundary hardened; no vendor work without measured gap |
-| F6 | M7 done | 3D | WebGPU hardened; WebGL2 fallback retained or retired by telemetry |
+| F6 | M7 done | 3D | WebGPU-only field runtime shipped; unsupported-device state verified |
 | F6+ | post | 3D | revisit `/map` permanent retention based on usage |
 
 ## Telemetry signals
@@ -79,7 +81,8 @@ Collected from M5a onward:
 - Force-effect dispatch rate (focus, clusterFocus, etc.).
 - Reduced-motion / low-power profile usage rate.
 - Per-device-class performance (fps p50, p95).
-- Mobile crash / WebGL-context-loss rate.
+- Mobile crash / WebGPU device-loss rate.
+- Unsupported WebGPU gate rate and reason codes.
 
 ## Regression sweep checklist (M5a, M8)
 
@@ -95,6 +98,8 @@ After every milestone that touches the renderer or state pipeline:
 - [ ] Lasso/rect/brush match between modes (where applicable).
 - [ ] Reduced-motion suppresses motion as documented.
 - [ ] Low-power profile activates correctly.
+- [ ] Unsupported WebGPU state appears before field runtime mount on
+      devices that fail the gate.
 
 ## Owns / doesn't own
 

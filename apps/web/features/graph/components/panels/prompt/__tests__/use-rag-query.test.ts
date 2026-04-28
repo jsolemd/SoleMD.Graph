@@ -709,7 +709,9 @@ describe("useRagQuery", () => {
     });
 
     expect(queries.setSelectedPointIndices).toHaveBeenCalledWith([7, 9]);
-    expect(setSelectedPointCount).toHaveBeenCalledWith(2);
+    expect(setSelectedPointCount).toHaveBeenCalledWith(2, {
+      forceRevision: true,
+    });
     expect(setActiveSelectionSourceId).toHaveBeenCalledWith(
       RAG_ANSWER_SELECTION_SOURCE_ID,
     );

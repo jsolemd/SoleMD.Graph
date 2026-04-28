@@ -108,6 +108,7 @@ function normalizeContractFileSet(value: unknown): GraphBundleContractFileSet | 
     'paper_documents',
     'cluster_exemplars',
     'universe_links',
+    'orb_entity_edges',
     'manifest',
   ] as const) {
     const rawValue = value[key]

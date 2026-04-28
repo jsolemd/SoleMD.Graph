@@ -145,6 +145,12 @@ export interface GraphBundleSession {
     columns: string[]
     currentPointScopeSql: string | null
   }) => Promise<Record<string, NumericStatsRow>>
+  getNumericColumnValues: (args: {
+    layer: GraphLayer
+    scope: GraphInfoScope
+    column: string
+    currentPointScopeSql: string | null
+  }) => Promise<number[]>
   searchPoints: (args: {
     layer: GraphLayer
     column: string

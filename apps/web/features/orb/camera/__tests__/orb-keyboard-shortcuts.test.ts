@@ -111,6 +111,22 @@ describe("createOrbKeyboardHandler", () => {
     expect(shell.pauseMotion).toBe(false);
   });
 
+  it("Escape is not handled by the camera keyboard lane", () => {
+    const button = document.createElement("button");
+    document.body.appendChild(button);
+    button.focus();
+
+    const handler = createOrbKeyboardHandler({
+      getControls: () => null,
+      getBlob: () => null,
+      getShellState: () => makeShell(false),
+    });
+
+    const r = fireKey(handler, { key: "Escape" });
+
+    expect(r.preventDefault).not.toHaveBeenCalled();
+  });
+
   it("ArrowLeft/Right pans focal offset along x by distance × PAN_KEY_RATE", () => {
     const shell = makeShell();
     const { controls, calls } = makeControls(200);
@@ -186,7 +202,7 @@ describe("createOrbKeyboardHandler", () => {
     fireKey(handler, { key: "q" });
     fireKey(handler, { key: "e" });
 
-    expect(impulses).toEqual([ROTATE_KEY_RAD, -ROTATE_KEY_RAD]);
+    expect(impulses).toEqual([-ROTATE_KEY_RAD, ROTATE_KEY_RAD]);
   });
 
   it("< / > queue smoothed twist impulses (NOT instant applyTwist or camera rotate)", () => {
@@ -211,10 +227,10 @@ describe("createOrbKeyboardHandler", () => {
     fireKey(handler, { key: ">" });
 
     expect(impulses).toEqual([
-      ROTATE_KEY_RAD,
-      ROTATE_KEY_RAD,
       -ROTATE_KEY_RAD,
       -ROTATE_KEY_RAD,
+      ROTATE_KEY_RAD,
+      ROTATE_KEY_RAD,
     ]);
     // Instant applyTwist is reserved for gesture lanes — not the
     // keyboard. If this assertion fires, the keyboard handler

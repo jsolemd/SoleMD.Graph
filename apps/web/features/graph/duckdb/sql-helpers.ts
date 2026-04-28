@@ -1,6 +1,7 @@
 import { getColumnMetaForLayer, getColumnsForLayer } from '@/features/graph/lib/columns'
 import { getLayerConfig } from '@/features/graph/lib/layers'
 import {
+  SELECTED_POINT_INDICES_SCOPE_SQL,
   hasCurrentPointScopeSql,
   normalizeCurrentPointScopeSql,
 } from '@/features/graph/lib/selection-query-state'
@@ -9,7 +10,7 @@ import type { GraphInfoScope, GraphLayer } from "@solemd/graph"
 import { validateTableName } from './utils'
 
 export function buildSelectedViewPredicate(): string {
-  return 'index IN (SELECT index FROM selected_point_indices)'
+  return SELECTED_POINT_INDICES_SCOPE_SQL
 }
 
 export function buildCurrentViewPredicate(args: {

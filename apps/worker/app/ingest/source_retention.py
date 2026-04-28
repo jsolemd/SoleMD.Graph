@@ -62,6 +62,7 @@ class SourceRetentionRunState:
     ingest_status: int | None
     requested_status: int | None
     families_loaded: tuple[str, ...]
+    s2_hot_delete_safe_families: tuple[str, ...] = ()
     has_active_run: bool = False
 
 
@@ -201,6 +202,14 @@ async def load_source_retention_run_state(
                 WHERE ir.status BETWEEN 1 AND 4
                    OR ir.requested_status IS NOT NULL
             ) AS has_active_run
+        ),
+        s2_hot_delete_safe AS (
+            SELECT coalesce(array_agg(DISTINCT cursor.family_name), ARRAY[]::TEXT[])
+                AS families
+            FROM solemd.s2_dataset_cursors cursor
+            JOIN release r
+              ON r.source_release_id = cursor.current_source_release_id
+            WHERE cursor.hot_source_delete_safe_at IS NOT NULL
         )
         SELECT r.source_release_id,
                r.release_status,
@@ -209,10 +218,12 @@ async def load_source_retention_run_state(
                lr.status AS ingest_status,
                lr.requested_status,
                lr.families_loaded,
+               coalesce(safe.families, ARRAY[]::TEXT[]) AS s2_hot_delete_safe_families,
                coalesce(ar.has_active_run, false) AS has_active_run
         FROM release r
         LEFT JOIN latest_run lr ON true
         LEFT JOIN active_run ar ON true
+        LEFT JOIN s2_hot_delete_safe safe ON true
         """,
         source_code,
         release_tag,
@@ -235,6 +246,7 @@ async def load_source_retention_run_state(
         ingest_status=row["ingest_status"],
         requested_status=row["requested_status"],
         families_loaded=tuple(row["families_loaded"] or ()),
+        s2_hot_delete_safe_families=tuple(row["s2_hot_delete_safe_families"] or ()),
         has_active_run=bool(row["has_active_run"]),
     )
 
@@ -260,6 +272,7 @@ def build_source_retention_report(
     family_specs = family_specs_for_source(source_code)
     specs_by_dataset = _family_specs_by_dataset(family_specs)
     loaded_families = set(run_state.families_loaded if run_state else ())
+    hot_delete_safe_families = set(run_state.s2_hot_delete_safe_families if run_state else ())
     items = ()
     if release_dir.exists():
         items = tuple(
@@ -268,6 +281,7 @@ def build_source_retention_report(
                 dataset_path=dataset_path,
                 spec=specs_by_dataset.get(dataset_path.name),
                 loaded_families=loaded_families,
+                hot_delete_safe_families=hot_delete_safe_families,
                 release_loaded=(run_state.release_status == "loaded" if run_state else False),
                 execution_blocked=execution_blocked,
             )
@@ -371,6 +385,7 @@ def _classify_dataset_path(
     dataset_path: Path,
     spec: SourceFamilySpec | None,
     loaded_families: set[str],
+    hot_delete_safe_families: set[str],
     release_loaded: bool,
     execution_blocked: bool,
 ) -> SourceRetentionItem:
@@ -421,15 +436,25 @@ def _classify_dataset_path(
             safe_to_delete=False,
         )
     if spec.family in loaded_families:
+        safe_to_delete = release_loaded and spec.family in hot_delete_safe_families
+        reason = "family is recorded in ingest_runs.families_loaded"
+        if release_loaded and not safe_to_delete:
+            reason = (
+                "family is loaded, but hot deletion waits for the S2 Datasets "
+                "API diff-application cursor to be marked safe; archive or "
+                "cold-store instead of deleting the only full base mirror"
+            )
+        elif safe_to_delete:
+            reason = "family is loaded and the S2 diff cursor is marked hot-delete-safe"
         return SourceRetentionItem(
             dataset=dataset,
             family=spec.family,
             path=str(dataset_path),
             action="archive_candidate",
-            reason="family is recorded in ingest_runs.families_loaded",
+            reason=reason,
             byte_count=byte_count,
             safe_to_archive=True,
-            safe_to_delete=release_loaded,
+            safe_to_delete=safe_to_delete,
         )
     if spec.enabled_by_default:
         return SourceRetentionItem(

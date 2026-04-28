@@ -97,7 +97,13 @@ export function ShellPanels({
       </AnimatePresence>
 
       <AnimatePresence>
-        {!uiHidden && showTimeline && <TimelineBar />}
+        {!uiHidden && showTimeline && (
+          <TimelineBar
+            queries={queries}
+            bundleChecksum={bundle.bundleChecksum}
+            overlayRevision={canvas.overlayRevision}
+          />
+        )}
       </AnimatePresence>
     </>
   );

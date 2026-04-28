@@ -40,7 +40,8 @@ import {
 
 export type { ActivePanel, PanelId, PromptMode } from './slices/panel-slice'
 export type { TableView } from './slices/config-slice'
-export type { RendererMode } from './slices/view-slice'
+export type { EdgeSource, EdgeTier } from '@/features/graph/lib/edge-types'
+export type { OrbSelectionTool, RendererMode } from './slices/view-slice'
 
 /* ───── Composite state type ───── */
 

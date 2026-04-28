@@ -16,6 +16,7 @@ import {
   registerClusterViews,
 } from './clusters'
 import { registerClusterExemplarView } from './details'
+import { registerOrbEntityEdgeViews } from './entity-edges'
 import { initializeOverlayMembershipTable } from './overlay'
 import { registerPaperDocumentViews } from './paper-documents'
 import { resolveBundleRelations } from './relations'
@@ -96,6 +97,13 @@ export async function registerInitialSessionViews(
         : null,
     })
   )
+  await runBootstrapStep('orb entity edge views', () =>
+    registerOrbEntityEdgeViews(conn, {
+      entityEdgesTable: attachedTableSet.has('orb_entity_edges')
+        ? validateTableName('orb_entity_edges')
+        : null,
+    })
+  )
 
   await runBootstrapStep('cluster views', () =>
     registerClusterViews(conn, validateTableName(BASE_CLUSTER_CANONICAL_SOURCE_TABLE))
@@ -159,6 +167,14 @@ export function createEnsureOptionalBundleTables(
           await runBootstrapStep('optional universe link views', () =>
             registerUniverseLinksViews(conn, {
               universeLinksTable: validateTableName('universe_links'),
+            })
+          )
+        }
+
+        if (requested.includes('orb_entity_edges')) {
+          await runBootstrapStep('optional orb entity edge views', () =>
+            registerOrbEntityEdgeViews(conn, {
+              entityEdgesTable: validateTableName('orb_entity_edges'),
             })
           )
         }

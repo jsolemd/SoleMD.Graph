@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from app.actors.corpus import dispatch_evidence_wave, start_selection
+from app.actors.corpus import (
+    dispatch_evidence_wave,
+    dispatch_selection_phases,
+    start_selection,
+)
 from app.corpus.models import DispatchEvidenceWaveRequest, StartCorpusSelectionRequest
 
 
@@ -52,6 +56,12 @@ def parse_evidence_wave_request(
 
 def enqueue_corpus_selection_request(request: StartCorpusSelectionRequest) -> None:
     start_selection.send(**request.model_dump(mode="json"))
+
+
+def enqueue_corpus_selection_phase_requests(
+    request: StartCorpusSelectionRequest,
+) -> None:
+    dispatch_selection_phases.send(**request.model_dump(mode="json"))
 
 
 def enqueue_evidence_wave_request(request: DispatchEvidenceWaveRequest) -> None:

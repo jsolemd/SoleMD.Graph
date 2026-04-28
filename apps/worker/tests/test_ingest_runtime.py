@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import asyncpg
@@ -14,6 +15,7 @@ from app.ingest.models import CopyStats, FamilyPlan, FilePlan, IngestPlan, Start
 from app.ingest.runtime import (
     INGEST_STATUS_ABORTED,
     _open_or_resume_run,
+    _plan_family_execution_groups,
     run_release_ingest,
 )
 from app.ingest.sources import pubtator, semantic_scholar
@@ -23,7 +25,7 @@ from telemetry_test_support import metric_sample_value
 
 
 @pytest.mark.asyncio
-async def test_s2_sample_ingest_writes_raw_rows_only(
+async def test_s2_sample_ingest_writes_corpus_decision_raw_rows_only(
     tmp_path: Path,
     warehouse_dsns: dict[str, str],
     runtime_settings_factory,
@@ -36,12 +38,14 @@ async def test_s2_sample_ingest_writes_raw_rows_only(
     authors_dir = release_dir / "authors"
     papers_dir = release_dir / "papers"
     abstracts_dir = release_dir / "abstracts"
+    citations_dir = release_dir / "citations"
     s2orc_dir = release_dir / "s2orc_v2"
 
     venues_path = publication_venues_dir / "publication-venues-0000.jsonl.gz"
     authors_path = authors_dir / "authors-0000.jsonl.gz"
     papers_path = papers_dir / "papers-0000.jsonl.gz"
     abstracts_path = abstracts_dir / "abstracts-0000.jsonl.gz"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
     s2orc_path = s2orc_dir / "s2orc_v2-0000.jsonl.gz"
 
     write_jsonl_gz(
@@ -102,6 +106,18 @@ async def test_s2_sample_ingest_writes_raw_rows_only(
             }
         ],
     )
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": ["background"],
+            }
+        ],
+    )
     s2orc_text = "Methods. We load the release. Results. Rows land in the warehouse."
     write_jsonl_gz(
         s2orc_path,
@@ -152,6 +168,13 @@ async def test_s2_sample_ingest_writes_raw_rows_only(
         file_names=[abstracts_path.name],
     )
     write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+    write_manifest(
         release_dir / "manifests" / "s2orc_v2.manifest.json",
         dataset="s2orc_v2",
         release_tag=release_tag,
@@ -167,7 +190,6 @@ async def test_s2_sample_ingest_writes_raw_rows_only(
         source_code="s2",
         release_tag=release_tag,
         requested_by="tester",
-        family_allowlist=("publication_venues", "authors", "papers", "abstracts", "s2orc_v2"),
     )
 
     before_runs_published = metric_sample_value(
@@ -230,9 +252,8 @@ async def test_s2_sample_ingest_writes_raw_rows_only(
             "authors",
             "papers",
             "abstracts",
-            "s2orc_v2",
         ]
-        assert ingest_row["last_loaded_family"] == "s2orc_v2"
+        assert ingest_row["last_loaded_family"] == "abstracts"
 
         paper_row = await admin_connection.fetchrow(
             """
@@ -255,7 +276,46 @@ async def test_s2_sample_ingest_writes_raw_rows_only(
 
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_paper_authors_raw") == 1
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_authors_raw") == 1
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2orc_documents_raw") == 1
+        cursor_rows = await admin_connection.fetch(
+            """
+            SELECT dataset_name,
+                   family_name,
+                   base_release_key,
+                   current_release_key,
+                   current_source_release_id,
+                   cursor_status,
+                   diff_apply_enabled,
+                   hot_source_delete_safe_at
+            FROM solemd.s2_dataset_cursors
+            ORDER BY dataset_name
+            """
+        )
+        assert [
+            (row["dataset_name"], row["family_name"], row["cursor_status"])
+            for row in cursor_rows
+        ] == [
+            ("abstracts", "abstracts", "base_loaded"),
+            ("authors", "authors", "base_loaded"),
+            ("papers", "papers", "base_loaded"),
+            ("publication-venues", "publication_venues", "base_loaded"),
+        ]
+        assert {row["current_release_key"] for row in cursor_rows} == {release_tag}
+        assert {row["base_release_key"] for row in cursor_rows} == {release_tag}
+        assert {row["current_source_release_id"] for row in cursor_rows} == {
+            await admin_connection.fetchval(
+                """
+                SELECT source_release_id
+                FROM solemd.source_releases
+                WHERE source_name = 's2'
+                  AND source_release_key = $1
+                """,
+                release_tag,
+            )
+        }
+        assert {row["diff_apply_enabled"] for row in cursor_rows} == {False}
+        assert {row["hot_source_delete_safe_at"] for row in cursor_rows} == {None}
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_paper_reference_metrics_raw") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2orc_documents_raw") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.papers") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_text") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_authors") == 0
@@ -977,13 +1037,26 @@ async def test_open_or_resume_run_ignores_deferred_family_drift(
         release_tag=release_tag,
         requested_by="tester",
     )
+    stale_citations_family = FamilyPlan(
+        family="citations",
+        source_datasets=("citations",),
+        target_tables=("solemd.s2_paper_reference_metrics_raw",),
+        files=(
+            FilePlan(
+                dataset="citations",
+                path=tmp_path / "citations-0000.jsonl.gz",
+                byte_count=20,
+                content_kind="jsonl_gz",
+            ),
+        ),
+    )
     stored_plan = IngestPlan(
         source_code="s2",
         release_tag=release_tag,
         release_dir=tmp_path,
         manifest_uri=f"{tmp_path}/manifests",
         release_checksum="checksum-v1",
-        families=(),
+        families=(stale_citations_family,),
         deferred_families=(),
     )
     resumed_plan = IngestPlan(
@@ -993,7 +1066,7 @@ async def test_open_or_resume_run_ignores_deferred_family_drift(
         manifest_uri=f"{tmp_path}/manifests",
         release_checksum="checksum-v1",
         families=(),
-        deferred_families=("tldrs", "embeddings_specter_v2", "s2orc_v2"),
+        deferred_families=("tldrs", "embeddings_specter_v2", "citations", "s2orc_v2"),
     )
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
@@ -1061,6 +1134,7 @@ async def test_open_or_resume_run_ignores_deferred_family_drift(
     assert row["plan_manifest"]["deferred_families"] == [
         "tldrs",
         "embeddings_specter_v2",
+        "citations",
         "s2orc_v2",
     ]
 
@@ -2216,11 +2290,13 @@ def test_s2_default_plan_defers_opt_in_families(
     s2_root = tmp_path / "semantic-scholar"
     release_dir = s2_root / "releases" / release_tag
     publication_venues_dir = release_dir / "publication-venues"
+    authors_dir = release_dir / "authors"
     papers_dir = release_dir / "papers"
     abstracts_dir = release_dir / "abstracts"
     citations_dir = release_dir / "citations"
 
     venues_path = publication_venues_dir / "publication-venues-0000.jsonl.gz"
+    authors_path = authors_dir / "authors-0000.jsonl.gz"
     papers_path = papers_dir / "papers-0000.jsonl.gz"
     abstracts_path = abstracts_dir / "abstracts-0000.jsonl.gz"
     citations_path = citations_dir / "citations-0000.jsonl.gz"
@@ -2228,6 +2304,10 @@ def test_s2_default_plan_defers_opt_in_families(
     write_jsonl_gz(
         venues_path,
         [{"id": "venue-1", "issn": "1234-5678", "name": "Journal of Warehouse Tests"}],
+    )
+    write_jsonl_gz(
+        authors_path,
+        [{"authorid": "author-1", "name": "Ada Ingest", "externalids": {}}],
     )
     write_jsonl_gz(
         papers_path,
@@ -2270,6 +2350,13 @@ def test_s2_default_plan_defers_opt_in_families(
         file_names=[venues_path.name],
     )
     write_manifest(
+        release_dir / "manifests" / "authors.manifest.json",
+        dataset="authors",
+        release_tag=release_tag,
+        output_dir=authors_dir,
+        file_names=[authors_path.name],
+    )
+    write_manifest(
         release_dir / "manifests" / "papers.manifest.json",
         dataset="papers",
         release_tag=release_tag,
@@ -2304,11 +2391,220 @@ def test_s2_default_plan_defers_opt_in_families(
         ),
     )
 
-    assert "authors" not in plan.family_names
-    assert "authors" in plan.deferred_families
+    assert plan.family_names == ("publication_venues", "authors", "papers", "abstracts")
+    assert "citations" not in plan.family_names
+    assert "citations" in plan.deferred_families
     assert "tldrs" in plan.deferred_families
     assert "embeddings_specter_v2" in plan.deferred_families
     assert "s2orc_v2" in plan.deferred_families
+
+
+def test_pubtator_default_plan_defers_biocxml(
+    tmp_path: Path,
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-02-01"
+    pt_root = tmp_path / "pubtator"
+    release_dir = pt_root / "releases" / release_tag
+    biocxml_dir = release_dir / "biocxml"
+    biocxml_path = biocxml_dir / "BioCXML.0.tar.gz"
+    bioconcepts_path = release_dir / "bioconcepts2pubtator3.gz"
+    relations_path = release_dir / "relation2pubtator3.gz"
+
+    write_tar_gz(
+        biocxml_path,
+        members={
+            "sample.BioC.XML": """
+<collection>
+  <document><id>12345</id></document>
+</collection>
+""".strip()
+        },
+    )
+    write_tsv_gz(
+        bioconcepts_path,
+        ["12345\tChemical\tMESH:D000001\tAspirin\tPubTator3"],
+    )
+    write_tsv_gz(
+        relations_path,
+        ["12345\tassociate\tChemical|MESH:D000001\tDisease|MESH:D000002"],
+    )
+    write_manifest(
+        release_dir / "manifests" / "biocxml.manifest.json",
+        dataset="biocxml",
+        release_tag=release_tag,
+        output_dir=biocxml_dir,
+        file_names=[biocxml_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "bioconcepts2pubtator3.gz.manifest.json",
+        dataset="bioconcepts2pubtator3.gz",
+        release_tag=release_tag,
+        output_dir=release_dir,
+        file_names=[bioconcepts_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "relation2pubtator3.gz.manifest.json",
+        dataset="relation2pubtator3.gz",
+        release_tag=release_tag,
+        output_dir=release_dir,
+        file_names=[relations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        pubtator_dir=pt_root,
+        ingest_dsn="postgresql://postgres:postgres@127.0.0.1:5432/postgres",
+    )
+    plan = pubtator.build_plan(
+        runtime_settings,
+        StartReleaseRequest(
+            source_code="pt3",
+            release_tag=release_tag,
+            requested_by="tester",
+        ),
+    )
+
+    assert plan.family_names == ("bioconcepts", "relations")
+    assert "biocxml" in plan.deferred_families
+
+
+def test_pubtator_core_families_execute_as_parallel_group(tmp_path: Path) -> None:
+    plan = IngestPlan(
+        source_code="pt3",
+        release_tag="2026-02-01",
+        release_dir=tmp_path,
+        manifest_uri=f"{tmp_path}/manifests",
+        release_checksum="checksum-v1",
+        families=(
+            FamilyPlan(
+                family="bioconcepts",
+                source_datasets=("bioconcepts2pubtator3.gz",),
+                files=(),
+                target_tables=("pubtator.entity_annotations_stage",),
+            ),
+            FamilyPlan(
+                family="relations",
+                source_datasets=("relation2pubtator3.gz",),
+                files=(),
+                target_tables=("pubtator.relations_stage",),
+            ),
+        ),
+    )
+
+    assert _plan_family_execution_groups(
+        plan,
+        loaded_families=(),
+        parallel_family_groups=(("bioconcepts", "relations"),),
+    ) == (("bioconcepts", "relations"),)
+    assert _plan_family_execution_groups(
+        plan,
+        loaded_families=("bioconcepts",),
+        parallel_family_groups=(("bioconcepts", "relations"),),
+    ) == (("relations",),)
+
+
+@pytest.mark.asyncio
+async def test_pubtator_default_ingest_loads_core_families_in_parallel_group(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-02-04"
+    pt_root = tmp_path / "pubtator"
+    release_dir = pt_root / "releases" / release_tag
+    biocxml_dir = release_dir / "biocxml"
+    biocxml_path = biocxml_dir / "BioCXML.0.tar.gz"
+    bioconcepts_path = release_dir / "bioconcepts2pubtator3.gz"
+    relations_path = release_dir / "relation2pubtator3.gz"
+
+    write_tar_gz(
+        biocxml_path,
+        members={
+            "sample.BioC.XML": """
+<collection>
+  <document><id>12345</id></document>
+</collection>
+""".strip()
+        },
+    )
+    write_tsv_gz(
+        bioconcepts_path,
+        ["12345\tChemical\tMESH:D000001\tAspirin\tPubTator3"],
+    )
+    write_tsv_gz(
+        relations_path,
+        ["12345\tassociate\tChemical|MESH:D000001\tDisease|MESH:D000002"],
+    )
+    write_manifest(
+        release_dir / "manifests" / "biocxml.manifest.json",
+        dataset="biocxml",
+        release_tag=release_tag,
+        output_dir=biocxml_dir,
+        file_names=[biocxml_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "bioconcepts2pubtator3.gz.manifest.json",
+        dataset="bioconcepts2pubtator3.gz",
+        release_tag=release_tag,
+        output_dir=release_dir,
+        file_names=[bioconcepts_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "relation2pubtator3.gz.manifest.json",
+        dataset="relation2pubtator3.gz",
+        release_tag=release_tag,
+        output_dir=release_dir,
+        file_names=[relations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        pubtator_dir=pt_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    ).model_copy(update={"ingest_copy_batch_rows": 1, "ingest_max_concurrent_batches_per_file": 2})
+    request = StartReleaseRequest(
+        source_code="pt3",
+        release_tag=release_tag,
+        requested_by="tester",
+    )
+    plan = pubtator.build_plan(runtime_settings, request)
+    assert plan.family_names == ("bioconcepts", "relations")
+    assert plan.deferred_families == ("biocxml",)
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        run_row = await admin_connection.fetchrow(
+            """
+            SELECT status, families_loaded, plan_manifest
+            FROM solemd.ingest_runs
+            WHERE ingest_run_id = $1
+            """,
+            run_id,
+        )
+        assert run_row is not None
+        assert run_row["status"] == 5
+        assert run_row["families_loaded"] == ["bioconcepts", "relations"]
+        plan_manifest = run_row["plan_manifest"]
+        if isinstance(plan_manifest, str):
+            plan_manifest = json.loads(plan_manifest)
+        assert plan_manifest["deferred_families"] == ["biocxml"]
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM pubtator.entity_annotations_stage"
+        ) == 1
+        assert await admin_connection.fetchval(
+            "SELECT count(*) FROM pubtator.relations_stage"
+        ) == 1
+    finally:
+        await admin_connection.close()
 
 
 @pytest.mark.asyncio

@@ -226,6 +226,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         selectedPointRevision: 0,
         activeSelectionSourceId: null,
         selectionLocked: false,
+        visibilityScopeClauses: {},
         tablePage: 1,
         tableView: 'dataset',
         pointLabelColumn: (() => {

@@ -19,6 +19,7 @@ export const WIKI_PAGE_OVERLAY_PRODUCER =
 export const RAG_ANSWER_SELECTION_SOURCE_ID = "rag:answer-selection";
 export const ENTITY_OVERLAY_SELECTION_SOURCE_ID = "entity:overlay";
 export const WIKI_PAGE_SELECTION_SOURCE_ID = "wiki:page";
+export const ORB_MANUAL_SELECTION_SOURCE_ID = "orb:manual-selection";
 
 const SELECTED_POINT_BASELINE_SOURCE_IDS = new Set<string>([
   RAG_ANSWER_SELECTION_SOURCE_ID,

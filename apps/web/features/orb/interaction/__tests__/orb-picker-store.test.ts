@@ -6,14 +6,21 @@ import {
 // Baseline reset so tests don't leak state into each other.
 const initial = useOrbPickerStore.getState();
 
+function createHandle(index: number): OrbPickerHandle {
+  return {
+    pickSync: () => index,
+    pickRectAsync: () => Promise.resolve([index]),
+  };
+}
+
 describe("orb-picker-store", () => {
   beforeEach(() => {
     useOrbPickerStore.setState({ ...initial, handle: null });
   });
 
   it("setHandle publishes and replaces the live handle", () => {
-    const a: OrbPickerHandle = { pickSync: () => 1 };
-    const b: OrbPickerHandle = { pickSync: () => 2 };
+    const a = createHandle(1);
+    const b = createHandle(2);
 
     useOrbPickerStore.getState().setHandle(a);
     expect(useOrbPickerStore.getState().handle).toBe(a);
@@ -30,8 +37,8 @@ describe("orb-picker-store", () => {
   // clearHandleIfMatches only clears when the live handle is the one
   // being retracted, so the stale cleanup becomes a no-op.
   it("clearHandleIfMatches clears only when identity matches", () => {
-    const a: OrbPickerHandle = { pickSync: () => 1 };
-    const b: OrbPickerHandle = { pickSync: () => 2 };
+    const a = createHandle(1);
+    const b = createHandle(2);
 
     useOrbPickerStore.getState().setHandle(a);
     useOrbPickerStore.getState().setHandle(b);
@@ -46,7 +53,7 @@ describe("orb-picker-store", () => {
   });
 
   it("clearHandleIfMatches is a no-op when no handle is set", () => {
-    const a: OrbPickerHandle = { pickSync: () => 1 };
+    const a = createHandle(1);
     expect(useOrbPickerStore.getState().handle).toBeNull();
     useOrbPickerStore.getState().clearHandleIfMatches(a);
     expect(useOrbPickerStore.getState().handle).toBeNull();

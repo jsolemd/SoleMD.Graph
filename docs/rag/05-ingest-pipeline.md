@@ -17,7 +17,9 @@
 > (`s2_*_raw`, `pubtator.*_stage`, and source-local raw helpers such as
 > `s2_paper_authors_raw` and the current transitional citation helpers). The
 > locked next-batch direction for broad raw is: S2 paper/abstract/venue inputs,
-> raw authors, paper-level citation aggregates, and `pubtator.*_stage`. The
+> raw authors, and `pubtator.*_stage`. S2 citations are no longer a corpus-fill
+> prerequisite; they are explicit mapped-tier enrichment and may be refetched or
+> stream-filtered later against mapped paper ids. The
 > **selected canonical corpus** remains owned by `05e-corpus-selection.md`.
 > Under the locked stage contract, `corpus` owns `corpus` membership plus
 > baseline canonical `papers` / `paper_text`; `mapped` owns heavier canonical
@@ -149,7 +151,7 @@ set. Per-shard sizes from a 2026-04-16 listing of
 | `paper-ids` | `paper-ids/paper-ids-NNNN.jsonl.gz` | 30 | raw identifier input; `05e` backfills canonical `papers` ids for admitted corpus papers |
 | `abstracts` | `abstracts/abstracts-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.abstract` for admitted corpus papers |
 | `authors` | `authors/authors-NNNN.jsonl.gz` | 30 | `s2_authors_raw`; per-paper author fanout still lands in `s2_paper_authors_raw` from `papers`, and `05e` promotes mapped-paper authorship into `authors` + `paper_authors` |
-| `citations` | `citations/citations-NNNN.jsonl.gz` (largest) | 358 | raw aggregate metrics by default; actual `paper_citations` edges are mapped-tier enrichment |
+| `citations` | `citations/citations-NNNN.jsonl.gz` (largest) | 358 | mapped-tier enrichment only; not default raw ingest and not a corpus-fill prerequisite |
 | `tldrs` | `tldrs/tldrs-NNNN.jsonl.gz` | 30 | mapped-tier input; `05e` backfills `paper_text.tldr` for mapped papers, not broad raw corpus |
 | `publication-venues` | one shard | 1 | raw venue input for selection and later canonical backfill |
 | `s2orc_v2` | `s2orc_v2/` when mirrored for the release | deferred | evidence-tier document-spine input only; not broad raw or mapped ownership |
@@ -186,9 +188,9 @@ Release-level checksum = canonicalized hash of the concatenated
 
 | Dataset | On-disk shape | Maps to (`02 §4`) |
 |---|---|---|
-| `biocxml` | `biocxml/BioCXML.NN.tar.gz` (10 tarballs) | `pubtator.*_stage` payload for later selected-paper canonical promotion; full document spine and grounding families remain downstream child-wave work |
-| `bioconcepts2pubtator3.gz` | TSV bio-concept dump | side-channel into `pubtator.entity_annotations_stage` |
-| `relation2pubtator3.gz` | TSV BioREx relations | `pubtator.relations_stage`; `05e` backfills canonical `pubtator.relations` for mapped papers |
+| `bioconcepts2pubtator3.gz` | TSV bio-concept dump | default PT3 corpus-signal family into `pubtator.entity_annotations_stage` |
+| `relation2pubtator3.gz` | TSV BioREx relations | default PT3 corpus-signal family into `pubtator.relations_stage`; `05e` backfills canonical `pubtator.relations` for mapped papers |
+| `biocxml` | `biocxml/BioCXML.NN.tar.gz` (10 tarballs) | opt-in evidence-tier payload for high-fidelity selected-paper extraction; not part of default corpus-signal ingest |
 | `cache` | local download cache | ignored |
 | `manifests` | `annotations.manifest.json`, `biocxml.archive_manifest.sqlite`, `biocxml.corpus_locator.sqlite`, `biocxml.manifest.json` | sqlite files are PubTator-side PMID → tarball indexes; ingest may use `corpus_locator.sqlite` for §5.2 dedup but it is not authoritative |
 
@@ -196,6 +198,11 @@ PubTator3 BioCXML follows BioC schema 1.0
 (<https://academic.oup.com/nar/article/52/W1/W540/7640526>); each
 `<document>` carries `<id>` (PMID), `<passage>` blocks, `<annotation>`
 rows, `<relation>` records.
+
+Default PT3 ingest treats `bioconcepts` and `relations` as one independent
+parallel runtime group. Each single-file lane streams gzip input into bounded
+COPY/merge consumers so parser throughput and Postgres writes can overlap
+without materializing the full upstream file.
 
 ### 2.3 UMLS Metathesaurus
 
@@ -508,19 +515,14 @@ durable contract is that `05e` promotes/backfills mapped-paper rows into
 the canonical paper layer idempotently so those tables reflect the
 selected universe rather than the full raw release breadth.
 
-**`citations` should converge on a broad aggregate surface, not broad edge
-persistence.** Largest dataset — 358 shards, ~330 GB compressed. Raw ingest
-writes paper-level aggregate metrics such as `reference_out_count`,
-`influential_reference_count`, and `linked_reference_count` to
-`s2_paper_reference_metrics_raw`. The implemented path inserts one
-`solemd.ingest_file_tasks` row per citation file, sends file actors on the
-`ingest_file` queue, writes into `s2_paper_reference_metrics_stage`, validates
-completed files with `s2_paper_reference_metrics_file_checkpoints`, and then
-performs one set-based final replacement into the raw aggregate table. Actual
-paper-to-paper edges belong to mapped enrichment in `paper_citations`, scoped
-to mapped citing papers and resolving `cited_corpus_id` only when the cited
-paper is already canonical. Evidence owns only text-anchored citation mentions
-in `paper_citation_mentions`.
+**`citations` are explicit mapped-tier enrichment, not default corpus input.**
+Largest dataset — 358 shards, hundreds of GB compressed. The corpus selector
+must not wait for broad citation ingest because corpus membership is determined
+by venue, vocabulary, entity, relation, and text/metadata signals. When mapped
+citation enrichment is requested, the existing citation task/finalizer path can
+still stream citation files, but the durable target is a mapped-scope aggregate
+or `paper_citations` edge surface filtered to mapped citing papers. Evidence
+owns only text-anchored citation mentions in `paper_citation_mentions`.
 
 **`abstracts`** remain raw text input until `05e` backfills
 `paper_text.abstract` for mapped papers. Storage remains `EXTERNAL` per
@@ -591,15 +593,22 @@ selected-corpus backfill targets for mapped papers under `05e`.
 document-spine / grounding work (`05a`, `05f`); the raw lane must not
 present them as already-owned outputs.
 
+PT3 stage and canonical PubTator natural keys compare raw concept/relation
+identifiers by SHA-256 expression keys while storing the full raw identifiers.
+This prevents PostgreSQL btree tuple overflow when upstream emits
+multi-kilobyte `concept_id_raw`, `subject_entity_id`, or `object_entity_id`
+values.
+
 **Side-channel TSVs.** `bioconcepts2pubtator3.gz` and
 `relation2pubtator3.gz` load via DuckDB `read_csv_auto` (gzip
 auto-detected) into the same staging tables as BioCXML rows. Used as
 cross-check; disagreements log to §12 but don't abort. If BioCXML and
 `relation2pubtator3.gz` emit the same canonical relation key
-`(corpus_id, subject_entity_id, relation_type, object_entity_id)`,
-the later selected-corpus backfill into canonical `pubtator.relations`
-should keep the BioCXML row (`relation_source = biocxml`) and treat the
-TSV row as stage-level cross-check lineage rather than the winner.
+`(corpus_id, sha256(subject_entity_id), relation_type,
+sha256(object_entity_id))`, the later selected-corpus backfill into canonical
+`pubtator.relations` should keep the BioCXML row (`relation_source = biocxml`)
+and treat the TSV row as stage-level cross-check lineage rather than the
+winner.
 
 ### 5.3 ID remapping
 
@@ -697,8 +706,9 @@ Inside the single active release actor, loader concurrency stays
 bounded and source-aware rather than spawning multiple independent
 Dramatiq workers for the same release.
 
-S2 loader tasks: 4 at peak (one per heavy dataset; `citations` is the
-pacing item). PT3 archive-loader tasks: 4 during S2 overlap, full 8
+S2 core loader tasks: 4 at peak across the corpus-decision families;
+`citations` is no longer the default pacing item. PT3 archive-loader tasks:
+4 during S2 overlap, full 8
 only when PT3 is the active pacing source and memory headroom is
 available. Concept-mapping tasks: 1–2. Index-build coordinator: 1
 (spawns parallel `CREATE INDEX` across families; PG controls parallel
@@ -741,14 +751,11 @@ session;
 Handoff-plan envelope: **5–9 hours** for first full S2 + PT3
 sequential ingest.
 
-**S2 (~638 GB, dominated by `citations`):** plan + manifest checksum
-~5 min; DuckDB stream-transform ~25 min (4 workers × ~250 MB/s
-parquet/JSONL throughput ≈ 1 GB/s aggregate); asyncpg COPY ~4 h
-(PG bottleneck ~250–400 k rows/s per partition × 32 = ~10 M rows/s
-aggregate; 14 M papers + ~1.5 B citation rows = ~150 s + ~250 min);
-parallel CREATE INDEX × 12 workers ~45 min (citations is the costly
-one at ~30 min); SET LOGGED + parallel VACUUM ~30 min; publish < 1 s.
-**S2 total ~5.5 h.**
+**S2 core corpus-decision ingest (`publication_venues`, `authors`, `papers`,
+`abstracts`):** plan + manifest checksum ~5 min; stream-transform and COPY are
+dominated by paper/abstract rows rather than citation edges; publish < 1 s.
+The old full-release estimate was dominated by broad citation ingest and is no
+longer the gating path for corpus fill.
 
 **PT3 (~210 GB BioCXML):** plan < 1 min; BioCXML stream + COPY
 ~1.5–2 h (10 tarballs × 25 GB compressed, 8 workers post-S2 phase at
@@ -773,17 +780,18 @@ Retention tiers:
 
 | Tier | Purpose | Local hot-storage rule |
 |---|---|---|
-| Source archive | Compressed upstream S2 / PubTator release files and manifests. | Required while a family is active or resumable. After `families_loaded` records that family and source checksum/provenance is durable, archive off the hot VHD or delete from hot storage. |
+| Source archive | Compressed upstream S2 / PubTator release files and manifests. | Required while a family is active or resumable. After `families_loaded` records that family and source checksum/provenance is durable, archive off the hot VHD. Hot deletion of S2 full-release shards additionally requires the S2 Datasets API diff cursor to be marked hot-delete-safe. |
 | Warehouse raw / stage | Typed, queryable raw tables used for refresh-safe promotion and audit. | Keep only families that are part of the published raw-release contract. Do not materialize broad edge/text expansions unless a downstream tier requires them. |
 | Canonical selected corpus | Mapped `papers`, `paper_text`, citations, concepts, relations, chunks, and evidence units. | Keep selected/mapped subsets and durable provenance. This tier is the product substrate; it is not a second copy of the full upstream release. |
 | Serve / graph bundles | Checksum-addressed browser and retrieval artifacts. | First-paint bundles stay slim; large relation/detail assets are lazy or downstream artifacts. |
 
 Default footprint rules:
 
-- S2 citation ingest defaults to aggregate paper-level metrics in
-  `solemd.s2_paper_reference_metrics_raw`. Actual `paper_citations` edge
-  materialization is a mapped-corpus enrichment, not part of the broad raw
-  default.
+- Default S2 ingest is limited to the corpus-decision core:
+  `publication_venues`, `authors`, `papers`, and `abstracts`.
+- S2 citation ingest is opt-in mapped enrichment. Actual `paper_citations` edge
+  materialization and citation aggregates are scoped to mapped papers, not the
+  broad raw default.
 - `s2orc_v2/` is evidence-tier only. It should not be pulled into default raw
   ingest or mapped rollout just because the files exist.
 - `tldrs/` and `embeddings-specter_v2/` are mapped-tier inputs. Load or
@@ -792,9 +800,11 @@ Default footprint rules:
   compressed tarballs do not need to remain on local hot storage after the
   corresponding release family is committed and recoverable from an external
   archive.
-- `families_loaded` is the deletion boundary for hot raw files, not
+- `families_loaded` is the archive boundary for hot raw files, not
   `current_work_item` progress. Never delete raw files for the active family
-  or a family not present in `families_loaded`.
+  or a family not present in `families_loaded`. For S2, deletion is a stricter
+  boundary: `solemd.s2_dataset_cursors.hot_source_delete_safe_at` must be
+  non-null for that family after a tested diff-application path exists.
 - Deleting files inside a WSL-mounted VHD frees ext4 blocks only. Windows does
   not recover host disk space until WSL is stopped and the VHD is compacted
   offline; operator runbooks must account for that before treating deletion as
@@ -813,21 +823,26 @@ uv run --project apps/worker python -m app.main source-retention s2 2026-03-10
 This command is the source-retention authority for S2 hot-storage cleanup. It
 acquires the same `ingest:{source}:{release}` advisory lock used by the ingest
 runtime, compares the current manifest checksum with `source_releases`, reads
-the latest `ingest_runs.families_loaded`, and emits a dry-run JSON report. It
-never mutates files unless called with `--execute --action archive|delete`.
-`delete` additionally requires `--provenance-ok` because raw release files are
-recoverable only through upstream re-download or an external archive.
+the latest `ingest_runs.families_loaded`, consults
+`solemd.s2_dataset_cursors`, and emits a dry-run JSON report. It never mutates
+files unless called with `--execute --action archive|delete`. `delete`
+additionally requires `--provenance-ok` and a hot-delete-safe S2 cursor because
+raw release files are recoverable only through upstream re-download, S2
+Datasets API diffs from the current base, or an external archive.
 `archive` is intentionally limited to a same-filesystem rename; off-device
 copies must be performed and verified outside the worker before using the
 guarded delete path.
 
 For `s2:2026-03-10`, the intended policy is:
 
-- Keep `citations/` until the citation aggregate family commits, then remove
-  the hot source directory after provenance is durable.
+- `citations/` is not required for corpus fill, but it is no longer an
+  automatic delete candidate. It is mapped-tier enrichment; keep or cold-archive
+  the full source if it exists until the mapped citation lane either consumes it
+  or explicitly chooses targeted refetch.
 - Keep `papers/` and `abstracts/` until their family appears in
-  `families_loaded`; before the full S2 release publishes they are archive
-  candidates, not automatic delete candidates.
+  `families_loaded`; after the full S2 release publishes they are archive
+  candidates, not automatic delete candidates, unless their S2 diff cursor is
+  marked hot-delete-safe.
 - Keep `tldrs/` and `embeddings-specter_v2/` until the mapped rollout consumes
   or explicitly waives them.
 - Keep `s2orc_v2/` until the evidence tier consumes or explicitly waives it.
@@ -850,13 +865,20 @@ monotone within one `ingest_run_id`.
 | `failed` | Same as resume; `families_loaded` may be partial. Plan checksum compared against on-disk manifest (§4.1 `release_checksum`); mismatch raises `PlanDrift`. |
 | `aborted` | Same as `failed`; operator must re-trigger. |
 
+Resume plan comparison may ignore an unconsumed family from the persisted plan
+only when the current plan explicitly moved that family into
+`deferred_families`. This is the controlled transition path for dropping broad
+`citations` from an in-flight S2 corpus-fill run without treating every other
+manifest or family drift as acceptable.
+
 Per-family resume in two stages:
 
 Source-retention cleanup must follow the same boundary. A family recorded in
 `families_loaded` will be skipped on resume and can leave hot source storage
 once manifest provenance is durable. A family missing from `families_loaded`
 is still replay material even when live metrics showed partial progress, and
-its source files must remain available.
+its source files must remain available, except for now-deferred S2 `citations`
+when no citation enrichment run is active.
 
 1. **Mid-COPY crash on F.** F is in `loading`; F not in `families_loaded`.
    UNLOGGED partitions of F may be partially populated. §9.1 recovery
@@ -1235,9 +1257,16 @@ Source-specific notes that should stay explicit:
 
 ### 14.5 Refresh and rerun contract
 
-- A new S2 or PubTator refresh is a new `source_releases` row plus a new
-  `ingest.start_release` message. There is no in-place "current release"
-  rewrite inside raw tables.
+- A new PubTator refresh is a new `source_releases` row plus a new
+  `ingest.start_release` message. A new S2 full refresh follows the same path.
+  A new S2 incremental refresh is planned through the Datasets API diff ledger:
+  `/datasets/v1/diffs/{start_release_id}/to/{end_release_id}/{dataset_name}`
+  returns update files and delete files. Update records are upserted by primary
+  key and delete records remove that key from the local current-state dataset.
+  The current implementation records diff manifests and per-file URLs in
+  `solemd.s2_dataset_diff_manifests` / `solemd.s2_dataset_diff_files`; hot
+  source deletion remains blocked until the raw diff-application path is marked
+  ready in `solemd.s2_dataset_cursors`.
 - A forced replay of the same release uses `force_new_run=True` and mints a
   fresh `ingest_run_id` against the same immutable release directory.
 - Resume remains keyed to `families_loaded` for the family completion and
@@ -1247,8 +1276,11 @@ Source-specific notes that should stay explicit:
   `solemd.ingest_file_tasks` tracks pending/running/completed/failed file
   attempts, and `s2_paper_reference_metrics_file_checkpoints` validates only
   completed files whose `UNLOGGED` stage rows still exist after a restart.
-- Keep raw and canonical promotion modular so a later diff-based S2 refresh can
-  skip untouched families without changing the actor envelope.
+- Keep raw and canonical promotion modular so diff-based S2 refreshes can skip
+  untouched families without changing the actor envelope. `s2_papers_raw` is a
+  current-state table keyed by S2 paper id; consumers that need release scope
+  must respect the S2 cursor rather than assuming every unchanged row's
+  `source_release_id` is rewritten on each diff.
 - Warehouse stays a separate cluster for the full path. The ingest worker never
   writes serve tables and never treats warehouse as "extra tables inside
   serve."
@@ -1262,9 +1294,8 @@ The next implementation PR should not stop at actor stubs. Minimum acceptance:
 - one integration test per source proves plan build + deterministic resume
 - one end-to-end local sample ingest writes real warehouse rows and updates
   `ingest_runs`
-- S2 citations now default to refresh-safe aggregate metrics in
-  `solemd.s2_paper_reference_metrics_raw`; actual `paper_citations` edge
-  materialization is mapped-owned enrichment
+- S2 citations are opt-in mapped enrichment; actual `paper_citations` edge
+  materialization and citation aggregates are scoped to mapped papers
 - docs move with code if the file layout, queue names, or role boundaries
   change
 - chunking stays downstream of the raw ingest lane rather than being

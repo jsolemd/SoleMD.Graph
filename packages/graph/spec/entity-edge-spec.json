@@ -1,0 +1,20 @@
+{
+  "entity_type_allowlist": [
+    "drug",
+    "disease",
+    "receptor",
+    "mechanism",
+    "pathway",
+    "chemical"
+  ],
+  "min_shared_entity_count": 2,
+  "max_neighbors_per_node": 30,
+  "weight_formula": {
+    "alpha_citation": 1,
+    "beta_idf_entity": 1,
+    "idf_base": "log(N_papers / entity_frequency)"
+  },
+  "thresholds": {
+    "edge_min_weight": 0.05
+  }
+}

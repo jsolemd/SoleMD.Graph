@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 import asyncpg
@@ -425,6 +426,64 @@ async def summary_count(admin_dsn: str, run_id: UUID) -> int:
                 run_id,
             )
         )
+    finally:
+        await connection.close()
+
+
+async def fetch_selection_artifacts(
+    admin_dsn: str,
+    run_id: UUID,
+) -> list[tuple[str, str, int | None, bool]]:
+    connection = await asyncpg.connect(admin_dsn)
+    try:
+        rows = await connection.fetch(
+            """
+            SELECT artifact_kind, status, row_count, is_logged
+            FROM solemd.corpus_selection_artifacts
+            WHERE corpus_selection_run_id = $1
+            ORDER BY artifact_kind
+            """,
+            run_id,
+        )
+        return [
+            (
+                str(row["artifact_kind"]),
+                str(row["status"]),
+                None if row["row_count"] is None else int(row["row_count"]),
+                bool(row["is_logged"]),
+            )
+            for row in rows
+        ]
+    finally:
+        await connection.close()
+
+
+async def fetch_selection_chunks(
+    admin_dsn: str,
+    run_id: UUID,
+) -> list[tuple[int, str, dict[str, object]]]:
+    connection = await asyncpg.connect(admin_dsn)
+    try:
+        rows = await connection.fetch(
+            """
+            SELECT bucket_id, status, row_counts
+            FROM solemd.corpus_selection_chunks
+            WHERE corpus_selection_run_id = $1
+              AND phase_name = 'mapped_surface_materialization'
+            ORDER BY bucket_id
+            """,
+            run_id,
+        )
+        return [
+            (
+                int(row["bucket_id"]),
+                str(row["status"]),
+                json.loads(row["row_counts"])
+                if isinstance(row["row_counts"], str)
+                else dict(row["row_counts"]),
+            )
+            for row in rows
+        ]
     finally:
         await connection.close()
 

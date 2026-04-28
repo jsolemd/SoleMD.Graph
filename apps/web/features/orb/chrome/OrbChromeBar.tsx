@@ -5,15 +5,23 @@ import { ActionIcon, Tooltip } from "@mantine/core";
 import { motion } from "framer-motion";
 import {
   BookOpen,
+  BoxSelect,
+  Camera,
+  CircleDot,
   Eye,
   EyeOff,
   Filter,
+  GanttChart,
   Info,
+  Lock,
+  Palette,
   SlidersHorizontal,
   Table2,
+  Unlock,
 } from "lucide-react";
 import ThemeToggle from "@/features/graph/components/chrome/ThemeToggle";
 import { RendererToggleButton } from "@/features/graph/components/chrome/RendererToggleButton";
+import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { PanelId } from "@/features/graph/stores";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
@@ -24,6 +32,7 @@ import {
   graphControlBtnStyles,
 } from "@/features/graph/components/panels/PanelShell";
 import { MotionControlPanel } from "./MotionControlPanel";
+import { useOrbSnapshotStore } from "../stores/snapshot-store";
 
 const MOBILE_ICON_SIZE = 40;
 const GLYPH_SIZE = 14;
@@ -50,6 +59,7 @@ interface PillButtonProps {
   onClick: () => void;
   active?: boolean;
   pressed?: boolean | undefined;
+  disabled?: boolean;
   isMobile: boolean;
 }
 
@@ -59,6 +69,7 @@ function PillButton({
   onClick,
   active,
   pressed,
+  disabled,
   isMobile,
 }: PillButtonProps) {
   const btn = (
@@ -71,6 +82,7 @@ function PillButton({
       onClick={onClick}
       aria-label={label}
       aria-pressed={active ?? pressed}
+      disabled={disabled}
     >
       <Icon size={GLYPH_SIZE} strokeWidth={GLYPH_STROKE} />
     </ActionIcon>
@@ -88,14 +100,13 @@ function PillButton({
 /**
  * 3D opener bar for /graph in orb-renderer mode.
  *
- * Pill 1: [wiki] | [config · filters · info] | [table] | [theme]
+ * Pill 1: [wiki] | [config · filters · info] | [timeline · table] | [theme]
  * Pill 2: [renderer toggle] | [hide UI]
  *
  * Theme sits at the end of pill 1 to mirror the 2D ChromeBar exactly so
- * muscle memory transfers between renderers. Only renderer-clean
- * openers are wired here; Cosmograph-bound widgets (timeline,
- * selection menu, fit-view) are deferred to slices F/G — see
- * docs/future/orb-3d-cosmograph-parity-plan.md.
+ * muscle memory transfers between renderers. Renderer-clean controls are
+ * wired here; filters/timeline write renderer-neutral scope state so the
+ * field mask and the native 2D map share one filtered point set.
  *
  * Companion: ChromeBar (apps/web/features/graph/components/chrome) is the
  * 2D equivalent; same pill primitives + style helpers so the two stay
@@ -107,15 +118,39 @@ export function OrbChromeBar() {
 
   const openPanels = useDashboardStore((s) => s.openPanels);
   const uiHidden = useDashboardStore((s) => s.uiHidden);
+  const showTimeline = useDashboardStore((s) => s.showTimeline);
+  const timelineColumn = useDashboardStore((s) => s.timelineColumn);
   const tableOpen = useDashboardStore((s) => s.tableOpen);
+  const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
+  const currentPointScopeSql = useDashboardStore((s) => s.currentPointScopeSql);
+  const selectionLocked = useDashboardStore((s) => s.selectionLocked);
   const togglePanel = useDashboardStore((s) => s.togglePanel);
   const closePanel = useDashboardStore((s) => s.closePanel);
   const openOnlyPanel = useDashboardStore((s) => s.openOnlyPanel);
   const toggleTable = useDashboardStore((s) => s.toggleTable);
+  const toggleTimeline = useDashboardStore((s) => s.toggleTimeline);
   const toggleUiHidden = useDashboardStore((s) => s.toggleUiHidden);
+  const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
+  const clearVisibilityScopeClause = useDashboardStore(
+    (s) => s.clearVisibilityScopeClause,
+  );
+  const lockSelection = useDashboardStore((s) => s.lockSelection);
+  const unlockSelection = useDashboardStore((s) => s.unlockSelection);
+  const orbSelectionTool = useDashboardStore((s) => s.orbSelectionTool);
+  const toggleOrbRectangleSelection = useDashboardStore(
+    (s) => s.toggleOrbRectangleSelection,
+  );
+  const showColorLegend = useDashboardStore((s) => s.showColorLegend);
+  const setShowColorLegend = useDashboardStore((s) => s.setShowColorLegend);
+  const showSizeLegend = useDashboardStore((s) => s.showSizeLegend);
+  const setShowSizeLegend = useDashboardStore((s) => s.setShowSizeLegend);
+  const snapshotHandle = useOrbSnapshotStore((s) => s.handle);
 
   const [uiSpinCount, setUiSpinCount] = useState(0);
   const [motionPanelOpen, setMotionPanelOpen] = useState(false);
+  const canLockSelection =
+    selectedPointCount > 0 || hasCurrentPointScopeSql(currentPointScopeSql);
+  const lockButtonDisabled = !selectionLocked && !canLockSelection;
 
   const handlePanelToggle = useCallback(
     (panel: PanelId) => {
@@ -194,6 +229,19 @@ export function OrbChromeBar() {
 
         <PillButton
           isMobile={isMobile}
+          icon={GanttChart}
+          label={showTimeline ? "Hide timeline" : "Show timeline"}
+          onClick={() => {
+            if (showTimeline) {
+              clearVisibilityScopeClause(`timeline:${timelineColumn}`);
+              setTimelineSelection(undefined);
+            }
+            toggleTimeline();
+          }}
+          active={showTimeline}
+        />
+        <PillButton
+          isMobile={isMobile}
           icon={Table2}
           label={tableOpen ? "Hide table" : "Show table"}
           onClick={toggleTable}
@@ -208,6 +256,56 @@ export function OrbChromeBar() {
       {/* Pill 2 — chrome controls (renderer toggle, motion controls, hide UI). */}
       <div className="flex items-center gap-0.5 rounded-full" style={pillStyle}>
         <RendererToggleButton isMobile={isMobile} grouped />
+
+        <SubgroupDivider />
+
+        <PillButton
+          isMobile={isMobile}
+          icon={BoxSelect}
+          label={
+            orbSelectionTool === "rectangle"
+              ? "Exit rectangle select"
+              : "Rectangle select"
+          }
+          onClick={toggleOrbRectangleSelection}
+          active={orbSelectionTool === "rectangle"}
+        />
+        <PillButton
+          isMobile={isMobile}
+          icon={selectionLocked ? Lock : Unlock}
+          label={selectionLocked ? "Unlock selection" : "Lock selection"}
+          onClick={() => {
+            if (lockButtonDisabled) return;
+            if (selectionLocked) {
+              unlockSelection();
+            } else {
+              lockSelection();
+            }
+          }}
+          active={selectionLocked}
+          disabled={lockButtonDisabled}
+        />
+        <PillButton
+          isMobile={isMobile}
+          icon={Palette}
+          label={showColorLegend ? "Hide highlight legend" : "Show highlight legend"}
+          onClick={() => setShowColorLegend(!showColorLegend)}
+          active={showColorLegend}
+        />
+        <PillButton
+          isMobile={isMobile}
+          icon={CircleDot}
+          label={showSizeLegend ? "Hide size legend" : "Show size legend"}
+          onClick={() => setShowSizeLegend(!showSizeLegend)}
+          active={showSizeLegend}
+        />
+        <PillButton
+          isMobile={isMobile}
+          icon={Camera}
+          label="Save snapshot"
+          onClick={() => snapshotHandle?.captureSnapshot()}
+          disabled={!snapshotHandle}
+        />
 
         <SubgroupDivider />
 

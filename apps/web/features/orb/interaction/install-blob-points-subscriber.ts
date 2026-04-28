@@ -97,6 +97,26 @@ export const installBlobPointsSubscriber: BlobPointsSubscriber = ({
         invalidate();
       }
     },
+    pickRectAsync: async (rect, options) => {
+      const canvasRect = renderer.domElement.getBoundingClientRect();
+      const prevMask = camera.layers.mask;
+      camera.layers.set(1);
+      try {
+        return await picker.pickRectAsync({
+          renderer,
+          scene,
+          camera,
+          pickingMaterial,
+          points,
+          clientRect: rect,
+          mode: options?.mode,
+          canvasRect,
+        });
+      } finally {
+        camera.layers.mask = prevMask;
+        invalidate();
+      }
+    },
   };
 
   useOrbPickerStore.getState().setHandle(handle);

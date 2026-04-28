@@ -230,7 +230,11 @@ Implication:
 - enqueued the real S2 core fill behind the running PT3 job on the same ingest
   lane:
   - command:
-    `python -m app.main enqueue-release s2 2026-03-10 --force-new-run --requested-by codex --family publication_venues --family authors --family papers --family abstracts --family citations`
+    `python -m app.main enqueue-release s2 2026-03-10 --force-new-run --requested-by codex --family publication_venues --family authors --family papers --family abstracts`
+  - updated decision:
+    - broad `citations` is no longer a corpus-fill prerequisite; citation
+      enrichment is mapped-tier and should refetch or stream-filter against
+      mapped paper ids later
 - operational note:
   - the long-running Phase 2 work is now genuinely in progress on the real
     releases
@@ -418,9 +422,9 @@ Plan:
    - `authors`
    - `papers`
    - `abstracts`
-   - `citations`
-4. Leave `s2orc_v2` and `tldrs` as a second wave until stage counts stabilize;
-   they are not needed to decide `raw -> corpus -> mapped -> evidence`.
+4. Leave `citations`, `s2orc_v2`, and `tldrs` as later tiered waves until stage
+   counts stabilize; they are not needed to decide `raw -> corpus -> mapped ->
+   evidence`.
 5. Once both real releases are back to `loaded`, run a fresh monitored
    `raw -> corpus -> mapped -> evidence` pass on the real pair under a new
    selector version.

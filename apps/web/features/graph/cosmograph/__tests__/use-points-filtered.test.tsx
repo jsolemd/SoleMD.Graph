@@ -59,7 +59,9 @@ describe("usePointsFiltered", () => {
 
     expect(deps.queries.setSelectedPointIndices).toHaveBeenCalledWith([3, 5, 8]);
     expect(deps.setCurrentPointScopeSql).toHaveBeenCalledWith(null);
-    expect(deps.setSelectedPointCount).toHaveBeenCalledWith(3);
+    expect(deps.setSelectedPointCount).toHaveBeenCalledWith(3, {
+      forceRevision: true,
+    });
     expect(deps.setActiveSelectionSourceId).toHaveBeenCalledWith("lasso:selection");
   });
 

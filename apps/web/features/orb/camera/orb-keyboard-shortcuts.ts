@@ -2,6 +2,7 @@ import { Vector3 } from "three";
 import type CameraControlsImpl from "camera-controls";
 
 import type { BlobController } from "@/features/field/controller/BlobController";
+import { shouldSkipGraphKeyboardShortcut } from "@/features/graph/lib/graph-keyboard-guards";
 
 /**
  * Window-level keyboard shortcuts for the 3D orb. Pure factory so the
@@ -23,7 +24,9 @@ import type { BlobController } from "@/features/field/controller/BlobController"
  *
  * Active-element guard skips text inputs, textareas, contenteditable
  * surfaces, and focused buttons / role=button so the shortcut never
- * steals a keypress that the focused control would handle.
+ * steals a keypress that the focused control would handle. Escape is
+ * intentionally not handled here; `useOrbSelectionEscape` owns graph
+ * selection clearing because that path needs DuckDB access.
  */
 
 // Distance-proportional pan rate. At distance 100 each arrow-press
@@ -52,21 +55,6 @@ export interface OrbKeyboardHandlerDeps {
   getShellState: () => ShellPauseSlice;
 }
 
-const SKIP_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT", "BUTTON"]);
-
-function shouldSkipActiveElement(active: Element | null): boolean {
-  if (!active) return false;
-  if (SKIP_TAGS.has(active.tagName)) return true;
-  // `isContentEditable` is the canonical browser API; the attribute
-  // fallback covers jsdom, where the IDL property isn't always wired
-  // through from the markup.
-  if ((active as HTMLElement).isContentEditable) return true;
-  const editable = active.getAttribute("contenteditable");
-  if (editable === "" || editable === "true") return true;
-  const role = active.getAttribute("role");
-  return role === "button" || role === "textbox";
-}
-
 export function createOrbKeyboardHandler(
   deps: OrbKeyboardHandlerDeps,
 ): (event: KeyboardEvent) => void {
@@ -74,7 +62,7 @@ export function createOrbKeyboardHandler(
 
   return function handleKeyDown(event: KeyboardEvent) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (shouldSkipActiveElement(document.activeElement)) return;
+    if (shouldSkipGraphKeyboardShortcut(document.activeElement)) return;
 
     switch (event.key) {
       case " ":
@@ -135,9 +123,12 @@ export function createOrbKeyboardHandler(
         // Use the smoothed impulse path — `applyTwist` would dump the
         // full 5° in one frame and snap visibly between browser
         // key-repeats. `addTwistImpulse` queues the delta to drain
-        // exponentially in `BlobController.tick`. Sign matches
-        // OrbTouchTwist: screen-CW finger / right-key → world-CW spin.
-        blob.addTwistImpulse(-dir * ROTATE_KEY_RAD);
+        // exponentially in `BlobController.tick`. Orbit-look sign:
+        // left-key reveals the orb's left side (wrapper rotates -Y),
+        // right-key reveals the right side (+Y). This intentionally
+        // diverges from OrbTouchTwist's twist-knob sign — keyboard
+        // arrows feel like camera orbit, not finger twist.
+        blob.addTwistImpulse(dir * ROTATE_KEY_RAD);
         return;
       }
       case "+":

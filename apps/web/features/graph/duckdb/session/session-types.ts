@@ -32,6 +32,7 @@ export interface SessionInfoController
     | 'getInfoHistogram'
     | 'getInfoHistogramsBatch'
     | 'getNumericStatsBatch'
+    | 'getNumericColumnValues'
     | 'getFacetSummary'
     | 'getFacetSummaries'
   > {

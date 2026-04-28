@@ -38,6 +38,7 @@ def test_s2_retention_keeps_unloaded_downstream_tier_sources(tmp_path: Path) -> 
     assert not report.execution_blocked
     assert items["citations"].action == "keep"
     assert not items["citations"].safe_to_delete
+    assert "mapped" in items["citations"].reason
     assert items["papers"].action == "archive_candidate"
     assert items["papers"].safe_to_archive
     assert not items["papers"].safe_to_delete
@@ -191,7 +192,7 @@ def test_s2_retention_blocks_active_runs(tmp_path: Path) -> None:
     assert {item.action for item in report.items} == {"blocked"}
 
 
-def test_s2_retention_allows_loaded_family_delete_after_release_published(tmp_path: Path) -> None:
+def test_s2_retention_blocks_loaded_family_delete_until_diff_cursor_safe(tmp_path: Path) -> None:
     release_dir = _write_s2_release(tmp_path)
     run_state = _run_state(
         release_dir,
@@ -210,8 +211,33 @@ def test_s2_retention_allows_loaded_family_delete_after_release_published(tmp_pa
     items = {item.dataset: item for item in report.items}
 
     assert items["papers"].action == "archive_candidate"
+    assert not items["papers"].safe_to_delete
+    assert "diff-application cursor" in items["papers"].reason
+    assert not items["citations"].safe_to_delete
+
+
+def test_s2_retention_allows_delete_after_diff_cursor_is_hot_delete_safe(tmp_path: Path) -> None:
+    release_dir = _write_s2_release(tmp_path)
+    run_state = _run_state(
+        release_dir,
+        release_status="loaded",
+        ingest_status=INGEST_STATUS_PUBLISHED,
+        families_loaded=("publication_venues", "authors", "papers", "abstracts"),
+        s2_hot_delete_safe_families=("papers", "abstracts"),
+    )
+
+    report = build_source_retention_report(
+        _settings_for(tmp_path),
+        source_code="s2",
+        release_tag="2026-03-10",
+        run_state=run_state,
+        dry_run=True,
+    )
+    items = {item.dataset: item for item in report.items}
+
     assert items["papers"].safe_to_delete
-    assert items["citations"].safe_to_delete
+    assert items["abstracts"].safe_to_delete
+    assert not items["authors"].safe_to_delete
 
 
 def _settings_for(tmp_path: Path):
@@ -229,6 +255,7 @@ def _run_state(
     release_status: str,
     ingest_status: int,
     families_loaded: tuple[str, ...],
+    s2_hot_delete_safe_families: tuple[str, ...] = (),
     has_active_run: bool = False,
 ) -> SourceRetentionRunState:
     return SourceRetentionRunState(
@@ -239,6 +266,7 @@ def _run_state(
         ingest_status=ingest_status,
         requested_status=None,
         families_loaded=families_loaded,
+        s2_hot_delete_safe_families=s2_hot_delete_safe_families,
         has_active_run=has_active_run,
     )
 

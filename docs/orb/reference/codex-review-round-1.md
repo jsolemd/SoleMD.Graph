@@ -1,10 +1,10 @@
 # Reference — Codex review round 1
 
-> Historical reference. The 2026-04-25 amendment changes the
+> Historical reference. The 2026-04-25 amendment changed the
 > Cosmograph conclusion from "mandatory replacement" to "native
-> Cosmograph is acceptable while use remains non-commercial" and
-> changes the rendering stack from "WebGL2 first, WebGPU later" to
-> "WebGPU/TSL first with WebGL2 compatibility." See
+> Cosmograph is acceptable while use remains non-commercial." The
+> 2026-04-27 amendment changed the field/orb rendering stack to a
+> WebGPU-only runtime with unsupported-browser state. See
 > [`../decisions/2026-04-24-cosmograph-license.md`](../decisions/2026-04-24-cosmograph-license.md)
 > and [`../decisions/2026-04-24-webgpu-target.md`](../decisions/2026-04-24-webgpu-target.md).
 
@@ -52,8 +52,8 @@ the plan and into `docs/future/graph-orb-3d-renderer.md` notes.
    ping-pong, separate position+velocity passes. A single
    storage-buffer compute kernel is a WebGPU concept.
 
-   **Resolution:** [`17-rendering-stack-evolution.md`](../17-rendering-stack-evolution.md)
-   § WebGL2 reality check.
+   **Resolution:** superseded by the 2026-04-27 WebGPU-only decision.
+   WebGL2 is no longer a shipped field/orb runtime path.
 
 4. **Force model defensible only with stable baked equilibrium.**
    Sparse kNN + citation springs match connectome framing better

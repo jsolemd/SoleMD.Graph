@@ -15,19 +15,43 @@ import type { DashboardState } from '../dashboard-store'
  * change in this file.
  */
 export type RendererMode = '3d' | '2d'
+export type OrbSelectionTool = 'navigate' | 'rectangle'
 
 export interface ViewSlice {
   rendererMode: RendererMode
+  orbSelectionTool: OrbSelectionTool
+  orbResidentPointCount: number | null
+  orbResidentRevision: number
   setRendererMode: (mode: RendererMode) => void
   toggleRendererMode: () => void
+  setOrbSelectionTool: (tool: OrbSelectionTool) => void
+  toggleOrbRectangleSelection: () => void
+  setOrbResidentPointCount: (count: number | null) => void
 }
 
 export const createViewSlice: StateCreator<DashboardState, [], [], ViewSlice> = (set) => ({
   rendererMode: '3d',
+  orbSelectionTool: 'navigate',
+  orbResidentPointCount: null,
+  orbResidentRevision: 0,
   setRendererMode: (mode) => set((s) => (
     s.rendererMode === mode ? s : { rendererMode: mode }
   )),
   toggleRendererMode: () => set((s) => ({
     rendererMode: s.rendererMode === '3d' ? '2d' : '3d',
   })),
+  setOrbSelectionTool: (tool) => set((s) => (
+    s.orbSelectionTool === tool ? s : { orbSelectionTool: tool }
+  )),
+  toggleOrbRectangleSelection: () => set((s) => ({
+    orbSelectionTool: s.orbSelectionTool === 'rectangle' ? 'navigate' : 'rectangle',
+  })),
+  setOrbResidentPointCount: (count) => set((s) => (
+    s.orbResidentPointCount === count
+      ? s
+      : {
+          orbResidentPointCount: count,
+          orbResidentRevision: s.orbResidentRevision + 1,
+        }
+  )),
 })
