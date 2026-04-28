@@ -38,12 +38,13 @@ struct FrameUniforms {
   viewZoom: f32,
   aspect: f32,
   radiusScale: f32,
-  rotation: f32,
+  rotationYaw: f32,
   colorTime: f32,
   baseColor: vec4f,
   fieldParams: vec4f,
   viewPan: vec2f,
-  _pad0: vec2f,
+  rotationPitch: f32,
+  _pad0: f32,
 };
 
 struct PickParams {
@@ -107,14 +108,29 @@ fn rotateY(p: vec4f, angle: f32) -> vec4f {
   return vec4f(p.x * c + p.z * s, p.y, -p.x * s + p.z * c, p.w);
 }
 
+fn rotateX(p: vec4f, angle: f32) -> vec4f {
+  let c = cos(angle);
+  let s = sin(angle);
+  return vec4f(p.x, p.y * c - p.z * s, p.y * s + p.z * c, p.w);
+}
+
+// Apply yaw first, then pitch. The pitch axis is screen-aligned
+// (camera-X = world-X with no camera transform), giving a CAD-style
+// turntable feel: drag-up always tilts the orb the same way regardless
+// of the current yaw.
+fn applyRotation(p: vec4f, yaw: f32, pitch: f32) -> vec4f {
+  return rotateX(rotateY(p, yaw), pitch);
+}
+
 fn projectedCenter(
   p: vec4f,
   aspect: f32,
-  rotation: f32,
+  yaw: f32,
+  pitch: f32,
   viewZoom: f32,
   viewPan: vec2f,
 ) -> vec3f {
-  let rotated = rotateY(p, rotation);
+  let rotated = applyRotation(p, yaw, pitch);
   let depthScale = clamp(1.0 + rotated.z * 0.22, 0.76, 1.28);
   let zoomedX = rotated.x * depthScale * viewZoom / max(aspect, 0.1);
   let zoomedY = rotated.y * depthScale * viewZoom;
@@ -391,11 +407,18 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let projected = projectedCenter(
     displaced,
     computeFrame.aspect,
-    computeFrame.rotation,
+    computeFrame.rotationYaw,
+    computeFrame.rotationPitch,
     computeFrame.viewZoom,
     computeFrame.viewPan,
   );
-  let rotatedNormal = normalize(rotateY(vec4f(normal, 1.0), computeFrame.rotation).xyz);
+  let rotatedNormal = normalize(
+    applyRotation(
+      vec4f(normal, 1.0),
+      computeFrame.rotationYaw,
+      computeFrame.rotationPitch,
+    ).xyz,
+  );
   let rim = pow(1.0 - clamp(dot(rotatedNormal, vec3f(0.0, 0.0, 1.0)), 0.0, 1.0), 2.0);
   let frontFade = smoothstep(-0.54, 0.66, projected.z);
   let depthLight = clamp(0.64 + projected.z * 0.34 + rim * 0.22, 0.36, 1.16);

@@ -210,6 +210,10 @@ export function OrbWebGpuCanvas({
             runtimeRef.current?.applyTwist(deltaRadians),
           nudgeRotation: (deltaRadians) =>
             runtimeRef.current?.nudgeRotation(deltaRadians),
+          applyPitch: (deltaRadians) =>
+            runtimeRef.current?.applyPitch(deltaRadians),
+          nudgePitch: (deltaRadians) =>
+            runtimeRef.current?.nudgePitch(deltaRadians),
           applyZoom: (factor) => runtimeRef.current?.applyZoom(factor),
           applyPan: (deltaX, deltaY) =>
             runtimeRef.current?.applyPan(deltaX, deltaY),

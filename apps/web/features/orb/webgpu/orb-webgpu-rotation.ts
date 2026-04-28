@@ -23,16 +23,31 @@ export interface OrbWebGpuRotationInput {
 // touch twist) bypass this ease via applyTwist.
 const NUDGE_HALF_LIFE_SECONDS = 0.12;
 
+// Pitch is clamped to ±π/2 so the orb can be tilted top-down or
+// bottom-up but cannot loop past vertical and reverse the yaw axis.
+// Same convention CAD turntable cameras use.
+const PITCH_LIMIT = Math.PI / 2;
+
+function clampPitch(value: number): number {
+  return Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, value));
+}
+
 export class OrbWebGpuRotationController {
   private reducedOrPaused = false;
   private dragReleaseAtMs: number | null = null;
   private selectionActive = false;
   private stateValue: OrbWebGpuRotationState = "running";
   private value = 0;
+  private pitchValue = 0;
   private nudgeAccumulator = 0;
+  private pitchNudgeAccumulator = 0;
 
   get rotation(): number {
     return this.value;
+  }
+
+  get pitch(): number {
+    return this.pitchValue;
   }
 
   get state(): OrbWebGpuRotationState {
@@ -58,6 +73,27 @@ export class OrbWebGpuRotationController {
     if (this.reducedOrPaused || this.selectionActive) return;
     this.stateValue = "suspended-drag";
     this.dragReleaseAtMs = timestampMs;
+  }
+
+  applyPitch(deltaRadians: number, timestampMs: number): void {
+    if (!Number.isFinite(deltaRadians)) return;
+    this.pitchValue = clampPitch(this.pitchValue + deltaRadians);
+    if (this.reducedOrPaused || this.selectionActive) return;
+    this.stateValue = "suspended-drag";
+    this.dragReleaseAtMs = timestampMs;
+  }
+
+  nudgePitch(deltaRadians: number, timestampMs: number): void {
+    if (!Number.isFinite(deltaRadians)) return;
+    this.pitchNudgeAccumulator += deltaRadians;
+    if (this.reducedOrPaused || this.selectionActive) return;
+    this.stateValue = "suspended-drag";
+    this.dragReleaseAtMs = timestampMs;
+  }
+
+  resetPitch(): void {
+    this.pitchValue = 0;
+    this.pitchNudgeAccumulator = 0;
   }
 
   tick(input: OrbWebGpuRotationInput): number {
@@ -93,6 +129,13 @@ export class OrbWebGpuRotationController {
       const apply = this.nudgeAccumulator * (1 - decay);
       this.value = normalizeRadians(this.value + apply);
       this.nudgeAccumulator -= apply;
+    }
+
+    if (Math.abs(this.pitchNudgeAccumulator) > 1e-5 && input.dtSeconds > 0) {
+      const decay = Math.pow(0.5, input.dtSeconds / NUDGE_HALF_LIFE_SECONDS);
+      const apply = this.pitchNudgeAccumulator * (1 - decay);
+      this.pitchValue = clampPitch(this.pitchValue + apply);
+      this.pitchNudgeAccumulator -= apply;
     }
 
     return this.value;

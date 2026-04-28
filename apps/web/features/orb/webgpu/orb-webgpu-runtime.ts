@@ -49,6 +49,8 @@ export interface OrbWebGpuRuntime {
   captureSnapshot(): Promise<Blob | null>;
   applyTwist(deltaRadians: number): void;
   nudgeRotation(deltaRadians: number): void;
+  applyPitch(deltaRadians: number): void;
+  nudgePitch(deltaRadians: number): void;
   applyZoom(factor: number): void;
   applyPan(deltaX: number, deltaY: number): void;
   resetView(): void;
@@ -251,6 +253,17 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     this.rotationController.nudgeRotation(deltaRadians, performance.now());
   }
 
+  applyPitch(deltaRadians: number): void {
+    if (this.disposed || !Number.isFinite(deltaRadians)) return;
+    this.rotationController.applyPitch(deltaRadians, performance.now());
+    this.writeFrameUniforms(performance.now() / 1000, 0);
+  }
+
+  nudgePitch(deltaRadians: number): void {
+    if (this.disposed || !Number.isFinite(deltaRadians)) return;
+    this.rotationController.nudgePitch(deltaRadians, performance.now());
+  }
+
   applyZoom(factor: number): void {
     if (this.disposed) return;
     this.zoomController.applyZoom(factor);
@@ -265,6 +278,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     if (this.disposed) return;
     this.zoomController.reset();
     this.panController.reset();
+    this.rotationController.resetPitch();
   }
 
   async captureSnapshot(): Promise<Blob | null> {
@@ -486,7 +500,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     view.setFloat32(60, BLOB_WAVE_SPEED, true);
     view.setFloat32(64, this.panController.x, true);
     view.setFloat32(68, this.panController.y, true);
-    view.setFloat32(72, 0, true);
+    view.setFloat32(72, this.rotationController.pitch, true);
     view.setFloat32(76, 0, true);
     this.device.queue.writeBuffer(this.frameUniformBuffer, 0, this.frameUniformBytes);
   }

@@ -3,6 +3,8 @@ import { create } from "zustand";
 export interface OrbWebGpuControlHandle {
   applyTwist: (deltaRadians: number) => void;
   nudgeRotation: (deltaRadians: number) => void;
+  applyPitch: (deltaRadians: number) => void;
+  nudgePitch: (deltaRadians: number) => void;
   applyZoom: (factor: number) => void;
   applyPan: (deltaX: number, deltaY: number) => void;
   resetView: () => void;

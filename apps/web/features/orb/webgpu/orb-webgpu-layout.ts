@@ -21,11 +21,11 @@ export const U32_BYTES = 4;
 export const VEC4_BYTES = 16;
 export const DISPLAY_PARTICLE_BYTES = VEC4_BYTES * 3;
 // FrameUniforms layout (80 bytes, 16-byte aligned):
-//  0  time, dt, count, viewZoom (replaces _pad0)
-// 16  aspect, radiusScale, rotation, colorTime
+//  0  time, dt, count, viewZoom
+// 16  aspect, radiusScale, rotationYaw, colorTime
 // 32  baseColor (vec4f)
 // 48  fieldParams (vec4f)
-// 64  viewPan (vec2f) + _pad (vec2f)
+// 64  viewPan (vec2f), rotationPitch, _pad (f32)
 export const FRAME_UNIFORM_BYTES = 80;
 export const PICK_PARAM_BYTES = 16;
 export const RECT_PARAM_BYTES = 32;

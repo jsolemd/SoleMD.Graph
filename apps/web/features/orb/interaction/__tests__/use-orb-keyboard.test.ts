@@ -33,6 +33,8 @@ function buildHandle(): jest.Mocked<OrbWebGpuControlHandle> {
   return {
     applyTwist: jest.fn(),
     nudgeRotation: jest.fn(),
+    applyPitch: jest.fn(),
+    nudgePitch: jest.fn(),
     applyZoom: jest.fn(),
     applyPan: jest.fn(),
     resetView: jest.fn(),
@@ -47,15 +49,15 @@ describe("useOrbKeyboard", () => {
     );
 
     act(() => {
-      pressKey("+");
-      pressKey("-");
+      pressKey("R");
+      pressKey("F");
       pressKey("ArrowLeft");
       pressKey("ArrowRight");
       pressKey("ArrowUp");
       pressKey("ArrowDown");
       pressKey(",");
       pressKey(".");
-      pressKey("0");
+      pressKey("T");
     });
 
     expect(handle.applyZoom).toHaveBeenCalledWith(ORB_ZOOM_KEY_FACTOR);
@@ -75,8 +77,8 @@ describe("useOrbKeyboard", () => {
     renderHook(() => useOrbKeyboard({ getHandle: () => handle }));
 
     act(() => {
-      pressKey("+", { ctrlKey: true });
-      pressKey("=", { metaKey: true });
+      pressKey("R", { ctrlKey: true });
+      pressKey("R", { metaKey: true });
       pressKey("ArrowLeft", { altKey: true });
     });
 
@@ -92,7 +94,7 @@ describe("useOrbKeyboard", () => {
     renderHook(() => useOrbKeyboard({ getHandle: () => handle }));
 
     act(() => {
-      pressKey("+");
+      pressKey("R");
       pressKey("ArrowLeft");
     });
 
@@ -127,7 +129,7 @@ describe("useOrbKeyboard", () => {
 
     rerender({ enabled: false });
     act(() => {
-      pressKey("+");
+      pressKey("R");
     });
 
     expect(handle.applyZoom).not.toHaveBeenCalled();

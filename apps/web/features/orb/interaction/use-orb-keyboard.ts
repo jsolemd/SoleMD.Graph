@@ -49,13 +49,16 @@ export function useOrbKeyboard({
           event.preventDefault();
           togglePauseMotion();
           return;
-        case "+":
-        case "=":
+        // R / F zoom in / out. Replaces +/=/-/_ — keyboard now mirrors
+        // the user's physical-key mental model rather than the math
+        // symbol. Wheel still zooms via OrbInteractionSurface.
+        case "r":
+        case "R":
           event.preventDefault();
           handle?.applyZoom(ORB_ZOOM_KEY_FACTOR);
           return;
-        case "-":
-        case "_":
+        case "f":
+        case "F":
           event.preventDefault();
           handle?.applyZoom(1 / ORB_ZOOM_KEY_FACTOR);
           return;
@@ -76,9 +79,8 @@ export function useOrbKeyboard({
           event.preventDefault();
           handle?.nudgeRotation(ORB_ROTATE_KEY_RADIANS);
           return;
-        case "0":
-        case "r":
-        case "R":
+        case "t":
+        case "T":
           event.preventDefault();
           handle?.resetView();
           return;
