@@ -23,15 +23,6 @@ export interface OrbWebGpuRotationInput {
 // touch twist) bypass this ease via applyTwist.
 const NUDGE_HALF_LIFE_SECONDS = 0.12;
 
-// Pitch is clamped to ±π/2 so the orb can be tilted top-down or
-// bottom-up but cannot loop past vertical and reverse the yaw axis.
-// Same convention CAD turntable cameras use.
-const PITCH_LIMIT = Math.PI / 2;
-
-function clampPitch(value: number): number {
-  return Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, value));
-}
-
 export class OrbWebGpuRotationController {
   private reducedOrPaused = false;
   private dragReleaseAtMs: number | null = null;
@@ -77,7 +68,7 @@ export class OrbWebGpuRotationController {
 
   applyPitch(deltaRadians: number, timestampMs: number): void {
     if (!Number.isFinite(deltaRadians)) return;
-    this.pitchValue = clampPitch(this.pitchValue + deltaRadians);
+    this.pitchValue = normalizeRadians(this.pitchValue + deltaRadians);
     if (this.reducedOrPaused || this.selectionActive) return;
     this.stateValue = "suspended-drag";
     this.dragReleaseAtMs = timestampMs;
@@ -134,7 +125,7 @@ export class OrbWebGpuRotationController {
     if (Math.abs(this.pitchNudgeAccumulator) > 1e-5 && input.dtSeconds > 0) {
       const decay = Math.pow(0.5, input.dtSeconds / NUDGE_HALF_LIFE_SECONDS);
       const apply = this.pitchNudgeAccumulator * (1 - decay);
-      this.pitchValue = clampPitch(this.pitchValue + apply);
+      this.pitchValue = normalizeRadians(this.pitchValue + apply);
       this.pitchNudgeAccumulator -= apply;
     }
 
