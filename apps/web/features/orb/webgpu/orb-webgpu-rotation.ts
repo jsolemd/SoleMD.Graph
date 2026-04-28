@@ -83,8 +83,16 @@ export class OrbWebGpuRotationController {
   }
 
   resetPitch(): void {
-    this.pitchValue = 0;
-    this.pitchNudgeAccumulator = 0;
+    // Ease toward 0 along the shorter angular path. Setting the nudge
+    // accumulator to the negative current pitch drains pitchValue
+    // toward 0 over the standard nudge half-life, matching the
+    // zoom/pan eases used by resetView. Wrap to [-π, π] so resets
+    // from large absolute pitches (multiple full revolutions) take
+    // the shorter visual path rather than spinning back the long way.
+    let distance = -this.pitchValue;
+    if (distance > Math.PI) distance -= 2 * Math.PI;
+    if (distance < -Math.PI) distance += 2 * Math.PI;
+    this.pitchNudgeAccumulator = distance;
   }
 
   tick(input: OrbWebGpuRotationInput): number {
