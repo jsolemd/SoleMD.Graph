@@ -306,6 +306,10 @@ export function OrbWebGpuCanvas({
   }, [flagArray, runtime]);
 
   useEffect(() => {
+    runtime?.setFocusIndex(focusIndex);
+  }, [focusIndex, runtime]);
+
+  useEffect(() => {
     runtime?.setMotionSettings(motionSettings);
   }, [motionSettings, runtime]);
 

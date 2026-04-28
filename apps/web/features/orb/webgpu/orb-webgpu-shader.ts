@@ -44,7 +44,7 @@ struct FrameUniforms {
   fieldParams: vec4f,
   viewPan: vec2f,
   rotationPitch: f32,
-  _pad0: f32,
+  focusIndex: i32,
 };
 
 struct PickParams {
@@ -488,6 +488,24 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   alpha = mix(alpha, 1.0, focusW);
   halo = mix(halo, 1.0, focusW);
   ring = mix(ring, 1.0, focusW);
+
+  // GPU-resident neighborhood halo around the focused particle. Compute
+  // distance in base (paper-bound) space against computePositions[focus]
+  // so the halo is stable regardless of per-frame FBM drift; falls off
+  // smoothly via smoothstep so there's no hard edge to the cluster.
+  let focusIdxRaw = computeFrame.focusIndex;
+  if (focusIdxRaw >= 0) {
+    let focusIdx = u32(focusIdxRaw);
+    if (focusIdx < computeFrame.count && focusIdx != i) {
+      let focusPos = computePositions[focusIdx].xyz;
+      let dist = length(p.xyz - focusPos);
+      let clusterBoost = smoothstep(0.28, 0.0, dist);
+      color = mix(color, vec3f(1.0, 0.92, 0.66), clusterBoost * 0.35);
+      alpha = max(alpha, 0.55 * clusterBoost);
+      halo = max(halo, 0.45 * clusterBoost);
+      ring = max(ring, 0.40 * clusterBoost);
+    }
+  }
 
   computeDisplay[i] = DisplayParticle(
     vec4f(projected.xy, projected.z, radius),

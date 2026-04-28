@@ -47,6 +47,7 @@ export interface OrbWebGpuRuntime {
     range: OrbWebGpuChunkRange,
   ): void;
   uploadFlags(flags: Uint32Array): void;
+  setFocusIndex(index: number | null): void;
   setMotionSettings(settings: OrbWebGpuMotionSettings): void;
   pickAsync(clientX: number, clientY: number): Promise<number>;
   pickRectAsync(
@@ -129,6 +130,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   private renderBundleList: GPURenderBundle[] | null = null;
   private renderBundleParticleCount = -1;
   private colorTime = 0;
+  private focusIndex = -1;
   private motionSettings: OrbWebGpuMotionSettings = {
     ambientEntropy: 1,
     motionSpeedMultiplier: 1,
@@ -246,6 +248,17 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       this.flagShadow.fill(0, count);
     }
     this.device.queue.writeBuffer(this.flagsBuffer, 0, flags.subarray(0, count));
+  }
+
+  setFocusIndex(index: number | null): void {
+    if (this.disposed) return;
+    if (index == null || !Number.isFinite(index) || index < 0) {
+      this.focusIndex = -1;
+      return;
+    }
+    const intIndex = Math.floor(index);
+    this.focusIndex =
+      intIndex >= 0 && intIndex < this.maxParticles ? intIndex : -1;
   }
 
   setMotionSettings(settings: OrbWebGpuMotionSettings): void {
@@ -547,7 +560,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     view.setFloat32(64, this.panController.x, true);
     view.setFloat32(68, this.panController.y, true);
     view.setFloat32(72, this.rotationController.pitch, true);
-    view.setFloat32(76, 0, true);
+    view.setInt32(76, this.focusIndex, true);
     this.device.queue.writeBuffer(this.frameUniformBuffer, 0, this.frameUniformBytes);
   }
 
