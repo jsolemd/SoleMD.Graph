@@ -320,7 +320,7 @@ fn landingFieldNoise(
 ) -> f32 {
   _ = motion;
   _ = instanceIndex;
-  return landingFbm(p, colorTime * 0.25);
+  return landingFbm(p, colorTime);
 }
 
 fn landingMotionNoise(
@@ -329,7 +329,7 @@ fn landingMotionNoise(
   colorTime: f32,
 ) -> f32 {
   let speed = max(motion.w, 0.001);
-  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * 0.25 * speed));
+  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * speed));
 }
 
 fn landingBaseColor() -> vec3f {
@@ -426,8 +426,9 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let baseColor = landingBaseColor();
   let noiseColor = landingNoiseColor(computeFrame.colorTime);
   let vNoise = clamp(fieldNoise, 0.0, 1.0);
+  let neighborhood = 1.0 + 0.45 * (vNoise - 0.5);
   let burstColor = clamp(
-    baseColor + vNoise * 4.0 * (noiseColor - baseColor),
+    (baseColor + vNoise * 4.0 * (noiseColor - baseColor)) * neighborhood,
     vec3f(0.0),
     vec3f(1.0),
   );
