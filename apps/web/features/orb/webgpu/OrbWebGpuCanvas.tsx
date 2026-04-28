@@ -113,7 +113,13 @@ export function OrbWebGpuCanvas({
     () => ({
       ambientEntropy,
       motionSpeedMultiplier,
-      pauseMotion: pauseMotion || prefersReducedMotion,
+      // pauseMotion is the user-facing toggle; prefersReducedMotion is
+      // the OS signal. The runtime keeps them separate (per
+      // feedback_user_vs_system_motion_inputs) so each consumer can
+      // derive the gate it needs — pauseMotion freezes ambient motion,
+      // prefersReducedMotion snaps the camera ease.
+      pauseMotion,
+      prefersReducedMotion,
       rotationSpeedMultiplier,
       selectionActive:
         focusIndex != null ||
@@ -202,6 +208,10 @@ export function OrbWebGpuCanvas({
         controlHandle = {
           applyTwist: (deltaRadians) =>
             runtimeRef.current?.applyTwist(deltaRadians),
+          applyZoom: (factor) => runtimeRef.current?.applyZoom(factor),
+          applyPan: (deltaX, deltaY) =>
+            runtimeRef.current?.applyPan(deltaX, deltaY),
+          resetView: () => runtimeRef.current?.resetView(),
         };
         snapshotHandle = {
           captureSnapshot: () => {

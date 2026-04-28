@@ -40,6 +40,8 @@ import {
   OrbWebGpuCanvas,
   type OrbWebGpuCanvasStatus,
 } from "../webgpu/OrbWebGpuCanvas";
+import { useOrbWebGpuRuntimeStore } from "../webgpu/orb-webgpu-runtime-store";
+import { useOrbKeyboard } from "../interaction/use-orb-keyboard";
 
 // SSR-disabled: GraphPanelsLayer transitively pulls @/features/graph/cosmograph
 // (DetailPanel/WikiPanel/InfoPanel/PromptBox), whose top-level
@@ -340,6 +342,15 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
     store.setPauseMotion(!store.pauseMotion);
   }, []);
 
+  const handleWheelZoom = useCallback((factor: number) => {
+    useOrbWebGpuRuntimeStore.getState().handle?.applyZoom(factor);
+  }, []);
+
+  useOrbKeyboard({
+    getHandle: () => useOrbWebGpuRuntimeStore.getState().handle,
+    togglePauseMotion: handleDoubleTapPause,
+  });
+
   const panelsReady = bundle != null && queries != null && canvas != null;
 
   return (
@@ -353,6 +364,7 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
         onDoubleTap={handleDoubleTapPause}
         onHoverMove={handleOrbHoverMove}
         onHoverClear={handleOrbHoverClear}
+        onWheelZoom={handleWheelZoom}
         rectSelectionEnabled={orbSelectionTool === "rectangle"}
         onRectSelectionCancel={releaseOrbSelectionTool}
         onRectSelect={handleOrbRectSelect}

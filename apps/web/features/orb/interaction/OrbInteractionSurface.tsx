@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   readGraphSelectionChords,
@@ -101,6 +101,13 @@ interface OrbInteractionSurfaceProps {
   onDoubleTap?: () => void;
   onHoverMove?: (clientX: number, clientY: number) => void;
   onHoverClear?: () => void;
+  /**
+   * Wheel zoom. Receives a multiplicative factor (1 = no zoom). Wheel
+   * is wired with `passive: false` at the surface level so consumers
+   * can preventDefault on Ctrl+wheel (trackpad pinch) and stop the
+   * browser from treating it as a page zoom.
+   */
+  onWheelZoom?: (factor: number) => void;
   rectSelectionEnabled?: boolean;
   onRectSelectionCancel?: () => void;
   onRectSelect?: (
@@ -114,6 +121,7 @@ export function OrbInteractionSurface({
   onDoubleTap,
   onHoverMove,
   onHoverClear,
+  onWheelZoom,
   rectSelectionEnabled = false,
   onRectSelectionCancel,
   onRectSelect,
@@ -142,16 +150,40 @@ export function OrbInteractionSurface({
   const activePointerCountRef = useRef(0);
   const { registerSurface } = useOrbInteraction();
 
+  const [surfaceElement, setSurfaceElement] = useState<HTMLDivElement | null>(
+    null,
+  );
   // Callback ref: fires with the element when it mounts and `null` on
   // unmount. The provider's `surfaceElement` state mirrors that, so
   // consumers can react to element identity changes, including the 3D ↔ 2D
   // toggle replacing the surface entirely.
   const handleRef = useCallback(
     (node: HTMLDivElement | null) => {
+      setSurfaceElement(node);
       registerSurface(node);
     },
     [registerSurface],
   );
+
+  // Wheel zoom. Attached as a non-passive native listener so we can
+  // preventDefault when Ctrl is held — without that the browser
+  // intercepts trackpad pinch as a page zoom and the event never
+  // reaches us. React's onWheel registers passively in modern builds,
+  // so the attach must happen at the DOM level.
+  useEffect(() => {
+    if (!onWheelZoom || !surfaceElement) return;
+    const handler = (event: WheelEvent) => {
+      // Always preventDefault — even non-ctrl wheel events, otherwise
+      // the canvas's parent scroll container would scroll while the
+      // user expects to dolly.
+      event.preventDefault();
+      const intensity = event.ctrlKey ? 0.02 : 0.0015;
+      const factor = Math.exp(-event.deltaY * intensity);
+      onWheelZoom(factor);
+    };
+    surfaceElement.addEventListener("wheel", handler, { passive: false });
+    return () => surfaceElement.removeEventListener("wheel", handler);
+  }, [onWheelZoom, surfaceElement]);
 
   return (
     <div

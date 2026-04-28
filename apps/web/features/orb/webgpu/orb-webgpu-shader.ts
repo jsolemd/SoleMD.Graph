@@ -35,13 +35,15 @@ struct FrameUniforms {
   time: f32,
   dt: f32,
   count: u32,
-  _pad0: u32,
+  viewZoom: f32,
   aspect: f32,
   radiusScale: f32,
   rotation: f32,
   colorTime: f32,
   baseColor: vec4f,
   fieldParams: vec4f,
+  viewPan: vec2f,
+  _pad0: vec2f,
 };
 
 struct PickParams {
@@ -105,14 +107,18 @@ fn rotateY(p: vec4f, angle: f32) -> vec4f {
   return vec4f(p.x * c + p.z * s, p.y, -p.x * s + p.z * c, p.w);
 }
 
-fn projectedCenter(p: vec4f, aspect: f32, rotation: f32) -> vec3f {
+fn projectedCenter(
+  p: vec4f,
+  aspect: f32,
+  rotation: f32,
+  viewZoom: f32,
+  viewPan: vec2f,
+) -> vec3f {
   let rotated = rotateY(p, rotation);
   let depthScale = clamp(1.0 + rotated.z * 0.22, 0.76, 1.28);
-  return vec3f(
-    rotated.x * depthScale / max(aspect, 0.1),
-    rotated.y * depthScale,
-    rotated.z,
-  );
+  let zoomedX = rotated.x * depthScale * viewZoom / max(aspect, 0.1);
+  let zoomedY = rotated.y * depthScale * viewZoom;
+  return vec3f(zoomedX + viewPan.x, zoomedY + viewPan.y, rotated.z);
 }
 
 fn vertexCorner(vertexIndex: u32) -> vec2f {
@@ -386,6 +392,8 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
     displaced,
     computeFrame.aspect,
     computeFrame.rotation,
+    computeFrame.viewZoom,
+    computeFrame.viewPan,
   );
   let rotatedNormal = normalize(rotateY(vec4f(normal, 1.0), computeFrame.rotation).xyz);
   let rim = pow(1.0 - clamp(dot(rotatedNormal, vec3f(0.0, 0.0, 1.0)), 0.0, 1.0), 2.0);
@@ -409,7 +417,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
     selectW,
     focusW,
   );
-  radius = radius * (1.0 + liveDrift * 0.020);
+  radius = radius * (1.0 + liveDrift * 0.020) * computeFrame.viewZoom;
   var color = burstColor;
   color = mix(color * depthLight, color * 1.20 + vec3f(0.02), rim * 0.18);
   var alpha =

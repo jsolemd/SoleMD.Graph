@@ -31,7 +31,9 @@ import {
   tickOrbInteractionWeights,
   type OrbInteractionWeights,
 } from "./orb-webgpu-interaction-weights";
+import { OrbWebGpuPanController } from "./orb-webgpu-pan";
 import { OrbWebGpuRotationController } from "./orb-webgpu-rotation";
+import { OrbWebGpuZoomController } from "./orb-webgpu-zoom";
 
 const ORB_BASE_COLOR = rgb255ToUnit(LANDING_BASE_BLUE_RGB);
 
@@ -46,6 +48,9 @@ export interface OrbWebGpuRuntime {
   ): Promise<number[]>;
   captureSnapshot(): Promise<Blob | null>;
   applyTwist(deltaRadians: number): void;
+  applyZoom(factor: number): void;
+  applyPan(deltaX: number, deltaY: number): void;
+  resetView(): void;
   start(): void;
   stop(): void;
   destroy(): void;
@@ -55,6 +60,7 @@ export interface OrbWebGpuMotionSettings {
   ambientEntropy: number;
   motionSpeedMultiplier: number;
   pauseMotion: boolean;
+  prefersReducedMotion: boolean;
   rotationSpeedMultiplier: number;
   selectionActive: boolean;
 }
@@ -117,11 +123,14 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     ambientEntropy: 1,
     motionSpeedMultiplier: 1,
     pauseMotion: false,
+    prefersReducedMotion: false,
     rotationSpeedMultiplier: 1,
     selectionActive: false,
   };
   private flagShadow!: Uint32Array;
   private weights!: OrbInteractionWeights;
+  private readonly zoomController = new OrbWebGpuZoomController();
+  private readonly panController = new OrbWebGpuPanController();
 
   private constructor(args: OrbWebGpuRuntimeResources) {
     Object.assign(this, args);
@@ -195,6 +204,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       ambientEntropy: clampFinite(settings.ambientEntropy, 0, 2),
       motionSpeedMultiplier: clampFinite(settings.motionSpeedMultiplier, 0, 3),
       pauseMotion: settings.pauseMotion,
+      prefersReducedMotion: settings.prefersReducedMotion,
       rotationSpeedMultiplier: clampFinite(settings.rotationSpeedMultiplier, 0, 3),
       selectionActive: settings.selectionActive,
     };
@@ -233,6 +243,22 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.applyTwist(deltaRadians, performance.now());
     this.writeFrameUniforms(performance.now() / 1000, 0);
+  }
+
+  applyZoom(factor: number): void {
+    if (this.disposed) return;
+    this.zoomController.applyZoom(factor);
+  }
+
+  applyPan(deltaX: number, deltaY: number): void {
+    if (this.disposed) return;
+    this.panController.applyPan({ x: deltaX, y: deltaY });
+  }
+
+  resetView(): void {
+    if (this.disposed) return;
+    this.zoomController.reset();
+    this.panController.reset();
   }
 
   async captureSnapshot(): Promise<Blob | null> {
@@ -347,12 +373,19 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     );
     this.lastFrameMs = timestampMs;
     this.resize();
-    const motionDt = this.motionSettings.pauseMotion
+    // Ambient motion (drift FBM time, color cycle) halts on either the
+    // user-facing pause or the OS reduced-motion preference. This keeps
+    // the prior collapsed-flag behavior even though motionSettings now
+    // tracks the two signals separately for camera-ease purposes.
+    const ambientFrozen =
+      this.motionSettings.pauseMotion ||
+      this.motionSettings.prefersReducedMotion;
+    const motionDt = ambientFrozen
       ? 0
       : rawDt *
         this.motionSettings.motionSpeedMultiplier *
         this.motionSettings.ambientEntropy;
-    const colorDt = this.motionSettings.pauseMotion
+    const colorDt = ambientFrozen
       ? 0
       : rawDt * this.motionSettings.motionSpeedMultiplier;
     if (this.particleCount > 0) {
@@ -360,10 +393,24 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     }
     this.rotationController.tick({
       dtSeconds: rawDt,
-      pauseMotion: this.motionSettings.pauseMotion,
+      // Either the user-facing pause OR OS reduced-motion freezes the
+      // ambient auto-rotation. Camera ease (zoom / pan controllers
+      // below) reads only prefersReducedMotion so that explicit user
+      // input still applies instantly during pauseMotion.
+      pauseMotion:
+        this.motionSettings.pauseMotion ||
+        this.motionSettings.prefersReducedMotion,
       rotationSpeedMultiplier: this.motionSettings.rotationSpeedMultiplier,
       selectionActive: this.motionSettings.selectionActive,
       timestampMs,
+    });
+    this.zoomController.tick({
+      dtSeconds: rawDt,
+      prefersReducedMotion: this.motionSettings.prefersReducedMotion,
+    });
+    this.panController.tick({
+      dtSeconds: rawDt,
+      prefersReducedMotion: this.motionSettings.prefersReducedMotion,
     });
     this.tickInteractionState(rawDt);
     this.writeFrameUniforms(timestampMs / 1000, motionDt);
@@ -418,7 +465,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     view.setFloat32(0, time, true);
     view.setFloat32(4, dt, true);
     view.setUint32(8, this.particleCount, true);
-    view.setUint32(12, 0, true);
+    view.setFloat32(12, this.zoomController.zoom, true);
     view.setFloat32(16, this.aspect, true);
     view.setFloat32(20, this.radiusScale, true);
     view.setFloat32(24, this.rotationController.rotation, true);
@@ -431,6 +478,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     view.setFloat32(52, this.resolveEffectiveDepth(), true);
     view.setFloat32(56, BLOB_FREQUENCY, true);
     view.setFloat32(60, BLOB_WAVE_SPEED, true);
+    view.setFloat32(64, this.panController.x, true);
+    view.setFloat32(68, this.panController.y, true);
+    view.setFloat32(72, 0, true);
+    view.setFloat32(76, 0, true);
     this.device.queue.writeBuffer(this.frameUniformBuffer, 0, this.frameUniformBytes);
   }
 

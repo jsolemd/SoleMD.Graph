@@ -1,0 +1,65 @@
+// Camera zoom for the WebGPU orb. Mirrors the rotation controller
+// shape: a target value the runtime nudges via applyZoom / setZoom,
+// eased toward the current value each frame. The shader multiplies
+// post-rotation XY *and* the visual radius by the current value, so a
+// zoom of 2 reads as a true camera dolly (twice the screen size).
+//
+// Reduced motion gate (per feedback_user_vs_system_motion_inputs): only
+// the per-frame ease respects prefers-reduced-motion. setZoom and
+// applyZoom always commit instantly; the smoothing happens between
+// commits. This keeps inspection responsive while making continuous
+// keyboard / wheel input feel calm.
+import { clampFinite } from "./orb-webgpu-layout";
+
+export const ORB_ZOOM_DEFAULT = 1;
+export const ORB_ZOOM_MIN = 0.5;
+export const ORB_ZOOM_MAX = 4;
+// 250 ms half-life — the time it takes the eased value to cover half
+// the remaining distance to target. Matches the audit's recommendation
+// for "calm but responsive" camera moves.
+const ZOOM_HALF_LIFE_SECONDS = 0.25;
+
+export interface OrbWebGpuZoomTickInput {
+  dtSeconds: number;
+  prefersReducedMotion: boolean;
+}
+
+export class OrbWebGpuZoomController {
+  private targetValue = ORB_ZOOM_DEFAULT;
+  private value = ORB_ZOOM_DEFAULT;
+
+  get zoom(): number {
+    return this.value;
+  }
+
+  get target(): number {
+    return this.targetValue;
+  }
+
+  setZoom(next: number): void {
+    this.targetValue = clampFinite(next, ORB_ZOOM_MIN, ORB_ZOOM_MAX);
+  }
+
+  applyZoom(factor: number): void {
+    if (!Number.isFinite(factor) || factor <= 0) return;
+    this.setZoom(this.targetValue * factor);
+  }
+
+  reset(): void {
+    this.targetValue = ORB_ZOOM_DEFAULT;
+  }
+
+  tick(input: OrbWebGpuZoomTickInput): number {
+    if (input.prefersReducedMotion) {
+      this.value = this.targetValue;
+      return this.value;
+    }
+    if (input.dtSeconds <= 0) return this.value;
+    const decay = Math.pow(0.5, input.dtSeconds / ZOOM_HALF_LIFE_SECONDS);
+    this.value = this.targetValue + (this.value - this.targetValue) * decay;
+    if (Math.abs(this.value - this.targetValue) < 1e-4) {
+      this.value = this.targetValue;
+    }
+    return this.value;
+  }
+}

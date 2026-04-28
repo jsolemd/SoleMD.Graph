@@ -20,7 +20,13 @@ export const RENDER_SPRITE_SAMPLER_INDEX = 21;
 export const U32_BYTES = 4;
 export const VEC4_BYTES = 16;
 export const DISPLAY_PARTICLE_BYTES = VEC4_BYTES * 3;
-export const FRAME_UNIFORM_BYTES = 64;
+// FrameUniforms layout (80 bytes, 16-byte aligned):
+//  0  time, dt, count, viewZoom (replaces _pad0)
+// 16  aspect, radiusScale, rotation, colorTime
+// 32  baseColor (vec4f)
+// 48  fieldParams (vec4f)
+// 64  viewPan (vec2f) + _pad (vec2f)
+export const FRAME_UNIFORM_BYTES = 80;
 export const PICK_PARAM_BYTES = 16;
 export const RECT_PARAM_BYTES = 32;
 
