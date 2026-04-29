@@ -485,9 +485,16 @@ fn seedAmbientGeometry(@builtin(global_invocation_id) id: vec3u) {
   let sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
   let phi = 6.2831853 * h2;
   let unit = vec3f(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta);
-  // BLOB_RADIUS = 0.62 (uniform sphere, all axes same — matches the
-  // ambient blob radius the prior CPU seeder targeted).
-  let pos = unit * 0.62;
+  // BLOB_RADIUS = 1.15. Sized for the 1M-particle density target —
+  // the prior 0.62 (matched to the legacy 16k blob) packed particles
+  // too tight at 60× density; at 1.15 the cloud fills the available
+  // viewport while keeping inter-particle gap large enough for the
+  // landing's soft, organic texture to read. Particles remain uniform
+  // sphere distribution from the inverse-CDF hash above, so density
+  // stays uniform across the globe; only the inter-particle spacing
+  // grows. Tunable: drop toward 0.62 for the legacy compact orb feel,
+  // push up to 1.3+ if particle count grows further.
+  let pos = unit * 1.15;
   computePositions[i] = vec4f(pos, 0.0);
 
   // Synthesize a small tangential drift perpendicular to the position.

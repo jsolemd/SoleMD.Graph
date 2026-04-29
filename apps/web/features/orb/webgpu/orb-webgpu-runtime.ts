@@ -56,6 +56,14 @@ const ORB_CANVAS_DPR_CAP = 1.75;
 // is the only degraded surface.
 const ORB_PICK_INDEX_CEILING = 0x1fffff;
 
+// Interaction-weight decay window. After the last interaction signal
+// (focus / hover / selection / scope flag), the weights tick keeps
+// running for this long so hover/select/focus visibly fade out, then
+// stops. ≈5 × FOCUS_TAU_SECONDS (0.45) = 99.3% decay — residual is
+// invisible. Skipping the tick + 16 MB upload at 60 Hz is the single
+// biggest CPU-side win at 1M particles, since the loop is O(N).
+const INTERACTION_DECAY_WINDOW_MS = 2_250;
+
 export interface OrbWebGpuRuntime {
   uploadParticles(arrays: OrbWebGpuParticleArrays): void;
   uploadParticleRange(
@@ -164,6 +172,15 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   private renderBundleParticleCount = -1;
   private colorTime = 0;
   private focusIndex = -1;
+  // Tracking for the weights-tick early-exit. While `hasActiveFlag` is
+  // true (any flag bit set on any particle) or `focusIndex >= 0`, the
+  // weights tick runs every frame so saturated weights stay saturated.
+  // When BOTH go inactive, the decay window opens and the tick keeps
+  // running until `interactionWindowEndMs` to let weights fade out
+  // smoothly. Outside the decay window with no active signal, the tick
+  // and its 16 MB writeBuffer skip entirely — biggest CPU win at 1M.
+  private hasActiveFlag = false;
+  private interactionWindowEndMs = 0;
   private motionSettings: OrbWebGpuMotionSettings = {
     ambientEntropy: 1,
     motionSpeedMultiplier: 1,
@@ -294,17 +311,41 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       this.flagShadow.fill(0, count);
     }
     this.device.queue.writeBuffer(this.flagsBuffer, 0, flags.subarray(0, count));
+    // One-shot O(N) scan only runs on flag upload (rare). Result drives
+    // the per-frame weights-tick early-exit. Transition from active to
+    // inactive opens the decay window so saturated weights fade out.
+    let anyFlag = false;
+    for (let i = 0; i < count; i += 1) {
+      if (flags[i] !== 0) {
+        anyFlag = true;
+        break;
+      }
+    }
+    const wasActive = this.hasActiveFlag;
+    this.hasActiveFlag = anyFlag;
+    if (wasActive && !anyFlag && this.focusIndex < 0) {
+      this.openDecayWindow();
+    }
   }
 
   setFocusIndex(index: number | null): void {
     if (this.disposed) return;
+    const wasFocused = this.focusIndex >= 0;
     if (index == null || !Number.isFinite(index) || index < 0) {
       this.focusIndex = -1;
-      return;
+    } else {
+      const intIndex = Math.floor(index);
+      this.focusIndex =
+        intIndex >= 0 && intIndex < this.maxParticles ? intIndex : -1;
     }
-    const intIndex = Math.floor(index);
-    this.focusIndex =
-      intIndex >= 0 && intIndex < this.maxParticles ? intIndex : -1;
+    if (wasFocused && this.focusIndex < 0 && !this.hasActiveFlag) {
+      this.openDecayWindow();
+    }
+  }
+
+  private openDecayWindow(): void {
+    this.interactionWindowEndMs =
+      performance.now() + INTERACTION_DECAY_WINDOW_MS;
   }
 
   setMotionSettings(settings: OrbWebGpuMotionSettings): void {
@@ -644,6 +685,13 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
 
   private tickInteractionState(dtSeconds: number): void {
     if (dtSeconds <= 0 || this.particleCount <= 0) return;
+    // Skip the O(N) weight loop and the 16 MB queue.writeBuffer when no
+    // interaction is active and the post-interaction decay window has
+    // closed. Initial GPU weights are zero (uploadParticles writes a
+    // cleared buffer on first non-empty upload), so the GPU stays at
+    // rest while we skip — no residual weights to flush.
+    const isActive = this.hasActiveFlag || this.focusIndex >= 0;
+    if (!isActive && performance.now() > this.interactionWindowEndMs) return;
     tickOrbInteractionWeights(
       this.weights,
       this.flagShadow,
