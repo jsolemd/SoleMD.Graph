@@ -2,28 +2,12 @@
 
 import type { OrbSelectionRect } from "../interaction/OrbInteractionSurface";
 import { ORB_PICK_NO_HIT, type OrbPickRectMode } from "../interaction/orb-picker-store";
-import {
-  BLOB_AMPLITUDE,
-  BLOB_DEPTH,
-  BLOB_FREQUENCY,
-  BLOB_WAVE_SPEED,
-  INTRO_DEPTH_BOOST,
-  INTRO_DURATION_SECONDS,
-  LANDING_BASE_BLUE_RGB,
-  rgb255ToUnit,
-} from "../../field/shared/landing-feel-constants";
 import type {
   OrbWebGpuChunkRange,
   OrbWebGpuParticleArrays,
 } from "./orb-webgpu-particles";
 import type { OrbWebGpuDeviceContext } from "./orb-webgpu-gate";
-import {
-  FRAME_UNIFORM_BYTES,
-  U32_BYTES,
-  clampFinite,
-  writePickParams,
-  writeRectParams,
-} from "./orb-webgpu-layout";
+import { SIZE_BYTES_PER_PARTICLE, clampFinite } from "./orb-webgpu-layout";
 import {
   createOrbWebGpuResources,
   type OrbWebGpuRuntimeResources,
@@ -37,21 +21,40 @@ import {
 import { OrbWebGpuPanController } from "./orb-webgpu-pan";
 import { OrbWebGpuRotationController } from "./orb-webgpu-rotation";
 import { OrbWebGpuZoomController } from "./orb-webgpu-zoom";
+import {
+  OrbInteractionBurstEnvelope,
+  OrbIntroDepthEnvelope,
+  OrbYawOmegaSmoother,
+  createOrbFrameUniformBytes,
+  packOrbFrameUniforms,
+} from "./orb-webgpu-frame-uniforms";
+import {
+  clientPointToClip,
+  clientRectToClip,
+  runOrbWebGpuPick,
+  runOrbWebGpuPickRect,
+} from "./orb-webgpu-picking";
+import {
+  attachOrbDebugPerfMarks,
+  isOrbPerfOn,
+  markPerf,
+  measurePerf,
+} from "./orb-webgpu-perf";
 
-const ORB_BASE_COLOR = rgb255ToUnit(LANDING_BASE_BLUE_RGB);
+// Resident-canvas DPR cap. WebGPU pixel cost scales quadratically with
+// the canvas size, and 1.75× of CSS pixels is enough to stay crisp on
+// retina laptops without blowing through the GPU's per-frame budget on
+// hi-DPI external displays where DPR can exceed 2.5.
+const ORB_CANVAS_DPR_CAP = 1.75;
 
-// Interaction-burst envelope. While the user is actively rotating
-// (applyTwist / nudgeRotation / applyPitch / nudgePitch), the runtime
-// accumulates a 0..1 burst value that scales BLOB_AMPLITUDE and
-// BLOB_FREQUENCY toward the boost targets in fieldParams. The burst
-// decays exponentially after the gesture ends — half-life 0.48s so
-// the orb visibly "rings" for ~1.4s after a drag, matching the prior
-// Three.js BlobController.triggerInteractionBurst path.
-const INTERACTION_BURST_AMPLITUDE = 0.25;
-const INTERACTION_BURST_FREQUENCY = 1.7;
-const INTERACTION_BURST_HALF_LIFE_SECONDS = 0.48;
-const INTERACTION_BURST_CONTROL_STRENGTH = 0.1;
-const INTERACTION_BURST_EPSILON = 1e-3;
+// 21-bit pick-index ceiling. The WGSL pick kernel packs (depthQ << 21)
+// | index into a single u32 for atomicMin reduction (see
+// orb-webgpu-picking.ts); above this count the low 21 bits start
+// aliasing and pick results return wrong particles. 2_097_151 is the
+// max addressable index — comfortable headroom over the 1M target. We
+// log loudly rather than throw so the orb keeps rendering; the picker
+// is the only degraded surface.
+const ORB_PICK_INDEX_CEILING = 0x1fffff;
 
 export interface OrbWebGpuRuntime {
   uploadParticles(arrays: OrbWebGpuParticleArrays): void;
@@ -62,11 +65,15 @@ export interface OrbWebGpuRuntime {
   uploadFlags(flags: Uint32Array): void;
   setFocusIndex(index: number | null): void;
   setMotionSettings(settings: OrbWebGpuMotionSettings): void;
-  pickAsync(clientX: number, clientY: number): Promise<number>;
+  pickAsync(
+    clientX: number,
+    clientY: number,
+  ): Promise<{ index: number; generation: number }>;
   pickRectAsync(
     rect: OrbSelectionRect,
     options?: { mode?: OrbPickRectMode },
-  ): Promise<number[]>;
+  ): Promise<{ indices: number[]; generation: number }>;
+  bumpPickGeneration(): void;
   captureSnapshot(): Promise<Blob | null>;
   applyTwist(deltaRadians: number): void;
   nudgeRotation(deltaRadians: number): void;
@@ -101,10 +108,12 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   private readonly computeBindGroup!: GPUBindGroup;
   private readonly pickBindGroup!: GPUBindGroup;
   private readonly renderBindGroup!: GPUBindGroup;
+  private readonly seedBindGroup!: GPUBindGroup;
   private readonly computePipeline!: GPUComputePipeline;
   private readonly pickPipeline!: GPUComputePipeline;
   private readonly rectPipeline!: GPUComputePipeline;
   private readonly renderPipeline!: GPURenderPipeline;
+  private readonly seedAmbientGeometryPipeline!: GPUComputePipeline;
   private readonly frameUniformBuffer!: GPUBuffer;
   private readonly pickParamBuffer!: GPUBuffer;
   private readonly pickResultBuffer!: GPUBuffer;
@@ -119,6 +128,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   private readonly displayBuffer!: GPUBuffer;
   private readonly flagsBuffer!: GPUBuffer;
   private readonly weightsBuffer!: GPUBuffer;
+  private readonly sizesBuffer!: GPUBuffer;
   private readonly device!: GPUDevice;
   private readonly context!: GPUCanvasContext;
   private readonly format!: GPUTextureFormat;
@@ -127,34 +137,33 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   private readonly radiusScale!: number;
   private readonly frameUniformBytes: ArrayBuffer;
   private readonly frameUniformView: DataView;
-  private readonly pickClearValue = new Uint32Array([0xffffffff]);
-  private readonly rectClearValue = new Uint32Array([0]);
   private readonly rotationController = new OrbWebGpuRotationController();
+  private readonly zoomController = new OrbWebGpuZoomController();
+  private readonly panController = new OrbWebGpuPanController();
+  private readonly burstEnvelope = new OrbInteractionBurstEnvelope();
+  private readonly yawOmega = new OrbYawOmegaSmoother();
+  private readonly introDepth = new OrbIntroDepthEnvelope();
   private readonly resizeObserver!: ResizeObserver | null;
   private animationFrame: number | null = null;
   private disposed = false;
   private particleCount = 0;
   private lastFrameMs = 0;
-  private introStartMs: number | null = null;
-  private introCompleted = false;
-  private pickQueue: Promise<number> = Promise.resolve(ORB_PICK_NO_HIT);
-  private rectQueue: Promise<number[]> = Promise.resolve([]);
+  // Host-side generation token. Pick consumers (Wave 2B hooks) snapshot
+  // this at dispatch time and pass it back when readback resolves; if
+  // it no longer matches, the result is stale (state changed between
+  // dispatch and resolution) and the consumer drops it. Pure integer —
+  // never crosses the GPU boundary.
+  private pickGeneration = 0;
+  private pickQueue: Promise<{ index: number; generation: number }> =
+    Promise.resolve({ generation: 0, index: ORB_PICK_NO_HIT });
+  private rectQueue: Promise<{ indices: number[]; generation: number }> =
+    Promise.resolve({ generation: 0, indices: [] });
+  private detachOrbDebug: (() => void) | null = null;
   private renderBundle: GPURenderBundle | null = null;
   private renderBundleList: GPURenderBundle[] | null = null;
   private renderBundleParticleCount = -1;
   private colorTime = 0;
   private focusIndex = -1;
-  // Low-pass-filtered yaw angular velocity in rad/sec. Drives the
-  // tangential drift term in the compute shader so particles "swirl"
-  // (lag behind the rigid camera spin) while the user is rotating.
-  // The smoothing avoids a single-frame spike on touch start.
-  private smoothedYawOmega = 0;
-  private lastSampledYaw = 0;
-  private lastSampledYawMs = 0;
-  // Interaction burst envelope (0..1). Accumulated while rotating,
-  // decayed each frame; scales fieldParams.amplitude and frequency in
-  // writeFrameUniforms.
-  private interactionBurst = 0;
   private motionSettings: OrbWebGpuMotionSettings = {
     ambientEntropy: 1,
     motionSpeedMultiplier: 1,
@@ -165,13 +174,12 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   };
   private flagShadow!: Uint32Array;
   private weights!: OrbInteractionWeights;
-  private readonly zoomController = new OrbWebGpuZoomController();
-  private readonly panController = new OrbWebGpuPanController();
 
   private constructor(args: OrbWebGpuRuntimeResources) {
     Object.assign(this, args);
-    this.frameUniformBytes = new ArrayBuffer(FRAME_UNIFORM_BYTES);
-    this.frameUniformView = new DataView(this.frameUniformBytes);
+    const { bytes, view } = createOrbFrameUniformBytes();
+    this.frameUniformBytes = bytes;
+    this.frameUniformView = view;
     this.flagShadow = new Uint32Array(this.maxParticles);
     this.weights = createOrbInteractionWeights(this.maxParticles);
     this.resizeObserver =
@@ -180,6 +188,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
         : new ResizeObserver(() => this.resize());
     this.resizeObserver?.observe(this.canvas);
     this.resize();
+    this.detachOrbDebug = attachOrbDebugPerfMarks();
   }
 
   static async create(
@@ -193,6 +202,16 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
 
   uploadParticles(arrays: OrbWebGpuParticleArrays): void {
     if (this.disposed) return;
+    if (arrays.count > ORB_PICK_INDEX_CEILING) {
+      // The WGSL pick kernel packs (depthQ << 21) | index into a u32
+      // for atomicMin reduction; once the index needs more than 21
+      // bits, picks alias to the wrong particle. Degrade loudly so
+      // dev/QA notices, but never throw — the particle field itself
+      // still renders, just hover/click/rect resolution is unsafe.
+      console.error(
+        `[orb-webgpu-runtime] particle count ${arrays.count} exceeds 21-bit pick index ceiling (${ORB_PICK_INDEX_CEILING}); pick results will alias`,
+      );
+    }
     const count = Math.min(arrays.count, this.maxParticles);
     const wasEmpty = this.particleCount <= 0;
     this.particleCount = count;
@@ -201,28 +220,46 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     this.renderBundleList = null;
     if (wasEmpty && count > 0) {
       this.colorTime = 0;
-      this.introStartMs = performance.now();
-      this.introCompleted = false;
+      this.introDepth.start(performance.now());
       resetOrbInteractionWeights(this.weights);
       this.device.queue.writeBuffer(this.weightsBuffer, 0, this.weights.data);
     }
+    // FrameUniforms must be written BEFORE the seed dispatch — the
+    // seedAmbientGeometry kernel reads computeFrame.count to bound its
+    // Fibonacci-spiral mapping. Subsequent rAF ticks overwrite the
+    // uniform with live time/zoom/pan, but the count there is what the
+    // seed pass keys off this single dispatch.
     this.writeFrameUniforms(performance.now() / 1000, 0);
+    if (wasEmpty && count > 0) {
+      // One-shot GPU init: positions / velocities / attributes are
+      // synthesized inside the WGSL seedAmbientGeometry kernel, so the
+      // CPU never uploads those arrays. Replaces the prior 16k
+      // FieldPointSource modulo-wrap (which produced the radial
+      // "sea-urchin" spokes at 1M particles).
+      this.runSeedAmbientGeometry(count);
+    }
     this.device.queue.writeBuffer(
-      this.positionsBuffer,
+      this.sizesBuffer,
       0,
-      arrays.positions.subarray(0, count * 4),
-    );
-    this.device.queue.writeBuffer(
-      this.velocitiesBuffer,
-      0,
-      arrays.velocities.subarray(0, count * 4),
-    );
-    this.device.queue.writeBuffer(
-      this.attributesBuffer,
-      0,
-      arrays.attributes.subarray(0, count * 4),
+      arrays.sizes.subarray(0, count),
     );
     this.uploadFlags(arrays.flags.subarray(0, count));
+  }
+
+  // Dispatch the GPU seed pass. Single submission, separate from the
+  // per-frame command encoder, because this only fires once per non-empty
+  // upload transition and we want it to be visible as a distinct label
+  // in GPU traces.
+  private runSeedAmbientGeometry(count: number): void {
+    const encoder = this.device.createCommandEncoder({
+      label: "orb.seed-ambient",
+    });
+    const pass = encoder.beginComputePass({ label: "orb.seed-ambient.pass" });
+    pass.setPipeline(this.seedAmbientGeometryPipeline);
+    pass.setBindGroup(0, this.seedBindGroup);
+    pass.dispatchWorkgroups(Math.ceil(count / 64));
+    pass.end();
+    this.device.queue.submit([encoder.finish()]);
   }
 
   uploadParticleRange(
@@ -233,32 +270,17 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     const lo = Math.max(0, range.fromIndex);
     const hi = Math.min(this.particleCount - 1, range.toIndex);
     if (hi < lo) return;
-    // writeBuffer copies a Float32 slice [lo*4, (hi+1)*4) into the
-    // GPU buffer at byte offset lo*16, leaving every other particle
-    // untouched. Per WebGPU spec, the dataOffset/size args are in
-    // typed-array elements (Float32 = 4 bytes), so element math here
-    // and byte math on bufferOffset stay in sync.
-    const startElement = lo * 4;
-    const elementCount = (hi - lo + 1) * 4;
-    const byteOffset = startElement * Float32Array.BYTES_PER_ELEMENT;
+    // After the full-GPU init refactor, chunks only update one field per
+    // particle (the per-paper radius), so this is a single contiguous
+    // f32 slice copy. dataOffset/size args are in typed-array elements
+    // (1 f32 = 1 element here), and byteOffset is element * 4.
+    const startElement = lo;
+    const elementCount = hi - lo + 1;
+    const byteOffset = startElement * SIZE_BYTES_PER_PARTICLE;
     this.device.queue.writeBuffer(
-      this.positionsBuffer,
+      this.sizesBuffer,
       byteOffset,
-      arrays.positions,
-      startElement,
-      elementCount,
-    );
-    this.device.queue.writeBuffer(
-      this.velocitiesBuffer,
-      byteOffset,
-      arrays.velocities,
-      startElement,
-      elementCount,
-    );
-    this.device.queue.writeBuffer(
-      this.attributesBuffer,
-      byteOffset,
-      arrays.attributes,
+      arrays.sizes,
       startElement,
       elementCount,
     );
@@ -308,63 +330,78 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     this.animationFrame = null;
   }
 
-  pickAsync(clientX: number, clientY: number): Promise<number> {
+  pickAsync(
+    clientX: number,
+    clientY: number,
+  ): Promise<{ index: number; generation: number }> {
+    // Generation is captured AT DISPATCH TIME — when the queued
+    // promise actually fires — not at call time. Consumers compare
+    // the returned generation to the live runtime generation to
+    // detect stale results from picks that crossed a state-change
+    // boundary while waiting on GPU readback.
     this.pickQueue = this.pickQueue
-      .catch(() => ORB_PICK_NO_HIT)
-      .then(() => this.runPickAsync(clientX, clientY));
+      .catch(() => ({ generation: 0, index: ORB_PICK_NO_HIT }))
+      .then(async () => {
+        const generation = this.pickGeneration;
+        const index = await this.runPickAsync(clientX, clientY);
+        return { generation, index };
+      });
     return this.pickQueue;
   }
 
   pickRectAsync(
     rect: OrbSelectionRect,
     options?: { mode?: OrbPickRectMode },
-  ): Promise<number[]> {
+  ): Promise<{ indices: number[]; generation: number }> {
     this.rectQueue = this.rectQueue
-      .catch(() => [])
-      .then(() => this.runPickRectAsync(rect, options));
+      .catch(() => ({ generation: 0, indices: [] }))
+      .then(async () => {
+        const generation = this.pickGeneration;
+        const indices = await this.runPickRectAsync(rect, options);
+        return { generation, indices };
+      });
     return this.rectQueue;
   }
 
+  // Increment the host-side pick generation. Called by Wave 2B
+  // consumers when state that invalidates in-flight picks changes
+  // (selection set replaced, hover scope changed, focus pinned). The
+  // bump is a single integer add; no GPU work, no allocation.
+  bumpPickGeneration(): void {
+    this.pickGeneration += 1;
+  }
+
+  // Every rotation lane reports its |Δrad| to the burst envelope. The
+  // envelope sums contributions per frame and divides by frame dt to
+  // get gesture angular velocity, which drives the burst — slow drag
+  // tracks at low burst, fast spin saturates, release rings out. No
+  // per-input gain is needed: each input's magnitude already scales
+  // its contribution to gesture velocity. The synchronous
+  // writeFrameUniforms calls used to live here too; removed because
+  // the rAF tick is the sole writer and an extra mid-frame write
+  // sampled the envelope at sub-frame moments (visible jitter).
   applyTwist(deltaRadians: number): void {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.applyTwist(deltaRadians, performance.now());
-    this.triggerInteractionBurst();
-    this.writeFrameUniforms(performance.now() / 1000, 0);
+    this.burstEnvelope.kick(Math.abs(deltaRadians));
   }
 
   nudgeRotation(deltaRadians: number): void {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.nudgeRotation(deltaRadians, performance.now());
-    this.triggerInteractionBurst();
+    this.burstEnvelope.kick(Math.abs(deltaRadians));
   }
 
   applyPitch(deltaRadians: number): void {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.applyPitch(deltaRadians, performance.now());
-    this.triggerInteractionBurst();
-    this.writeFrameUniforms(performance.now() / 1000, 0);
+    this.burstEnvelope.kick(Math.abs(deltaRadians));
   }
 
   nudgePitch(deltaRadians: number): void {
     if (this.disposed || !Number.isFinite(deltaRadians)) return;
     this.rotationController.nudgePitch(deltaRadians, performance.now());
-    this.triggerInteractionBurst();
-  }
-
-  private triggerInteractionBurst(
-    strength = INTERACTION_BURST_CONTROL_STRENGTH,
-  ): void {
-    if (!Number.isFinite(strength) || strength <= 0) return;
-    this.interactionBurst = Math.min(1, this.interactionBurst + strength);
-  }
-
-  private decayInteractionBurst(dtSeconds: number): void {
-    if (this.interactionBurst <= 0 || dtSeconds <= 0) return;
-    this.interactionBurst *=
-      0.5 ** (dtSeconds / INTERACTION_BURST_HALF_LIFE_SECONDS);
-    if (this.interactionBurst < INTERACTION_BURST_EPSILON) {
-      this.interactionBurst = 0;
-    }
+    this.burstEnvelope.kick(Math.abs(deltaRadians));
   }
 
   applyZoom(factor: number): void {
@@ -395,34 +432,17 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
 
   private async runPickAsync(clientX: number, clientY: number): Promise<number> {
     if (this.disposed || this.particleCount <= 0) return ORB_PICK_NO_HIT;
-    const point = this.clientPointToClip(clientX, clientY);
+    const point = clientPointToClip(this.canvas, clientX, clientY);
     if (!point) return ORB_PICK_NO_HIT;
-    writePickParams(this.device, this.pickParamBuffer, {
-      aspect: this.aspect,
-      count: this.particleCount,
-      x: point.x,
-      y: point.y,
-    });
-    this.device.queue.writeBuffer(this.pickResultBuffer, 0, this.pickClearValue);
-    const encoder = this.device.createCommandEncoder({ label: "orb.pick" });
-    const pass = encoder.beginComputePass({ label: "orb.pick-pass" });
-    pass.setPipeline(this.pickPipeline);
-    pass.setBindGroup(0, this.pickBindGroup);
-    pass.dispatchWorkgroups(Math.ceil(this.particleCount / 64));
-    pass.end();
-    encoder.copyBufferToBuffer(
-      this.pickResultBuffer,
-      0,
-      this.pickStagingBuffer,
-      0,
-      U32_BYTES,
+    return runOrbWebGpuPick(
+      this.pickResources(),
+      {
+        aspect: this.aspect,
+        maxParticles: this.maxParticles,
+        particleCount: this.particleCount,
+      },
+      point,
     );
-    this.device.queue.submit([encoder.finish()]);
-
-    await this.pickStagingBuffer.mapAsync(GPUMapMode.READ, 0, U32_BYTES);
-    const raw = new Uint32Array(this.pickStagingBuffer.getMappedRange(0, U32_BYTES))[0]!;
-    this.pickStagingBuffer.unmap();
-    return raw === 0xffffffff ? ORB_PICK_NO_HIT : raw & 0xffff;
   }
 
   private async runPickRectAsync(
@@ -430,37 +450,33 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     options?: { mode?: OrbPickRectMode },
   ): Promise<number[]> {
     if (this.disposed || this.particleCount <= 0) return [];
-    const bounds = this.clientRectToClip(rect);
+    const bounds = clientRectToClip(this.canvas, rect);
     if (!bounds) return [];
-    writeRectParams(this.device, this.rectParamBuffer, {
-      ...bounds,
-      aspect: this.aspect,
-      count: this.particleCount,
-      mode: options?.mode === "through-volume" ? 1 : 0,
-    });
-    const bytes = (this.maxParticles + 1) * U32_BYTES;
-    this.device.queue.writeBuffer(this.rectResultBuffer, 0, this.rectClearValue);
-    const encoder = this.device.createCommandEncoder({ label: "orb.rect-pick" });
-    const pass = encoder.beginComputePass({ label: "orb.rect-pick-pass" });
-    pass.setPipeline(this.rectPipeline);
-    pass.setBindGroup(0, this.pickBindGroup);
-    pass.dispatchWorkgroups(Math.ceil(this.particleCount / 64));
-    pass.end();
-    encoder.copyBufferToBuffer(
-      this.rectResultBuffer,
-      0,
-      this.rectStagingBuffer,
-      0,
-      bytes,
+    return runOrbWebGpuPickRect(
+      this.pickResources(),
+      {
+        aspect: this.aspect,
+        maxParticles: this.maxParticles,
+        particleCount: this.particleCount,
+      },
+      bounds,
+      options,
     );
-    this.device.queue.submit([encoder.finish()]);
+  }
 
-    await this.rectStagingBuffer.mapAsync(GPUMapMode.READ, 0, bytes);
-    const raw = new Uint32Array(this.rectStagingBuffer.getMappedRange(0, bytes));
-    const count = Math.min(raw[0] ?? 0, this.maxParticles);
-    const result = Array.from(raw.slice(1, count + 1));
-    this.rectStagingBuffer.unmap();
-    return result;
+  private pickResources() {
+    return {
+      device: this.device,
+      pickBindGroup: this.pickBindGroup,
+      pickParamBuffer: this.pickParamBuffer,
+      pickPipeline: this.pickPipeline,
+      pickResultBuffer: this.pickResultBuffer,
+      pickStagingBuffer: this.pickStagingBuffer,
+      rectParamBuffer: this.rectParamBuffer,
+      rectPipeline: this.rectPipeline,
+      rectResultBuffer: this.rectResultBuffer,
+      rectStagingBuffer: this.rectStagingBuffer,
+    };
   }
 
   destroy(): void {
@@ -468,10 +484,13 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     this.disposed = true;
     this.stop();
     this.resizeObserver?.disconnect();
+    this.detachOrbDebug?.();
+    this.detachOrbDebug = null;
     for (const buffer of [
       this.positionsBuffer,
       this.velocitiesBuffer,
       this.attributesBuffer,
+      this.sizesBuffer,
       this.displayBuffer,
       this.flagsBuffer,
       this.weightsBuffer,
@@ -490,6 +509,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
 
   private readonly frame = (timestampMs: number) => {
     if (this.disposed) return;
+    // Read perf flag once per frame — never inside any loop. When off,
+    // markPerf is a single property access on globalThis.
+    const perfOn = isOrbPerfOn();
+    if (perfOn) markPerf("orb:frame:cpu:start");
     const rawDt = Math.min(
       0.05,
       Math.max(0.001, (timestampMs - this.lastFrameMs) / 1000),
@@ -536,10 +559,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       prefersReducedMotion: this.motionSettings.prefersReducedMotion,
     });
     this.tickInteractionState(rawDt);
-    // Burst envelope decays even while ambient motion is paused —
+    // Burst envelope advances even while ambient motion is paused —
     // visual rings out smoothly after a release regardless of the
     // pause toggle so the gesture itself stays expressive.
-    this.decayInteractionBurst(rawDt);
+    this.burstEnvelope.tick(rawDt);
     this.writeFrameUniforms(timestampMs / 1000, motionDt);
 
     const encoder = this.device.createCommandEncoder({ label: "orb.frame" });
@@ -570,6 +593,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     renderPass.end();
     this.device.queue.submit([encoder.finish()]);
 
+    if (perfOn) {
+      markPerf("orb:frame:cpu:end");
+      measurePerf("orb:frame:cpu", "orb:frame:cpu:start", "orb:frame:cpu:end");
+    }
     this.animationFrame = requestAnimationFrame(this.frame);
   };
 
@@ -579,7 +606,7 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   }
 
   private resize(): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    const dpr = Math.min(window.devicePixelRatio || 1, ORB_CANVAS_DPR_CAP);
     const width = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
     const height = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
     if (this.canvas.width === width && this.canvas.height === height) return;
@@ -587,42 +614,32 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     this.canvas.height = height;
   }
 
-  private writeFrameUniforms(time: number, dt: number): void {
-    const view = this.frameUniformView;
-    view.setFloat32(0, time, true);
-    view.setFloat32(4, dt, true);
-    view.setUint32(8, this.particleCount, true);
-    view.setFloat32(12, this.zoomController.zoom, true);
-    view.setFloat32(16, this.aspect, true);
-    view.setFloat32(20, this.radiusScale, true);
-    view.setFloat32(24, this.rotationController.rotation, true);
-    view.setFloat32(28, this.colorTime, true);
-    view.setFloat32(32, ORB_BASE_COLOR[0], true);
-    view.setFloat32(36, ORB_BASE_COLOR[1], true);
-    view.setFloat32(40, ORB_BASE_COLOR[2], true);
-    view.setFloat32(44, this.sampleYawOmega(), true);
-    // Burst-blended fieldParams. amplitude scales the radial FBM
-    // displacement and frequency scales the FBM input domain — so a
-    // burst makes particles scatter further AND samples a higher-
-    // frequency slice of the noise (more visible color regions).
-    // Mean reverts to the baseline 0.05 / 0.5 once the burst envelope
-    // decays back to zero.
-    const burst = this.interactionBurst;
-    const amplitudeNow =
-      BLOB_AMPLITUDE +
-      (INTERACTION_BURST_AMPLITUDE - BLOB_AMPLITUDE) * burst;
-    const frequencyNow =
-      BLOB_FREQUENCY +
-      (INTERACTION_BURST_FREQUENCY - BLOB_FREQUENCY) * burst;
-    view.setFloat32(48, amplitudeNow, true);
-    view.setFloat32(52, this.resolveEffectiveDepth(), true);
-    view.setFloat32(56, frequencyNow, true);
-    view.setFloat32(60, BLOB_WAVE_SPEED, true);
-    view.setFloat32(64, this.panController.x, true);
-    view.setFloat32(68, this.panController.y, true);
-    view.setFloat32(72, this.rotationController.pitch, true);
-    view.setInt32(76, this.focusIndex, true);
-    this.device.queue.writeBuffer(this.frameUniformBuffer, 0, this.frameUniformBytes);
+  private writeFrameUniforms(time: number, motionDt: number): void {
+    packOrbFrameUniforms(this.frameUniformView, {
+      aspect: this.aspect,
+      burst: this.burstEnvelope.value,
+      colorTime: this.colorTime,
+      depth: this.introDepth.resolve(performance.now()),
+      focusIndex: this.focusIndex,
+      motionDt,
+      panX: this.panController.x,
+      panY: this.panController.y,
+      particleCount: this.particleCount,
+      pitch: this.rotationController.pitch,
+      radiusScale: this.radiusScale,
+      time,
+      yaw: this.rotationController.rotation,
+      yawOmega: this.yawOmega.sample(
+        this.rotationController.rotation,
+        performance.now(),
+      ),
+      zoom: this.zoomController.zoom,
+    });
+    this.device.queue.writeBuffer(
+      this.frameUniformBuffer,
+      0,
+      this.frameUniformBytes,
+    );
   }
 
   private tickInteractionState(dtSeconds: number): void {
@@ -661,73 +678,5 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     this.renderBundleList = [this.renderBundle];
     this.renderBundleParticleCount = this.particleCount;
     return this.renderBundle;
-  }
-
-  private sampleYawOmega(): number {
-    const now = performance.now();
-    const yaw = this.rotationController.rotation;
-    const dtMs = now - this.lastSampledYawMs;
-    if (this.lastSampledYawMs === 0 || dtMs <= 0 || dtMs > 250) {
-      // First sample, or a long gap (e.g. tab backgrounded). Reset
-      // without producing a spurious high-velocity reading.
-      this.smoothedYawOmega = 0;
-      this.lastSampledYaw = yaw;
-      this.lastSampledYawMs = now;
-      return 0;
-    }
-    let dYaw = yaw - this.lastSampledYaw;
-    // Wrap to (-π, π] so a 0.01 → 2π-0.01 step reads as -0.02, not +(2π-0.02).
-    if (dYaw > Math.PI) dYaw -= Math.PI * 2;
-    if (dYaw < -Math.PI) dYaw += Math.PI * 2;
-    const instantOmega = (dYaw * 1000) / dtMs;
-    // 100ms time constant: enough to debounce micro-jitter while
-    // staying responsive to the start/end of a drag.
-    const alpha = 1 - Math.exp(-dtMs / 100);
-    this.smoothedYawOmega +=
-      (instantOmega - this.smoothedYawOmega) * alpha;
-    this.lastSampledYaw = yaw;
-    this.lastSampledYawMs = now;
-    return this.smoothedYawOmega;
-  }
-
-  private resolveEffectiveDepth(): number {
-    if (this.introCompleted || this.introStartMs == null) {
-      return BLOB_DEPTH;
-    }
-    const elapsedSeconds = Math.max(0, (performance.now() - this.introStartMs) / 1000);
-    const introProgress = clampFinite(elapsedSeconds / INTRO_DURATION_SECONDS, 0, 1);
-    const introEase = 1 - (1 - introProgress) * (1 - introProgress);
-    const depthBoost = 1 + (INTRO_DEPTH_BOOST - 1) * (1 - introEase);
-    if (introProgress >= 1) {
-      this.introCompleted = true;
-    }
-    return BLOB_DEPTH * depthBoost;
-  }
-
-  private clientPointToClip(
-    clientX: number,
-    clientY: number,
-  ): { x: number; y: number } | null {
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return null;
-    return {
-      x: ((clientX - rect.left) / rect.width) * 2 - 1,
-      y: 1 - ((clientY - rect.top) / rect.height) * 2,
-    };
-  }
-
-  private clientRectToClip(rect: OrbSelectionRect) {
-    const canvasRect = this.canvas.getBoundingClientRect();
-    if (canvasRect.width <= 0 || canvasRect.height <= 0) return null;
-    const left = ((rect.left - canvasRect.left) / canvasRect.width) * 2 - 1;
-    const right = ((rect.right - canvasRect.left) / canvasRect.width) * 2 - 1;
-    const top = 1 - ((rect.top - canvasRect.top) / canvasRect.height) * 2;
-    const bottom = 1 - ((rect.bottom - canvasRect.top) / canvasRect.height) * 2;
-    return {
-      bottom: Math.min(top, bottom),
-      left: Math.min(left, right),
-      right: Math.max(left, right),
-      top: Math.max(top, bottom),
-    };
   }
 }

@@ -6,6 +6,7 @@ import {
   COMPUTE_PALETTE_SAMPLER_INDEX,
   COMPUTE_PALETTE_TEXTURE_INDEX,
   COMPUTE_POSITION_INDEX,
+  COMPUTE_SIZES_INDEX,
   COMPUTE_VELOCITY_INDEX,
   COMPUTE_WEIGHT_INDEX,
   PICK_DISPLAY_INDEX,
@@ -19,9 +20,9 @@ import {
   RENDER_SPRITE_TEXTURE_INDEX,
 } from "./orb-webgpu-layout";
 import {
+  ORB_WEBGPU_DIM_FLAG,
   ORB_WEBGPU_EVIDENCE_FLAG,
   ORB_WEBGPU_NEIGHBOR_FLAG,
-  ORB_WEBGPU_SCOPE_DIM_FLAG,
   ORB_WEBGPU_SCOPE_FLAG,
 } from "./orb-webgpu-particles";
 import { ORB_WEBGPU_SHADER_NOISE_WGSL } from "./orb-webgpu-shader-noise";
@@ -80,12 +81,21 @@ struct DisplayParticle {
   effects: vec2f,
 };
 
+// computePositions / computeVelocities / computeAttributes are declared
+// read_write so the seedAmbientGeometry compute entrypoint can write
+// the GPU-synthesized Fibonacci layout, ambient drift, and base attribute
+// variance once at first non-empty upload. integrateParticles still only
+// reads these — read_write is a superset of read.
 @group(0) @binding(${COMPUTE_POSITION_INDEX}) var<storage, read_write> computePositions: array<vec4f>;
-@group(0) @binding(${COMPUTE_VELOCITY_INDEX}) var<storage, read> computeVelocities: array<vec4f>;
-@group(0) @binding(${COMPUTE_ATTRIBUTE_INDEX}) var<storage, read> computeAttributes: array<vec4f>;
+@group(0) @binding(${COMPUTE_VELOCITY_INDEX}) var<storage, read_write> computeVelocities: array<vec4f>;
+@group(0) @binding(${COMPUTE_ATTRIBUTE_INDEX}) var<storage, read_write> computeAttributes: array<vec4f>;
 @group(0) @binding(${COMPUTE_FRAME_INDEX}) var<uniform> computeFrame: FrameUniforms;
 @group(0) @binding(${COMPUTE_WEIGHT_INDEX}) var<storage, read> computeWeights: array<vec4f>;
 @group(0) @binding(${COMPUTE_FLAG_INDEX}) var<storage, read> computeFlags: array<u32>;
+// Per-particle radius. CPU-owned: chunk applies write
+// DEFAULT_RADIUS * mapping.sizeFactor per particle; replaces the old
+// positions[i].w carrier. Read by integrateParticles via visualRadius.
+@group(0) @binding(${COMPUTE_SIZES_INDEX}) var<storage, read> computeSizes: array<f32>;
 @group(0) @binding(${COMPUTE_PALETTE_TEXTURE_INDEX}) var paletteTexture: texture_2d<f32>;
 @group(0) @binding(${COMPUTE_PALETTE_SAMPLER_INDEX}) var paletteSampler: sampler;
 @group(0) @binding(${COMPUTE_DISPLAY_INDEX}) var<storage, read_write> computeDisplay: array<DisplayParticle>;
@@ -153,6 +163,27 @@ fn particleHash(i: u32) -> f32 {
   return fract(sin(f32(i) * 91.7382) * 43758.5453);
 }
 
+// Higher-quality integer hash for seeding ambient particle positions.
+// At 1M+ density the sin/fract hash above shows visible diagonal
+// aliasing; this Wang-style 32-bit mixer scrambles index bits more
+// thoroughly so adjacent indices land at fully decorrelated positions.
+// Two-stage multiply-shift-xor — same family as PCG / squirrel3.
+fn iHash(seed: u32) -> u32 {
+  var s = seed;
+  s = s ^ (s >> 16u);
+  s = s * 0x7feb352du;
+  s = s ^ (s >> 15u);
+  s = s * 0x846ca68bu;
+  s = s ^ (s >> 16u);
+  return s;
+}
+
+fn iHashToFloat(h: u32) -> f32 {
+  // Top 24 bits → [0, 1). Avoids the bias from using the low bits
+  // (which the multiplier doesn't mix as well as the high bits).
+  return f32(h >> 8u) / 16777216.0;
+}
+
 // Sample the global "noise color" from the rainbow palette LUT. The
 // 8-texel palette texture is configured with linear filter + repeat-U,
 // so a normalized cursor in [0, 1) sweeps the wheel once per period
@@ -183,7 +214,7 @@ fn visualRadius(
 ) -> f32 {
   let pulse = 0.5 + 0.5 * sin(colorTime * 4.2);
   var radius = baseRadius * clamp(1.0 + z * 0.10, 0.88, 1.10);
-  if ((flag & ${ORB_WEBGPU_SCOPE_DIM_FLAG}u) != 0u) {
+  if ((flag & ${ORB_WEBGPU_DIM_FLAG}u) != 0u) {
     radius = radius * 0.82;
   }
   if ((flag & ${ORB_WEBGPU_EVIDENCE_FLAG}u) != 0u) {
@@ -297,7 +328,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
     vec3f(1.0),
   );
   var radius = visualRadius(
-    p.w * computeFrame.radiusScale,
+    computeSizes[i] * computeFrame.radiusScale,
     projected.z,
     flag,
     computeFrame.colorTime,
@@ -317,7 +348,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   var halo = 0.0;
   var ring = 0.0;
 
-  if ((flag & ${ORB_WEBGPU_SCOPE_DIM_FLAG}u) != 0u) {
+  if ((flag & ${ORB_WEBGPU_DIM_FLAG}u) != 0u) {
     color = desaturate(color, 0.48) * 0.54;
     alpha = alpha * 0.30;
   }
@@ -422,6 +453,61 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
   return vec4f(rgb * alpha, alpha);
 }
 
+// One-shot GPU init for the ambient particle field. Dispatched by the
+// runtime on the first non-empty upload (count transitioning from 0 to
+// > 0). Replaces the prior CPU-side rejection-sampled 16k FieldPointSource
+// + modulo-wrap, which produced visible "sea-urchin" radial spokes at
+// 1M particles because every Nth particle aliased onto the same source
+// xyz. Fibonacci spiral on the unit sphere distributes 1M points
+// quasi-uniformly without any modulo wrap. Velocities and attributes
+// are synthesized here too — both are only read, never updated post-init.
+@compute @workgroup_size(64)
+fn seedAmbientGeometry(@builtin(global_invocation_id) id: vec3u) {
+  let i = id.x;
+  let count = computeFrame.count;
+  if (i >= count) {
+    return;
+  }
+
+  // Hash-driven uniform random sphere sampling via the inverse-CDF
+  // method: cos(theta) = 2u - 1 (uniform in [-1, 1] → polar angle
+  // weighted by surface area), phi = 2π v (uniform azimuth). The two
+  // hashes are decorrelated by salting iHash with the golden-ratio
+  // constant on the second draw. This matches the legacy field's
+  // rejection-sampled blob source visually — soft, fuzzy, organic —
+  // without the Fibonacci parastichies (visible 21/34/55 spiral
+  // families) that show up at 1M density on a golden-angle lattice.
+  // No pole convergence either, since uniform u doesn't oversample
+  // either polar cap.
+  let h1 = iHashToFloat(iHash(i));
+  let h2 = iHashToFloat(iHash(i ^ 0x9e3779b9u));
+  let cosTheta = 2.0 * h1 - 1.0;
+  let sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+  let phi = 6.2831853 * h2;
+  let unit = vec3f(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta);
+  // BLOB_RADIUS = 0.62 (uniform sphere, all axes same — matches the
+  // ambient blob radius the prior CPU seeder targeted).
+  let pos = unit * 0.62;
+  computePositions[i] = vec4f(pos, 0.0);
+
+  // Synthesize a small tangential drift perpendicular to the position.
+  // Crossing with a slightly off-axis (0,1,0.001) avoids the degenerate
+  // zero-length tangent at the poles where pos is parallel to (0,1,0).
+  let tangent = normalize(cross(unit, vec3f(0.0, 1.0, 0.001)));
+  computeVelocities[i] = vec4f(tangent * 0.003, 0.0);
+
+  // Per-index hash gives every particle its own subtle attribute jitter
+  // so the FBM-driven motion doesn't read as lockstep across the cloud.
+  // attr.rgb feeds per-axis speed scaling; attr.w is alpha.
+  let h3 = iHashToFloat(iHash(i ^ 0x68bc21ebu));
+  computeAttributes[i] = vec4f(
+    0.5 + h3 * 0.1,
+    0.5 + (1.0 - h3) * 0.1,
+    0.5 + h3 * 0.05,
+    0.82,
+  );
+}
+
 @compute @workgroup_size(64)
 fn pickParticle(@builtin(global_invocation_id) id: vec3u) {
   let i = id.x;
@@ -430,15 +516,31 @@ fn pickParticle(@builtin(global_invocation_id) id: vec3u) {
   }
   let display = pickDisplay[i];
   let center = display.center.xy;
-  let radius = display.center.w * 1.18;
+  // display.center.w is the final post-everything visual radius written
+  // by integrateParticles (visualRadius * (1 + liveDrift*0.020) * viewZoom).
+  // Pick uses the same value the renderer drew with — no extra inflation —
+  // so a click anywhere inside the visible sprite registers as a hit.
+  let radius = display.center.w;
   let delta = vec2f(
     (center.x - pickParams.x) * max(pickParams.aspect, 0.1),
     center.y - pickParams.y,
   );
   let d = length(delta);
-  if (d <= radius && i <= 65535u) {
-    let score = u32(clamp(d / max(radius, 0.000001), 0.0, 1.0) * 65535.0);
-    atomicMin(&pickResult[0], (score << 16u) | i);
+  // Depth ordering for atomicMin tie-break — 21-bit index + 11-bit
+  // depth pack:
+  // - Bits 0..20 carry the particle index (up to 2_097_151 particles).
+  // - Bits 21..31 carry the depth quantum; lower = nearer the camera.
+  // - +Z is the near pole (see comment block above projectedCenter):
+  //   dot(N, +Z)=+1 on the near hemisphere → (2 - z) shrinks for near
+  //   particles, so atomicMin selects the front-most candidate.
+  // - Range mapping: z in [-2, 2] (post-rotation, pre-projection scale)
+  //   → depthQ in [0, 2046]; clamped to 2046 (not 2047) so the worst
+  //   real pick result can never collide with the 0xFFFFFFFF "no hit"
+  //   sentinel (2047 << 21 | 0x1FFFFF == 0xFFFFFFFF).
+  // - Ties on depthQ break by the lower particle index.
+  let depthQ = u32(clamp((2.0 - display.center.z) * 0.25, 0.0, 1.0) * 2046.0);
+  if (d <= radius && i <= 0x1FFFFFu) {
+    atomicMin(&pickResult[0], (depthQ << 21u) | i);
   }
 }
 
