@@ -18,9 +18,11 @@ export const RENDER_DISPLAY_INDEX = 18;
 export const PICK_DISPLAY_INDEX = 19;
 export const RENDER_SPRITE_TEXTURE_INDEX = 20;
 export const RENDER_SPRITE_SAMPLER_INDEX = 21;
+export const COMPUTE_SIZES_INDEX = 22;
 
 export const U32_BYTES = 4;
 export const VEC4_BYTES = 16;
+export const SIZE_BYTES_PER_PARTICLE = 4;
 export const DISPLAY_PARTICLE_BYTES = VEC4_BYTES * 3;
 // FrameUniforms layout (128 bytes, 16-byte aligned):
 //  0  time, dt, count, viewZoom

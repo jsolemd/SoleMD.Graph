@@ -213,8 +213,8 @@ class Settings(BaseSettings):
         alias="INGEST_FILE_TASK_STALE_AFTER_SECONDS",
         gt=0.0,
     )
-    ingest_write_command_timeout_seconds: float = Field(
-        default=300.0,
+    ingest_write_command_timeout_seconds: float | None = Field(
+        default=None,
         alias="INGEST_WRITE_COMMAND_TIMEOUT_SECONDS",
     )
     ingest_write_statement_cache_size: int = Field(
@@ -262,6 +262,52 @@ class Settings(BaseSettings):
     ncbi_api_key: str = Field(
         default="",
         alias="NCBI_API_KEY",
+    )
+    pubmed_metadata_batch_size: int = Field(
+        default=200,
+        alias="PUBMED_METADATA_BATCH_SIZE",
+        ge=1,
+        le=200,
+    )
+    pubmed_metadata_requests_per_second: float = Field(
+        default=9.0,
+        alias="PUBMED_METADATA_REQUESTS_PER_SECOND",
+        gt=0.0,
+    )
+    pubmed_metadata_max_attempts: int = Field(
+        default=3,
+        alias="PUBMED_METADATA_MAX_ATTEMPTS",
+        ge=1,
+    )
+    pubmed_metadata_stale_after_seconds: float = Field(
+        default=900.0,
+        alias="PUBMED_METADATA_STALE_AFTER_SECONDS",
+        gt=0.0,
+    )
+    s2_graph_api_base_url: str = Field(
+        default="https://api.semanticscholar.org/graph/v1",
+        alias="S2_GRAPH_API_BASE_URL",
+    )
+    s2_graph_batch_size: int = Field(
+        default=500,
+        alias="S2_GRAPH_BATCH_SIZE",
+        ge=1,
+        le=500,
+    )
+    s2_graph_requests_per_second: float = Field(
+        default=1.0,
+        alias="S2_GRAPH_REQUESTS_PER_SECOND",
+        gt=0.0,
+    )
+    s2_graph_max_attempts: int = Field(
+        default=5,
+        alias="S2_GRAPH_MAX_ATTEMPTS",
+        ge=1,
+    )
+    s2_graph_stale_after_seconds: float = Field(
+        default=900.0,
+        alias="S2_GRAPH_STALE_AFTER_SECONDS",
+        gt=0.0,
     )
     corpus_vocab_terms_path: str = Field(
         default="data/vocab_terms.tsv",

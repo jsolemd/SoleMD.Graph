@@ -28,15 +28,42 @@ export const ORB_PICK_NO_HIT = -1;
  * a stale cleanup is a no-op.
  */
 
+/**
+ * Pick result includes the runtime's pick generation captured at GPU
+ * dispatch time. Consumers compare it against the live runtime
+ * generation when readback resolves; mismatch = stale, drop. The
+ * generation field is a host-side integer with zero GPU involvement —
+ * see orb-webgpu-runtime.ts pickGeneration / bumpPickGeneration().
+ */
+export interface OrbPickResult {
+  index: number;
+  generation: number;
+}
+
+export interface OrbPickRectResult {
+  indices: number[];
+  generation: number;
+}
+
 export interface OrbPickerHandle {
-  pickAsync: (clientX: number, clientY: number) => Promise<number>;
+  pickAsync: (clientX: number, clientY: number) => Promise<OrbPickResult>;
   pickSync?: (clientX: number, clientY: number) => number;
-  pickRectAsync: (rect: {
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-  }, options?: { mode?: OrbPickRectMode }) => Promise<number[]>;
+  pickRectAsync: (
+    rect: {
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+    },
+    options?: { mode?: OrbPickRectMode },
+  ) => Promise<OrbPickRectResult>;
+  /**
+   * Increment the pick generation token. Wave 2B consumers call this
+   * when state that invalidates pending picks changes (selection
+   * replaced, hover scope changed, focus pinned). Pure host-side
+   * integer; no GPU work.
+   */
+  bumpPickGeneration: () => void;
 }
 
 export interface OrbPickerStore {

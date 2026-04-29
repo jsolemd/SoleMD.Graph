@@ -32,7 +32,7 @@ class CuratedCorpusAssets:
     journal_names: tuple[str, ...]
     venue_patterns: tuple[tuple[str, str, bool], ...]
     entity_rules: tuple[tuple[int, str, str, str, str, int], ...]
-    relation_rules: tuple[tuple[int, int, int, str, str, str, int], ...]
+    relation_rules: tuple[tuple[int, int, int, str, str, str, str, int], ...]
 
     @property
     def asset_manifest(self) -> dict[str, AssetManifestEntry]:
@@ -108,6 +108,10 @@ def build_curated_assets(runtime_settings: Settings = settings) -> CuratedCorpus
                 "relation_type": rule.relation_type,
                 "object_type": rule.object_type,
                 "object_id_raw": rule.object_id_raw,
+                "object_id_typed": _typed_pubtator_concept_id(
+                    rule.object_type,
+                    rule.object_id_raw,
+                ),
                 "canonical_name": rule.canonical_name,
                 "family_key": rule.family_key,
                 "min_reference_count": rule.min_reference_count,
@@ -158,6 +162,7 @@ def build_curated_assets(runtime_settings: Settings = settings) -> CuratedCorpus
                 rule.relation_type,
                 rule.object_type,
                 rule.object_id_raw,
+                _typed_pubtator_concept_id(rule.object_type, rule.object_id_raw),
                 rule.canonical_name,
                 rule.family_key,
                 rule.min_reference_count,
@@ -319,6 +324,7 @@ async def prepare_selector_temp_tables(
             relation_type SMALLINT NOT NULL,
             object_type SMALLINT NOT NULL,
             object_id_raw TEXT NOT NULL,
+            object_id_typed TEXT NOT NULL,
             canonical_name TEXT NOT NULL,
             family_key TEXT NOT NULL,
             min_reference_count INTEGER NOT NULL DEFAULT 0,
@@ -363,6 +369,7 @@ async def prepare_selector_temp_tables(
                 "relation_type",
                 "object_type",
                 "object_id_raw",
+                "object_id_typed",
                 "canonical_name",
                 "family_key",
                 "min_reference_count",
@@ -407,3 +414,20 @@ def _sha256_path(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _typed_pubtator_concept_id(entity_type: int, concept_id_raw: str) -> str:
+    prefix_by_type = {
+        1: "Gene",
+        2: "Disease",
+        3: "Chemical",
+        4: "Species",
+        5: "Mutation",
+        6: "CellLine",
+    }
+    if "|" in concept_id_raw:
+        return concept_id_raw
+    prefix = prefix_by_type.get(entity_type)
+    if prefix is None:
+        return concept_id_raw
+    return f"{prefix}|{concept_id_raw}"

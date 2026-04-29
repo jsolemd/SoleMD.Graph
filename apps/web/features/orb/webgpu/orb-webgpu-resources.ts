@@ -9,6 +9,7 @@ import {
   COMPUTE_PALETTE_SAMPLER_INDEX,
   COMPUTE_PALETTE_TEXTURE_INDEX,
   COMPUTE_POSITION_INDEX,
+  COMPUTE_SIZES_INDEX,
   COMPUTE_VELOCITY_INDEX,
   COMPUTE_WEIGHT_INDEX,
   DISPLAY_PARTICLE_BYTES,
@@ -24,6 +25,7 @@ import {
   RENDER_FRAME_INDEX,
   RENDER_SPRITE_SAMPLER_INDEX,
   RENDER_SPRITE_TEXTURE_INDEX,
+  SIZE_BYTES_PER_PARTICLE,
   U32_BYTES,
   VEC4_BYTES,
   createBuffer,
@@ -57,6 +59,9 @@ export interface OrbWebGpuRuntimeResources {
   rectStagingBuffer: GPUBuffer;
   renderBindGroup: GPUBindGroup;
   renderPipeline: GPURenderPipeline;
+  seedAmbientGeometryPipeline: GPUComputePipeline;
+  seedBindGroup: GPUBindGroup;
+  sizesBuffer: GPUBuffer;
   spriteTexture: GPUTexture;
   velocitiesBuffer: GPUBuffer;
   weightsBuffer: GPUBuffer;
@@ -87,6 +92,12 @@ export async function createOrbWebGpuResources(
     maxParticles * VEC4_BYTES,
     GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     "orb.attributes",
+  );
+  const sizesBuffer = createBuffer(
+    device,
+    maxParticles * SIZE_BYTES_PER_PARTICLE,
+    GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    "orb.sizes",
   );
   const flagsBuffer = createBuffer(
     device,
@@ -175,18 +186,18 @@ export async function createOrbWebGpuResources(
     code: ORB_WEBGPU_SHADER_SOURCE,
     label: "orb.webgpu.wgsl",
   });
+  // positions/velocities/attributes are bound as read_write storage so
+  // the seedAmbientGeometry compute pass can populate them once at first
+  // upload. integrateParticles only reads them, but read_write is a
+  // superset of read so a single layout works for both pipelines.
   const computeBindGroupLayout = device.createBindGroupLayout({
     entries: [
       storageEntry(COMPUTE_POSITION_INDEX, GPUShaderStage.COMPUTE, "storage"),
-      storageEntry(
-        COMPUTE_VELOCITY_INDEX,
-        GPUShaderStage.COMPUTE,
-        "read-only-storage",
-      ),
+      storageEntry(COMPUTE_VELOCITY_INDEX, GPUShaderStage.COMPUTE, "storage"),
       storageEntry(
         COMPUTE_ATTRIBUTE_INDEX,
         GPUShaderStage.COMPUTE,
-        "read-only-storage",
+        "storage",
       ),
       {
         binding: COMPUTE_FRAME_INDEX,
@@ -214,8 +225,30 @@ export async function createOrbWebGpuResources(
         visibility: GPUShaderStage.COMPUTE,
         sampler: { type: "filtering" },
       },
+      storageEntry(
+        COMPUTE_SIZES_INDEX,
+        GPUShaderStage.COMPUTE,
+        "read-only-storage",
+      ),
     ],
     label: "orb.compute-bind-group-layout",
+  });
+  // Dedicated layout for the seed pass — only the four bindings the seed
+  // entrypoint actually touches. Keeping this minimal lets the seed
+  // dispatch skip binding the palette/flags/weights/display/sizes
+  // resources entirely.
+  const seedBindGroupLayout = device.createBindGroupLayout({
+    entries: [
+      storageEntry(COMPUTE_POSITION_INDEX, GPUShaderStage.COMPUTE, "storage"),
+      storageEntry(COMPUTE_VELOCITY_INDEX, GPUShaderStage.COMPUTE, "storage"),
+      storageEntry(COMPUTE_ATTRIBUTE_INDEX, GPUShaderStage.COMPUTE, "storage"),
+      {
+        binding: COMPUTE_FRAME_INDEX,
+        visibility: GPUShaderStage.COMPUTE,
+        buffer: { type: "uniform" },
+      },
+    ],
+    label: "orb.seed-bind-group-layout",
   });
   const renderBindGroupLayout = device.createBindGroupLayout({
     entries: [
@@ -260,6 +293,10 @@ export async function createOrbWebGpuResources(
     bindGroupLayouts: [computeBindGroupLayout],
     label: "orb.compute-pipeline-layout",
   });
+  const seedPipelineLayout = device.createPipelineLayout({
+    bindGroupLayouts: [seedBindGroupLayout],
+    label: "orb.seed-pipeline-layout",
+  });
   const renderPipelineLayout = device.createPipelineLayout({
     bindGroupLayouts: [renderBindGroupLayout],
     label: "orb.render-pipeline-layout",
@@ -272,6 +309,11 @@ export async function createOrbWebGpuResources(
     compute: { entryPoint: "integrateParticles", module: shaderModule },
     layout: computePipelineLayout,
     label: "orb.compute.integrate",
+  });
+  const seedAmbientGeometryPipeline = device.createComputePipeline({
+    compute: { entryPoint: "seedAmbientGeometry", module: shaderModule },
+    layout: seedPipelineLayout,
+    label: "orb.compute.seed-ambient",
   });
   const pickPipeline = device.createComputePipeline({
     compute: { entryPoint: "pickParticle", module: shaderModule },
@@ -305,6 +347,18 @@ export async function createOrbWebGpuResources(
         },
       ],
     },
+    // Native hardware depth: vertex writes per-particle ndcZ from
+    // display.center.z (post-rotation depth), fragment alpha-test 0.4
+    // gates which fragments write Z. Without this, render order =
+    // instance index, uncorrelated with depth, producing the
+    // see-through twinkle on overlapping particles. depth24plus is the
+    // baseline-required depth format; sample count 1 matches the
+    // non-MSAA color attachment.
+    depthStencil: {
+      depthCompare: "less",
+      depthWriteEnabled: true,
+      format: "depth24plus",
+    },
     layout: renderPipelineLayout,
     primitive: { topology: "triangle-list" },
     vertex: { entryPoint: "vertexMain", module: shaderModule },
@@ -329,9 +383,20 @@ export async function createOrbWebGpuResources(
         resource: paletteTexture.createView(),
       },
       { binding: COMPUTE_PALETTE_SAMPLER_INDEX, resource: paletteSampler },
+      { binding: COMPUTE_SIZES_INDEX, resource: { buffer: sizesBuffer } },
     ],
     layout: computeBindGroupLayout,
     label: "orb.compute-bind-group",
+  });
+  const seedBindGroup = device.createBindGroup({
+    entries: [
+      { binding: COMPUTE_POSITION_INDEX, resource: { buffer: positionsBuffer } },
+      { binding: COMPUTE_VELOCITY_INDEX, resource: { buffer: velocitiesBuffer } },
+      { binding: COMPUTE_ATTRIBUTE_INDEX, resource: { buffer: attributesBuffer } },
+      { binding: COMPUTE_FRAME_INDEX, resource: { buffer: frameUniformBuffer } },
+    ],
+    layout: seedBindGroupLayout,
+    label: "orb.seed-bind-group",
   });
   const renderBindGroup = device.createBindGroup({
     entries: [
@@ -380,6 +445,9 @@ export async function createOrbWebGpuResources(
     rectStagingBuffer,
     renderBindGroup,
     renderPipeline,
+    seedAmbientGeometryPipeline,
+    seedBindGroup,
+    sizesBuffer,
     spriteTexture,
     velocitiesBuffer,
     weightsBuffer,

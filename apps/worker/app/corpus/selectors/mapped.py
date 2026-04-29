@@ -4,9 +4,10 @@ from uuid import UUID
 
 import asyncpg
 
-from app.corpus.artifacts import ENTITY_AGGREGATE, PAPER_SCOPE, RELATION_AGGREGATE
+from app.corpus.artifacts import PAPER_SCOPE, RELATION_AGGREGATE
+from app.corpus.entity_signals import entity_signal_checksum
 from app.corpus.models import CorpusPlan
-from app.corpus.rollups import selection_rollup_refs
+from app.corpus.rollups import relation_rollup_refs, selection_rollup_refs
 
 
 PHASE_NAME = "mapped_promotion"
@@ -19,6 +20,10 @@ async def refresh_mapped_promotion(
     plan: CorpusPlan,
 ) -> None:
     refs = await selection_rollup_refs(
+        connection,
+        corpus_selection_run_id=corpus_selection_run_id,
+    )
+    relation_refs = await relation_rollup_refs(
         connection,
         corpus_selection_run_id=corpus_selection_run_id,
     )
@@ -47,14 +52,15 @@ async def refresh_mapped_promotion(
         await _insert_mapped_entity_rule_signals(
             connection,
             corpus_selection_run_id=corpus_selection_run_id,
-            entity_aggregate_table=refs[ENTITY_AGGREGATE].qualified_name,
+            paper_scope_table=refs[PAPER_SCOPE].qualified_name,
+            plan=plan,
             direct_entity_confidences=plan.selection_policy.mapped.direct_entity_confidences,
         )
     if plan.selection_policy.mapped.enable_relation_rule_match:
         await _insert_mapped_relation_rule_signals(
             connection,
             corpus_selection_run_id=corpus_selection_run_id,
-            relation_aggregate_table=refs[RELATION_AGGREGATE].qualified_name,
+            relation_aggregate_table=relation_refs[RELATION_AGGREGATE].qualified_name,
         )
     await _apply_mapped_status(
         connection,
@@ -101,10 +107,14 @@ async def _insert_mapped_journal_signals(
                 'venue_raw', scope.venue_raw
             )
         FROM {paper_scope_table} scope
-        JOIN solemd.corpus corpus
-          ON corpus.corpus_id = scope.corpus_id
-         AND corpus.domain_status = 'corpus'
-        WHERE scope.has_journal_match
+        WHERE scope.corpus_id IS NOT NULL
+          AND scope.has_journal_match
+          AND EXISTS (
+              SELECT 1
+              FROM solemd.corpus corpus
+              WHERE corpus.corpus_id = scope.corpus_id
+                AND corpus.domain_status = 'corpus'
+          )
         """,
         corpus_selection_run_id,
     )
@@ -144,12 +154,20 @@ async def _insert_mapped_pattern_signals(
                 'normalized_venue', scope.normalized_venue,
                 'venue_raw', scope.venue_raw
             )
-        FROM {paper_scope_table} scope
-        JOIN solemd.corpus corpus
-          ON corpus.corpus_id = scope.corpus_id
-         AND corpus.domain_status = 'corpus'
+        FROM (
+            SELECT corpus_id, normalized_venue, venue_raw, pattern_matches
+            FROM {paper_scope_table}
+            WHERE corpus_id IS NOT NULL
+              AND jsonb_array_length(pattern_matches) > 0
+        ) scope
         CROSS JOIN LATERAL jsonb_array_elements(scope.pattern_matches) AS pattern_match(value)
         WHERE coalesce((pattern_match.value ->> 'promotes_to_mapped')::BOOLEAN, false)
+          AND EXISTS (
+              SELECT 1
+              FROM solemd.corpus corpus
+              WHERE corpus.corpus_id = scope.corpus_id
+                AND corpus.domain_status = 'corpus'
+          )
         """,
         corpus_selection_run_id,
     )
@@ -159,7 +177,8 @@ async def _insert_mapped_entity_rule_signals(
     connection: asyncpg.Connection,
     *,
     corpus_selection_run_id: UUID,
-    entity_aggregate_table: str,
+    paper_scope_table: str,
+    plan: CorpusPlan,
     direct_entity_confidences: tuple[str, ...],
 ) -> None:
     await connection.execute(
@@ -178,32 +197,40 @@ async def _insert_mapped_entity_rule_signals(
         )
         SELECT
             $1,
-            entity_rollup.corpus_id,
+            scope.corpus_id,
             'mapped_promotion',
             'mapped_entity_rule_match',
-            entity_rollup.rule_family_key,
+            signals.rule_family_key,
             'concept_id_raw',
-            entity_rollup.concept_id_raw,
-            entity_rollup.signal_count,
+            signals.concept_id_raw,
+            signals.signal_count,
             (
-                entity_rollup.rule_confidence = ANY($2::TEXT[])
-                AND entity_rollup.reference_out_count >= entity_rollup.rule_min_reference_count
+                signals.rule_confidence = ANY($2::TEXT[])
+                AND signals.reference_out_count >= signals.rule_min_reference_count
             ),
             jsonb_build_object(
-                'canonical_name', entity_rollup.rule_canonical_name,
-                'confidence', entity_rollup.rule_confidence,
-                'matched_mention_text', entity_rollup.matched_mention_text,
-                'min_reference_count', entity_rollup.rule_min_reference_count,
-                'reference_out_count', entity_rollup.reference_out_count
+                'canonical_name', signals.rule_canonical_name,
+                'confidence', signals.rule_confidence,
+                'matched_mention_text', signals.matched_mention_text,
+                'min_reference_count', signals.rule_min_reference_count,
+                'reference_out_count', signals.reference_out_count
             )
-        FROM {entity_aggregate_table} entity_rollup
+        FROM solemd.paper_entity_signals signals
+        JOIN {paper_scope_table} scope
+          ON scope.paper_id = signals.paper_id
         JOIN solemd.corpus corpus
-          ON corpus.corpus_id = entity_rollup.corpus_id
+          ON corpus.corpus_id = scope.corpus_id
          AND corpus.domain_status = 'corpus'
-        WHERE entity_rollup.rule_family_key IS NOT NULL
+        WHERE signals.s2_source_release_id = $3
+          AND signals.pt3_source_release_id = $4
+          AND signals.entity_signal_checksum = $5
+          AND signals.rule_family_key IS NOT NULL
         """,
         corpus_selection_run_id,
         list(direct_entity_confidences),
+        plan.s2_source_release_id,
+        plan.pt3_source_release_id,
+        entity_signal_checksum(plan),
     )
 
 
@@ -263,9 +290,12 @@ async def _apply_mapped_status(
     await connection.execute(
         f"""
         WITH release_scope AS (
-            SELECT scope.corpus_id, scope.year
+            SELECT
+                scope.corpus_id,
+                bool_or(scope.year IS NULL OR scope.year >= $2) AS meets_quality_floor
             FROM {paper_scope_table} scope
             WHERE scope.corpus_id IS NOT NULL
+            GROUP BY scope.corpus_id
         ),
         mapped_rollup AS (
             SELECT
@@ -299,11 +329,7 @@ async def _apply_mapped_status(
         resolved AS (
             SELECT
                 release_scope.corpus_id,
-                CASE
-                    WHEN release_scope.year IS NULL THEN true
-                    WHEN release_scope.year >= $2 THEN true
-                    ELSE false
-                END AS meets_quality_floor,
+                release_scope.meets_quality_floor,
                 (
                     coalesce(mapped_rollup.has_mapped_journal_match, false)
                     OR coalesce(mapped_rollup.has_mapped_pattern_match, false)

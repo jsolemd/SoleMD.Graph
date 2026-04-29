@@ -5,6 +5,10 @@ import { useEffect } from "react";
 import { useOrbWebGpuRuntimeStore } from "../webgpu/orb-webgpu-runtime-store";
 
 import { useOrbInteraction } from "./orb-interaction-context";
+import {
+  tryReleasePointerCapture,
+  trySetPointerCapture,
+} from "./pointer-capture";
 
 /**
  * Desktop mouse-drag camera handler for the WebGPU orb.
@@ -47,24 +51,6 @@ export function OrbMouseCamera({
     let lastClientX = 0;
     let lastClientY = 0;
 
-    const tryCapture = (target: EventTarget | null, pointerId: number) => {
-      try {
-        (target as HTMLElement | null)?.setPointerCapture?.(pointerId);
-      } catch {
-        // Capture failure is non-fatal — events still arrive while the
-        // pointer remains over the surface, and that covers the common
-        // case. See OrbInteractionSurface.trySetPointerCapture.
-      }
-    };
-
-    const tryRelease = (target: EventTarget | null, pointerId: number) => {
-      try {
-        (target as HTMLElement | null)?.releasePointerCapture?.(pointerId);
-      } catch {
-        // See tryCapture.
-      }
-    };
-
     const handlePointerDown = (event: PointerEvent) => {
       if (event.pointerType !== "mouse") return;
       if (mode != null) return;
@@ -78,7 +64,7 @@ export function OrbMouseCamera({
       activePointerId = event.pointerId;
       lastClientX = event.clientX;
       lastClientY = event.clientY;
-      tryCapture(event.currentTarget, event.pointerId);
+      trySetPointerCapture(event.currentTarget, event.pointerId);
     };
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -120,7 +106,7 @@ export function OrbMouseCamera({
       if (event.pointerId !== activePointerId) return;
       mode = null;
       activePointerId = null;
-      tryRelease(event.currentTarget, event.pointerId);
+      tryReleasePointerCapture(event.currentTarget, event.pointerId);
     };
 
     surfaceElement.addEventListener("pointerdown", handlePointerDown);

@@ -14,6 +14,7 @@ _SCOPE_PORT_OFFSETS = {
     "corpus": 1,
     "evidence": 2,
     "cli": 3,
+    "enrichment": 4,
 }
 
 

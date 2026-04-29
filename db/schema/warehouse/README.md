@@ -60,6 +60,12 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
   - `solemd.corpus_selection_runs`
   - `solemd.corpus_selection_signals`
   - `solemd.paper_selection_summary`
+  - `solemd.pubmed_metadata_fetch_runs`
+  - `solemd.pubmed_metadata_fetch_tasks`
+  - `solemd.pubmed_metadata`
+  - `solemd.s2_graph_enrichment_runs`
+  - `solemd.s2_graph_enrichment_tasks`
+  - `solemd.s2_paper_enrichment`
   - `solemd.corpus_wave_runs`
   - `solemd.corpus_wave_members`
 - evidence-text audit surface for warehouse-local quality review:

@@ -315,13 +315,12 @@ async def count_materialized_papers(
     count = await connection.fetchval(
         """
         SELECT count(*)
-        FROM solemd.s2_papers_raw raw
+        FROM solemd.paper_corpus_assignments assignments
         JOIN solemd.corpus corpus
-          ON corpus.corpus_id = raw.corpus_id
+          ON corpus.corpus_id = assignments.corpus_id
         JOIN solemd.papers papers
-          ON papers.corpus_id = raw.corpus_id
-        WHERE raw.source_release_id = $1
-          AND raw.corpus_id IS NOT NULL
+          ON papers.corpus_id = assignments.corpus_id
+        WHERE assignments.s2_source_release_id = $1
           AND corpus.domain_status IN ('corpus', 'mapped')
         """,
         s2_source_release_id,
@@ -338,12 +337,11 @@ async def load_mapped_surface_counts(
     row = await connection.fetchrow(
         """
         WITH mapped_scope AS (
-            SELECT raw.corpus_id
-            FROM solemd.s2_papers_raw raw
+            SELECT assignments.corpus_id
+            FROM solemd.paper_corpus_assignments assignments
             JOIN solemd.corpus corpus
-              ON corpus.corpus_id = raw.corpus_id
-            WHERE raw.source_release_id = $1
-              AND raw.corpus_id IS NOT NULL
+              ON corpus.corpus_id = assignments.corpus_id
+            WHERE assignments.s2_source_release_id = $1
               AND corpus.domain_status = 'mapped'
         )
         SELECT

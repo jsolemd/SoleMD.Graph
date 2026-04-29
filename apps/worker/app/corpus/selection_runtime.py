@@ -27,7 +27,11 @@ from app.corpus.models import (
     CorpusPlan,
     StartCorpusSelectionRequest,
 )
-from app.corpus.rollups import ensure_mapped_detail_rollups, ensure_selection_rollups
+from app.corpus.rollups import (
+    ensure_mapped_detail_rollups,
+    ensure_relation_rollup,
+    ensure_selection_rollups,
+)
 from app.corpus.runtime_support import emit_event
 from app.corpus.selection_run_store import (
     acquire_selection_lock as _acquire_selection_lock,
@@ -183,7 +187,7 @@ async def run_corpus_selection(
                                 corpus_signal_count=corpus_signal_count,
                             )
                         elif phase_name == "mapped_promotion":
-                            await ensure_selection_rollups(
+                            await ensure_relation_rollup(
                                 connection,
                                 corpus_selection_run_id=run_id,
                                 plan=plan,
@@ -219,12 +223,17 @@ async def run_corpus_selection(
                                 assets=assets,
                                 bucket_count=plan.materialization_bucket_count,
                             )
-                            async with connection.transaction():
-                                await materialize_corpus_baseline(
-                                    connection,
-                                    corpus_selection_run_id=run_id,
-                                    plan=plan,
-                                )
+                            await materialize_corpus_baseline(
+                                connection,
+                                corpus_selection_run_id=run_id,
+                                plan=plan,
+                                bucket_count=plan.materialization_bucket_count,
+                                connection_pool=ingest_pool,
+                                max_parallel_chunks=_parallel_chunk_limit(runtime_settings),
+                                chunk_max_attempts=(
+                                    runtime_settings.corpus_materialization_chunk_max_attempts
+                                ),
+                            )
                             materialized_corpus_count = await _count_materialized_papers(
                                 connection,
                                 plan.s2_source_release_id,
@@ -279,19 +288,24 @@ async def run_corpus_selection(
                                 mapped_surface_counts=mapped_surface_counts,
                             )
                         else:
-                            await ensure_selection_rollups(
+                            await ensure_relation_rollup(
                                 connection,
                                 corpus_selection_run_id=run_id,
                                 plan=plan,
                                 assets=assets,
                                 bucket_count=plan.materialization_bucket_count,
                             )
-                            async with connection.transaction():
-                                await provenance.refresh_selection_summary(
-                                    connection,
-                                    corpus_selection_run_id=run_id,
-                                    plan=plan,
-                                )
+                            await provenance.refresh_selection_summary(
+                                connection,
+                                corpus_selection_run_id=run_id,
+                                plan=plan,
+                                bucket_count=plan.materialization_bucket_count,
+                                connection_pool=ingest_pool,
+                                max_parallel_chunks=_parallel_chunk_limit(runtime_settings),
+                                chunk_max_attempts=(
+                                    runtime_settings.corpus_materialization_chunk_max_attempts
+                                ),
+                            )
                             summary_row_count = await _count_summary_rows(connection, run_id)
                             record_corpus_selection_summary_rows(
                                 selector_version=request.selector_version,
@@ -440,12 +454,18 @@ async def _ensure_completed_phase_artifacts(
 ) -> None:
     if phase_name in {
         "corpus_admission",
-        "mapped_promotion",
         "corpus_baseline_materialization",
         "mapped_surface_materialization",
-        "selection_summary",
     }:
         await ensure_selection_rollups(
+            connection,
+            corpus_selection_run_id=corpus_selection_run_id,
+            plan=plan,
+            assets=assets,
+            bucket_count=plan.materialization_bucket_count,
+        )
+    if phase_name in {"mapped_promotion", "selection_summary"}:
+        await ensure_relation_rollup(
             connection,
             corpus_selection_run_id=corpus_selection_run_id,
             plan=plan,

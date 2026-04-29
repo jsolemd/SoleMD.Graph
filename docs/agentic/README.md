@@ -71,6 +71,10 @@ evidence policy line:
   Implementation pass for the staged persistence split: raw substrate,
   corpus baseline, mapped-heavy surfaces, evidence-owned document work, and
   the first live ingest follow-up under that contract.
+- [2026-04-29-solemd-graph-mapped-quality-rag-plan-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-04-29-solemd-graph-mapped-quality-rag-plan-ledger.md)
+  Current mapped-quality and RAG-readiness plan: relation normalization,
+  summary semantics, PubMed metadata, S2 mapped enrichment, CL bridge / organ
+  tracks, and downstream Grafana/RAG control surfaces.
 
 ## When To Open A New Ledger
 

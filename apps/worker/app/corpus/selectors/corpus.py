@@ -4,7 +4,8 @@ from uuid import UUID
 
 import asyncpg
 
-from app.corpus.artifacts import ENTITY_AGGREGATE, PAPER_SCOPE
+from app.corpus.artifacts import PAPER_SCOPE
+from app.corpus.entity_signals import entity_signal_checksum
 from app.corpus.models import CorpusPlan
 from app.corpus.rollups import selection_rollup_refs
 
@@ -47,7 +48,8 @@ async def refresh_corpus_admission(
         await _insert_vocab_entity_match_signals(
             connection,
             corpus_selection_run_id=corpus_selection_run_id,
-            entity_aggregate_table=refs[ENTITY_AGGREGATE].qualified_name,
+            paper_scope_table=refs[PAPER_SCOPE].qualified_name,
+            plan=plan,
         )
     await _apply_corpus_status(
         connection,
@@ -144,7 +146,8 @@ async def _insert_vocab_entity_match_signals(
     connection: asyncpg.Connection,
     *,
     corpus_selection_run_id: UUID,
-    entity_aggregate_table: str,
+    paper_scope_table: str,
+    plan: CorpusPlan,
 ) -> None:
     await connection.execute(
         f"""
@@ -162,25 +165,33 @@ async def _insert_vocab_entity_match_signals(
         )
         SELECT
             $1,
-            entity_rollup.corpus_id,
+            scope.corpus_id,
             'corpus_admission',
             'vocab_entity_match',
             'vocab_alias',
             'term_id',
-            entity_rollup.term_id::TEXT,
-            entity_rollup.signal_count,
+            signals.term_id::TEXT,
+            signals.signal_count,
             true,
             jsonb_build_object(
-                'term_id', entity_rollup.term_id,
-                'canonical_name', entity_rollup.term_canonical_name,
-                'category', entity_rollup.term_category,
-                'matched_alias', entity_rollup.matched_alias
+                'term_id', signals.term_id,
+                'canonical_name', signals.term_canonical_name,
+                'category', signals.term_category,
+                'matched_alias', signals.matched_alias
             )
-        FROM {entity_aggregate_table} entity_rollup
-        WHERE entity_rollup.corpus_id IS NOT NULL
-          AND entity_rollup.term_id IS NOT NULL
+        FROM solemd.paper_entity_signals signals
+        JOIN {paper_scope_table} scope
+          ON scope.paper_id = signals.paper_id
+         AND scope.corpus_id IS NOT NULL
+        WHERE signals.s2_source_release_id = $2
+          AND signals.pt3_source_release_id = $3
+          AND signals.entity_signal_checksum = $4
+          AND signals.term_id IS NOT NULL
         """,
         corpus_selection_run_id,
+        plan.s2_source_release_id,
+        plan.pt3_source_release_id,
+        entity_signal_checksum(plan),
     )
 
 
@@ -193,7 +204,7 @@ async def _apply_corpus_status(
     await connection.execute(
         f"""
         WITH release_scope AS (
-            SELECT scope.corpus_id
+            SELECT DISTINCT scope.corpus_id
             FROM {paper_scope_table} scope
             WHERE scope.corpus_id IS NOT NULL
         ),

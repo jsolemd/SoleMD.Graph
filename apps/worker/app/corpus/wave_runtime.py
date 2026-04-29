@@ -476,9 +476,17 @@ async def _refresh_wave_members(
                     'minimum_evidence_priority_score', $3::INTEGER,
                     'mapped_priority_score', summary.mapped_priority_score,
                     'evidence_priority_score', summary.evidence_priority_score,
-                    'entity_annotation_count', summary.entity_annotation_count,
+                    'curated_entity_signal_count', summary.curated_entity_signal_count,
+                    'raw_pubtator_entity_annotation_count',
+                        summary.raw_pubtator_entity_annotation_count,
                     'relation_count', summary.relation_count,
+                    'raw_pubtator_relation_count', summary.raw_pubtator_relation_count,
                     'mapped_family_keys', summary.mapped_family_keys,
+                    'relevance_band', summary.relevance_band,
+                    'content_status', summary.content_status,
+                    'rag_candidate', summary.rag_candidate,
+                    'rag_eligible', summary.rag_eligible,
+                    'has_cl_bridge', summary.has_cl_bridge,
                     'has_open_access', summary.has_open_access,
                     'has_pmc_id', summary.has_pmc_id,
                     'has_locator_candidate', summary.has_locator_candidate
@@ -490,7 +498,7 @@ async def _refresh_wave_members(
                         summary.mapped_relation_signal_count DESC,
                         summary.mapped_entity_signal_count DESC,
                         summary.vocab_entity_signal_count DESC,
-                        summary.entity_annotation_count DESC,
+                        summary.curated_entity_signal_count DESC,
                         summary.reference_out_count DESC,
                         summary.corpus_id
                 ) AS member_ordinal
@@ -500,6 +508,12 @@ async def _refresh_wave_members(
              AND documents.document_source_kind = $4
             WHERE summary.corpus_selection_run_id = $1
               AND summary.current_status = 'mapped'
+              AND summary.rag_candidate
+              AND (
+                    summary.has_mapped_entity_match
+                    OR summary.has_mapped_relation_match
+                    OR summary.curated_entity_signal_count > 0
+                  )
               AND documents.corpus_id IS NULL
               AND (
                     summary.publication_year IS NULL
@@ -706,6 +720,12 @@ async def _load_evidence_policy_counts(
             FROM solemd.paper_selection_summary summary
             WHERE summary.corpus_selection_run_id = $1
               AND summary.current_status = 'mapped'
+              AND summary.rag_candidate
+              AND (
+                    summary.has_mapped_entity_match
+                    OR summary.has_mapped_relation_match
+                    OR summary.curated_entity_signal_count > 0
+                  )
               AND (
                     summary.publication_year IS NULL
                     OR summary.publication_year >= $2::SMALLINT

@@ -11,13 +11,12 @@
 // keyboard / wheel input feel calm.
 import { clampFinite, easeTowardTarget } from "./orb-webgpu-layout";
 
-// 0.7 default keeps the BLOB_RADIUS = 1.40 sphere inside the viewport
-// (otherwise the 1.40 × 1.0 projection clips the silhouette at the
-// canvas edges). Net effect: same on-screen size as the legacy 0.62
-// radius / 1.0 zoom orb, but particles distributed across a sphere
-// 2.26× bigger in 3D — so inter-particle gaps grow without the orb
-// growing on screen.
-export const ORB_ZOOM_DEFAULT = 0.7;
+// 0.55 default leaves visible margin around the BLOB_RADIUS = 1.40
+// sphere — orb sits inside the viewport with breathing room. Lowering
+// zoom shrinks both the sphere AND each particle's sprite size, so
+// the cloud reads as a smaller, denser-feeling orb against a darker
+// background — closer to the landing's framing.
+export const ORB_ZOOM_DEFAULT = 0.55;
 export const ORB_ZOOM_MIN = 0.5;
 export const ORB_ZOOM_MAX = 4;
 // 120 ms half-life — snappy enough that wheel and +/- inputs feel

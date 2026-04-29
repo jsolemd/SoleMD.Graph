@@ -1,15 +1,17 @@
 /// <reference types="@webgpu/types" />
 
 import {
-  BLOB_AMPLITUDE,
   BLOB_DEPTH,
-  BLOB_FREQUENCY,
   BLOB_WAVE_SPEED,
   INTRO_DEPTH_BOOST,
   INTRO_DURATION_SECONDS,
   LANDING_BASE_BLUE_RGB,
   rgb255ToUnit,
 } from "../../field/shared/landing-feel-constants";
+import {
+  ORB_BLOB_AMPLITUDE,
+  ORB_BLOB_FREQUENCY,
+} from "../bake/orb-particle-constants";
 import { FRAME_UNIFORM_BYTES, clampFinite } from "./orb-webgpu-layout";
 
 const ORB_BASE_COLOR = rgb255ToUnit(LANDING_BASE_BLUE_RGB);
@@ -214,12 +216,20 @@ export function packOrbFrameUniforms(
   view.setFloat32(40, ORB_BASE_COLOR[2], true);
   view.setFloat32(44, inputs.yawOmega, true);
   const burst = inputs.burst;
+  // Orb uses ORB_BLOB_AMPLITUDE (0.02) instead of landing's
+  // BLOB_AMPLITUDE (0.05): the orb fills the canvas at 1M density and
+  // the same radial swing dominates perception. Burst still ramps
+  // toward INTERACTION_BURST_AMPLITUDE (0.25), so gestures still
+  // produce visible scatter.
   const amplitudeNow =
-    BLOB_AMPLITUDE +
-    (INTERACTION_BURST_AMPLITUDE - BLOB_AMPLITUDE) * burst;
+    ORB_BLOB_AMPLITUDE +
+    (INTERACTION_BURST_AMPLITUDE - ORB_BLOB_AMPLITUDE) * burst;
+  // Orb uses ORB_BLOB_FREQUENCY (0.8) instead of landing's
+  // BLOB_FREQUENCY (0.5): more, smaller color regions read as
+  // "multiple bursts" at 1M density rather than one big tinted blob.
   const frequencyNow =
-    BLOB_FREQUENCY +
-    (INTERACTION_BURST_FREQUENCY - BLOB_FREQUENCY) * burst;
+    ORB_BLOB_FREQUENCY +
+    (INTERACTION_BURST_FREQUENCY - ORB_BLOB_FREQUENCY) * burst;
   view.setFloat32(48, amplitudeNow, true);
   view.setFloat32(52, inputs.depth, true);
   view.setFloat32(56, frequencyNow, true);

@@ -48,6 +48,16 @@ from app.corpus.runtime import (
 )
 from app.evidence.cli import enqueue_paper_text_request, parse_paper_text_request
 from app.evidence.runtime import acquire_paper_text
+from app.enrichment.cli import (
+    enqueue_pubmed_metadata_enrichment_request,
+    enqueue_s2_graph_enrichment_request,
+    parse_pubmed_metadata_enrichment_request,
+    parse_s2_graph_enrichment_request,
+)
+from app.enrichment.runtime import (
+    run_pubmed_metadata_enrichment,
+    run_s2_graph_enrichment,
+)
 
 
 async def run_startup_check() -> int:
@@ -305,6 +315,54 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_evidence_wave_parser.add_argument("--max-papers", type=int, default=None)
 
+    enqueue_pubmed_metadata_parser = subparsers.add_parser(
+        "enqueue-pubmed-metadata",
+        help="Validate and enqueue mapped-paper PubMed metadata enrichment.",
+    )
+    enqueue_pubmed_metadata_parser.add_argument("corpus_selection_run_id")
+    enqueue_pubmed_metadata_parser.add_argument("--max-papers", type=int, default=None)
+    enqueue_pubmed_metadata_parser.add_argument("--force-refresh", action="store_true")
+    enqueue_pubmed_metadata_parser.add_argument(
+        "--requested-by",
+        default=os.environ.get("USER"),
+    )
+
+    run_pubmed_metadata_parser = subparsers.add_parser(
+        "run-pubmed-metadata-now",
+        help="Run mapped-paper PubMed metadata enrichment directly in-process.",
+    )
+    run_pubmed_metadata_parser.add_argument("corpus_selection_run_id")
+    run_pubmed_metadata_parser.add_argument("--max-papers", type=int, default=None)
+    run_pubmed_metadata_parser.add_argument("--force-refresh", action="store_true")
+    run_pubmed_metadata_parser.add_argument(
+        "--requested-by",
+        default=os.environ.get("USER"),
+    )
+
+    enqueue_s2_graph_parser = subparsers.add_parser(
+        "enqueue-s2-graph-enrichment",
+        help="Validate and enqueue mapped-paper Semantic Scholar Graph enrichment.",
+    )
+    enqueue_s2_graph_parser.add_argument("corpus_selection_run_id")
+    enqueue_s2_graph_parser.add_argument("--max-papers", type=int, default=None)
+    enqueue_s2_graph_parser.add_argument("--force-refresh", action="store_true")
+    enqueue_s2_graph_parser.add_argument(
+        "--requested-by",
+        default=os.environ.get("USER"),
+    )
+
+    run_s2_graph_parser = subparsers.add_parser(
+        "run-s2-graph-enrichment-now",
+        help="Run mapped-paper Semantic Scholar Graph enrichment directly in-process.",
+    )
+    run_s2_graph_parser.add_argument("corpus_selection_run_id")
+    run_s2_graph_parser.add_argument("--max-papers", type=int, default=None)
+    run_s2_graph_parser.add_argument("--force-refresh", action="store_true")
+    run_s2_graph_parser.add_argument(
+        "--requested-by",
+        default=os.environ.get("USER"),
+    )
+
     parser.set_defaults(command="check")
     return parser
 
@@ -478,6 +536,68 @@ def main(argv: Sequence[str] | None = None) -> int:
             pools = await open_pools(settings, names=("ingest_write",))
             try:
                 return await run_evidence_wave_dispatch(
+                    request,
+                    ingest_pool=pools.get("ingest_write"),
+                    runtime_settings=settings,
+                )
+            finally:
+                await pools.close()
+
+        print(asyncio.run(_run()))
+        return 0
+    if args.command == "enqueue-pubmed-metadata":
+        request = parse_pubmed_metadata_enrichment_request(
+            corpus_selection_run_id=args.corpus_selection_run_id,
+            requested_by=args.requested_by,
+            max_papers=args.max_papers,
+            force_refresh=args.force_refresh,
+        )
+        enqueue_pubmed_metadata_enrichment_request(request)
+        broker.close()
+        return 0
+    if args.command == "run-pubmed-metadata-now":
+        request = parse_pubmed_metadata_enrichment_request(
+            corpus_selection_run_id=args.corpus_selection_run_id,
+            requested_by=args.requested_by,
+            max_papers=args.max_papers,
+            force_refresh=args.force_refresh,
+        )
+
+        async def _run() -> str:
+            pools = await open_pools(settings, names=("ingest_write",))
+            try:
+                return await run_pubmed_metadata_enrichment(
+                    request,
+                    ingest_pool=pools.get("ingest_write"),
+                    runtime_settings=settings,
+                )
+            finally:
+                await pools.close()
+
+        print(asyncio.run(_run()))
+        return 0
+    if args.command == "enqueue-s2-graph-enrichment":
+        request = parse_s2_graph_enrichment_request(
+            corpus_selection_run_id=args.corpus_selection_run_id,
+            requested_by=args.requested_by,
+            max_papers=args.max_papers,
+            force_refresh=args.force_refresh,
+        )
+        enqueue_s2_graph_enrichment_request(request)
+        broker.close()
+        return 0
+    if args.command == "run-s2-graph-enrichment-now":
+        request = parse_s2_graph_enrichment_request(
+            corpus_selection_run_id=args.corpus_selection_run_id,
+            requested_by=args.requested_by,
+            max_papers=args.max_papers,
+            force_refresh=args.force_refresh,
+        )
+
+        async def _run() -> str:
+            pools = await open_pools(settings, names=("ingest_write",))
+            try:
+                return await run_s2_graph_enrichment(
                     request,
                     ingest_pool=pools.get("ingest_write"),
                     runtime_settings=settings,

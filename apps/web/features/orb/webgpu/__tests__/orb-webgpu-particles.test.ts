@@ -1,12 +1,12 @@
 import type { PaperChunk } from "../../stores/geometry-mutation-store";
 import type { PaperAttrs } from "../../bake/use-paper-attributes-baker";
 import {
+  ORB_WEBGPU_DIM_FLAG,
   ORB_WEBGPU_EVIDENCE_FLAG,
   ORB_WEBGPU_FOCUS_FLAG,
   ORB_WEBGPU_HOVER_FLAG,
   ORB_WEBGPU_NEIGHBOR_FLAG,
   ORB_WEBGPU_SCOPE_FLAG,
-  ORB_WEBGPU_SCOPE_DIM_FLAG,
   ORB_WEBGPU_SELECTION_FLAG,
   applyOrbWebGpuChunkInPlace,
   buildOrbWebGpuFlagArray,
@@ -14,8 +14,22 @@ import {
   seedOrbWebGpuParticleArrays,
 } from "../orb-webgpu-particles";
 
+const DEFAULT_RADIUS = 0.0018;
+
 describe("orb WebGPU particle packing", () => {
-  it("packs paper chunks into storage-buffer arrays", () => {
+  it("seeds every particle's size to the default radius and zeroes flags", () => {
+    const arrays = seedOrbWebGpuParticleArrays(8);
+
+    expect(arrays.count).toBe(8);
+    expect(arrays.sizes).toHaveLength(8);
+    expect(arrays.flags).toHaveLength(8);
+    for (let i = 0; i < arrays.count; i += 1) {
+      expect(arrays.sizes[i]).toBeCloseTo(DEFAULT_RADIUS, 6);
+      expect(arrays.flags[i]).toBe(0);
+    }
+  });
+
+  it("packs paper chunks into a per-particle size delta", () => {
     const chunk: PaperChunk = {
       attributes: new Map([
         [
@@ -49,6 +63,7 @@ describe("orb WebGPU particle packing", () => {
         focusIndex: null,
         hoverIndex: null,
         neighborIndices: [],
+        pendingParticleIndices: [],
         scopeIndices: [],
         selectionIndices: [],
       },
@@ -56,19 +71,13 @@ describe("orb WebGPU particle packing", () => {
     });
 
     expect(arrays.count).toBe(8);
-    expect(
-      Math.hypot(
-        arrays.positions[1 * 4]!,
-        arrays.positions[1 * 4 + 1]!,
-        arrays.positions[1 * 4 + 2]!,
-      ),
-    ).toBeGreaterThan(0.4);
-    expect(Math.abs(arrays.velocities[1 * 4]!)).toBeGreaterThan(0);
-    expect(arrays.positions[1 * 4 + 3]).toBeGreaterThan(0.0018);
-    expect(arrays.positions[1 * 4 + 3]).toBeLessThan(0.0024);
-    expect(arrays.attributes[1 * 4]).toBeGreaterThan(0);
-    expect(arrays.attributes[1 * 4 + 3]).toBeGreaterThanOrEqual(0.2);
-    expect(arrays.attributes[1 * 4 + 3]).toBeLessThanOrEqual(1);
+    // Touched index gets a sizeFactor-scaled radius (>= DEFAULT_RADIUS,
+    // bounded by ORB_PAPER_SIZE_MAX = 1.3 of the default).
+    expect(arrays.sizes[1]!).toBeGreaterThan(DEFAULT_RADIUS);
+    expect(arrays.sizes[1]!).toBeLessThanOrEqual(DEFAULT_RADIUS * 1.3);
+    // Untouched indices keep the default seed.
+    expect(arrays.sizes[0]).toBeCloseTo(DEFAULT_RADIUS, 6);
+    expect(arrays.sizes[2]).toBeCloseTo(DEFAULT_RADIUS, 6);
   });
 
   it("packs focus, hover, evidence, scope, selection, and neighbor flags", () => {
@@ -77,6 +86,7 @@ describe("orb WebGPU particle packing", () => {
       focusIndex: 2,
       hoverIndex: 4,
       neighborIndices: [5],
+      pendingParticleIndices: [],
       scopeIndices: [6],
       selectionIndices: [7],
     });
@@ -88,8 +98,15 @@ describe("orb WebGPU particle packing", () => {
     expect(flags[5]! & ORB_WEBGPU_NEIGHBOR_FLAG).toBeTruthy();
     expect(flags[6]! & ORB_WEBGPU_SCOPE_FLAG).toBeTruthy();
     expect(flags[7]! & ORB_WEBGPU_SELECTION_FLAG).toBeTruthy();
-    expect(flags[0]! & ORB_WEBGPU_SCOPE_DIM_FLAG).toBeTruthy();
-    expect(flags[6]! & ORB_WEBGPU_SCOPE_DIM_FLAG).toBeFalsy();
+    expect(flags[0]! & ORB_WEBGPU_DIM_FLAG).toBeTruthy();
+    expect(flags[6]! & ORB_WEBGPU_DIM_FLAG).toBeFalsy();
+    // Selection target also clears DIM under the new contract.
+    expect(flags[7]! & ORB_WEBGPU_DIM_FLAG).toBeFalsy();
+    // Neighbor and evidence targets clear DIM too — they were
+    // previously only riding scope-driven DIM, but with selection
+    // also triggering DIM they now opt out explicitly.
+    expect(flags[1]! & ORB_WEBGPU_DIM_FLAG).toBeFalsy();
+    expect(flags[5]! & ORB_WEBGPU_DIM_FLAG).toBeFalsy();
   });
 
   it("incremental chunk application matches a full rebuild and reports the touched range", () => {
@@ -124,6 +141,7 @@ describe("orb WebGPU particle packing", () => {
         focusIndex: null,
         hoverIndex: null,
         neighborIndices: [],
+        pendingParticleIndices: [],
         scopeIndices: [],
         selectionIndices: [],
       },
@@ -140,18 +158,12 @@ describe("orb WebGPU particle packing", () => {
       { fromIndex: 2, toIndex: 3 },
       { fromIndex: 5, toIndex: 5 },
     ]);
-    expect(Array.from(incremental.positions)).toEqual(
-      Array.from(fullRebuild.positions),
-    );
-    expect(Array.from(incremental.velocities)).toEqual(
-      Array.from(fullRebuild.velocities),
-    );
-    expect(Array.from(incremental.attributes)).toEqual(
-      Array.from(fullRebuild.attributes),
+    expect(Array.from(incremental.sizes)).toEqual(
+      Array.from(fullRebuild.sizes),
     );
   });
 
-  it("re-applying a chunk produces the same arrays (idempotent on size/speed factors)", () => {
+  it("re-applying a chunk produces the same size (idempotent on size factor)", () => {
     const chunk: PaperChunk = {
       stats: {
         entityHi: Math.log1p(100),
@@ -180,12 +192,10 @@ describe("orb WebGPU particle packing", () => {
 
     const arrays = seedOrbWebGpuParticleArrays(8);
     applyOrbWebGpuChunkInPlace(arrays, chunk);
-    const onceSize = arrays.positions[3 * 4 + 3];
-    const onceSpeed = arrays.velocities[3 * 4 + 3];
+    const onceSize = arrays.sizes[3];
     applyOrbWebGpuChunkInPlace(arrays, chunk);
 
-    expect(arrays.positions[3 * 4 + 3]).toBe(onceSize);
-    expect(arrays.velocities[3 * 4 + 3]).toBe(onceSpeed);
+    expect(arrays.sizes[3]).toBe(onceSize);
   });
 
   it("avoids quadratic chunk-pack work — incremental cost stays bounded as chunks accumulate", () => {

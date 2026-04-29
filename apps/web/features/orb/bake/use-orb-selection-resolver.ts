@@ -67,6 +67,7 @@ export function useOrbSelectionResolver(
   const setSelectionIndices = useOrbFocusVisualStore(
     (s) => s.setSelectionIndices,
   );
+  const clearPending = useOrbFocusVisualStore((s) => s.clearPending);
   const resolverRef = useRef<{
     schedule: (revision: number, count: number) => void;
     cancel: () => void;
@@ -95,14 +96,29 @@ export function useOrbSelectionResolver(
       rafId = null;
     };
 
+    const commitResolved = (revision: number, indices: readonly number[]) => {
+      setSelectionIndices(indices);
+      // Barrier clear of the optimistic pending lane: only drop pending
+      // once the resolver has committed a set whose input revision is
+      // strictly newer than the dispatch revision recorded when the
+      // pending write happened. If a later interaction wrote pending
+      // with a higher dispatchRevision, we let it stand until the next
+      // resolver pass catches up.
+      const pendingDispatchRevision =
+        useOrbFocusVisualStore.getState().pendingDispatchRevision;
+      if (revision > pendingDispatchRevision) {
+        clearPending();
+      }
+    };
+
     const applySelection = async (revision: number, count: number) => {
       if (count <= 0) {
-        setSelectionIndices([]);
+        commitResolved(revision, []);
         return;
       }
 
       if (!connection || !paperSampleReady || particleCount <= 0) {
-        setSelectionIndices([]);
+        commitResolved(revision, []);
         return;
       }
 
@@ -115,9 +131,9 @@ export function useOrbSelectionResolver(
         if (cancelled || pending !== undefined || liveRevision !== revision) {
           return;
         }
-        setSelectionIndices(normalizeParticleIndices(rows, particleCount));
+        commitResolved(revision, normalizeParticleIndices(rows, particleCount));
       } catch {
-        if (!cancelled && pending === undefined) setSelectionIndices([]);
+        if (!cancelled && pending === undefined) commitResolved(revision, []);
       }
     };
 
@@ -140,7 +156,7 @@ export function useOrbSelectionResolver(
       clearFrame();
       if (count <= 0) {
         pending = undefined;
-        setSelectionIndices([]);
+        commitResolved(revision, []);
         return;
       }
       rafId = requestAnimationFrame(() => {
@@ -174,6 +190,7 @@ export function useOrbSelectionResolver(
     particleCount,
     connection,
     setSelectionIndices,
+    clearPending,
   ]);
 
   useEffect(() => {

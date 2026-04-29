@@ -10,10 +10,22 @@ export interface UseOrbHoverOptions {
   enabled?: boolean;
 }
 
+/**
+ * Orb hover handler. Drives the per-frame `hoverIndex` on the focus
+ * visual store from a coalesced rAF scheduler.
+ *
+ * Locking note: hover deliberately does NOT consult the selection
+ * commit gate. Locked = explicit-selection commits frozen; the picker
+ * itself stays responsive so inspection still works while the user
+ * holds a selection.
+ */
 export function useOrbHover(options: UseOrbHoverOptions) {
   const { particleCount, enabled = true } = options;
   const rafRef = useRef<number | null>(null);
   const requestIdRef = useRef(0);
+  // Highest result.generation seen so far. Out-of-order resolves whose
+  // generation is below the watermark are stale and silently dropped.
+  const latestGenerationRef = useRef<number>(-Infinity);
   const pendingRef = useRef<{ x: number; y: number } | null>(null);
   const setHoverIndex = useOrbFocusVisualStore((s) => s.setHoverIndex);
 
@@ -42,8 +54,11 @@ export function useOrbHover(options: UseOrbHoverOptions) {
 
     void handle
       .pickAsync(pending.x, pending.y)
-      .then((index) => {
+      .then(({ index, generation }) => {
         if (requestId !== requestIdRef.current) return;
+        // Stale-drop on out-of-order resolves.
+        if (generation < latestGenerationRef.current) return;
+        latestGenerationRef.current = generation;
         if (index === ORB_PICK_NO_HIT || index < 0 || index >= particleCount) {
           setHoverIndex(null);
           return;

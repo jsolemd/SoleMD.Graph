@@ -36,6 +36,8 @@ SELECTION_PHASE_ACTOR_THROWS = (
     UpstreamReleaseMissing,
     UpstreamReleaseNotPublished,
 )
+CORPUS_SELECTION_ACTOR_TIME_LIMIT_MS = 6 * 60 * 60 * 1000
+CORPUS_WAVE_ACTOR_TIME_LIMIT_MS = 6 * 60 * 60 * 1000
 
 
 async def _dispatch_evidence_wave_payload(payload: dict[str, object]) -> None:
@@ -81,7 +83,7 @@ def _next_phase_name(
     max_retries=1,
     min_backoff=10_000,
     max_backoff=120_000,
-    time_limit=30 * 60 * 1000,
+    time_limit=CORPUS_SELECTION_ACTOR_TIME_LIMIT_MS,
     throws=SELECTION_PHASE_ACTOR_THROWS,
 )
 async def start_selection(**payload: object) -> None:
@@ -122,7 +124,7 @@ async def dispatch_selection_phases_actor(**payload: object) -> None:
     max_retries=1,
     min_backoff=10_000,
     max_backoff=120_000,
-    time_limit=30 * 60 * 1000,
+    time_limit=CORPUS_SELECTION_ACTOR_TIME_LIMIT_MS,
     throws=SELECTION_PHASE_ACTOR_THROWS,
 )
 async def run_selection_phase(**payload: object) -> None:
@@ -165,7 +167,7 @@ async def run_selection_phase(**payload: object) -> None:
     max_retries=1,
     min_backoff=10_000,
     max_backoff=120_000,
-    time_limit=30 * 60 * 1000,
+    time_limit=CORPUS_WAVE_ACTOR_TIME_LIMIT_MS,
     throws=(
         CorpusWaveAlreadyPublished,
         CorpusWaveAlreadyInProgress,

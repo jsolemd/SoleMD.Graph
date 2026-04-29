@@ -14,6 +14,11 @@ import type { GraphSelectionChordState } from "@/features/graph/lib/graph-select
 import { ORB_MANUAL_SELECTION_SOURCE_ID } from "@/features/graph/lib/overlay-producers";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
+import {
+  attemptCommitOrToast,
+  useOrbPickGenerationBumper,
+  useSelectionCommitGate,
+} from "./use-selection-commit-gate";
 
 const PAPER_SAMPLE_TABLE = "paper_sample";
 const SELECTED_POINT_INDICES_SCOPE_SQL = buildSelectedViewPredicate();
@@ -44,6 +49,18 @@ function readPointId(row: Record<string, unknown> | undefined): string | null {
  * paper id to the canonical graph point, appends it to
  * `selected_point_indices`, and leaves plain click inspection-only.
  *
+ * Wave 2B contract:
+ *   - Lock state lives behind `useSelectionCommitGate()`. Locked clicks
+ *     downgrade to inspection (resolveAndSelect) and never commit.
+ *   - Optimistic visuals go through `setPendingParticleIndices(...)`
+ *     instead of `setSelectionIndices(...)`. The resolver clears the
+ *     pending lane once it has reconciled `selected_point_indices` with
+ *     a higher dispatch revision (see `use-orb-selection-resolver`).
+ *   - This hook also mounts `useOrbPickGenerationBumper()` once per
+ *     OrbSurface — it owns the lifecycle of pick-generation
+ *     invalidation triggers (filter values, selection-clear, renderer
+ *     toggle).
+ *
  * When `queries` is null (bundle not yet warm) the hook always returns
  * a no-op — we can't resolve a click without DuckDB. `useResolveAndSelectNode`
  * is still wired so the callback dependency keys stay stable once
@@ -55,7 +72,7 @@ export function useOrbClick(
 ) {
   const selectNode = useGraphStore((s) => s.selectNode);
   const setFocusedPointIndex = useGraphStore((s) => s.setFocusedPointIndex);
-  const selectionLocked = useDashboardStore((s) => s.selectionLocked);
+  const gate = useSelectionCommitGate();
   const setCurrentPointScopeSql = useDashboardStore(
     (s) => s.setCurrentPointScopeSql,
   );
@@ -63,9 +80,14 @@ export function useOrbClick(
   const setActiveSelectionSourceId = useDashboardStore(
     (s) => s.setActiveSelectionSourceId,
   );
-  const setVisualSelectionIndices = useOrbFocusVisualStore(
-    (s) => s.setSelectionIndices,
+  const setPendingParticleIndices = useOrbFocusVisualStore(
+    (s) => s.setPendingParticleIndices,
   );
+  // OrbSurface mounts `useOrbClick` exactly once per orb session, so
+  // this is the natural place to own the lifecycle of the pick
+  // generation bumper. Mounting it here keeps the wiring inside the
+  // interaction module without spinning up a separate root hook.
+  useOrbPickGenerationBumper();
   // Only invoke the real resolver when queries is present. Casting
   // is safe because the outer callback guards on `queries == null` and
   // the underlying hook returns a callback that closes over queries —
@@ -79,12 +101,26 @@ export function useOrbClick(
     (index: number | null, chords?: GraphSelectionChordState) => {
       if (queries == null) return;
       if (index == null || index < 0) return;
+      // Snapshot the dispatch revision BEFORE we kick off any async
+      // work. The resolver uses this barrier to decide when the
+      // canonical `selected_point_indices` set is fresher than the
+      // optimistic pending lane and safe to clear.
+      const dispatchRevision =
+        useDashboardStore.getState().selectedPointRevision;
       void queries
         .runReadOnlyQuery(buildOrbParticleSelectionSql(index))
         .then(async (result) => {
           const id = readPointId(result.rows[0]);
           if (id == null) return;
-          if (!chords?.addToSelection || selectionLocked) {
+          if (!chords?.addToSelection || !gate.canCommit) {
+            // Inspection lane — single click, or any click while
+            // selection is locked. No commit, no pending write; the
+            // resolver path stays untouched.
+            if (chords?.addToSelection && !gate.canCommit) {
+              // Surface a throttled "locked" toast so the user knows
+              // why their explicit-selection chord didn't take.
+              attemptCommitOrToast(gate, () => {});
+            }
             return resolveAndSelect({ id });
           }
 
@@ -96,10 +132,14 @@ export function useOrbClick(
 
           const current = await readCommittedSelectedPointIndices(queries);
           const pointIndices = mergeSelectionPointIndices(current, [node.index]);
-          const visualSelectionIndices = mergeSelectionPointIndices(
+          // Particle-index lane: optimistic visual write. The resolver
+          // reconciles `selected_point_indices` → particle indices and
+          // clears the pending lane via `pendingDispatchRevision`.
+          const visualParticleIndices = mergeSelectionPointIndices(
             useOrbFocusVisualStore.getState().selectionIndices,
             [index],
           );
+          setPendingParticleIndices(visualParticleIndices, dispatchRevision);
           return commitSelectionState({
             sourceId: ORB_MANUAL_SELECTION_SOURCE_ID,
             queries,
@@ -111,23 +151,21 @@ export function useOrbClick(
               setCurrentPointScopeSql,
               forceRevision: true,
             },
-          }).then(() => {
-            setVisualSelectionIndices(visualSelectionIndices);
           });
         })
         .catch(() => {});
     },
     [
       activeLayer,
+      gate,
       queries,
       resolveAndSelect,
       selectNode,
-      selectionLocked,
       setActiveSelectionSourceId,
       setCurrentPointScopeSql,
       setFocusedPointIndex,
+      setPendingParticleIndices,
       setSelectedPointCount,
-      setVisualSelectionIndices,
     ],
   );
 }

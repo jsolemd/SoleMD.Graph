@@ -3,6 +3,7 @@ import {
   ORB_WEBGPU_HOVER_FLAG,
   ORB_WEBGPU_SELECTION_FLAG,
 } from "./orb-webgpu-particles";
+import { isOrbPerfOn, markPerf, measurePerf } from "./orb-webgpu-perf";
 
 // Per-particle interaction-state decay weights. Replaces binary
 // flag-driven if/max blocks in the shader with smoothly-interpolated
@@ -36,6 +37,10 @@ export function tickOrbInteractionWeights(
   dtSeconds: number,
 ): void {
   if (count <= 0 || dtSeconds <= 0) return;
+  // Read the perf flag once per call — never inside the per-particle
+  // loop. When off this is a single property access on globalThis.
+  const perfOn = isOrbPerfOn();
+  if (perfOn) markPerf("orb:weights:tick:start");
   const hoverDecay = Math.exp(-dtSeconds / HOVER_TAU_SECONDS);
   const selectDecay = Math.exp(-dtSeconds / SELECT_TAU_SECONDS);
   const focusDecay = Math.exp(-dtSeconds / FOCUS_TAU_SECONDS);
@@ -53,6 +58,14 @@ export function tickOrbInteractionWeights(
       selectTarget + ((data[offset + 1] ?? 0) - selectTarget) * selectDecay;
     data[offset + 2] =
       focusTarget + ((data[offset + 2] ?? 0) - focusTarget) * focusDecay;
+  }
+  if (perfOn) {
+    markPerf("orb:weights:tick:end");
+    measurePerf(
+      "orb:weights:tick",
+      "orb:weights:tick:start",
+      "orb:weights:tick:end",
+    );
   }
 }
 

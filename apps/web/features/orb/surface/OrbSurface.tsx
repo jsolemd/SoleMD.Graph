@@ -36,6 +36,7 @@ import {
 import { OrbChromeBar } from "../chrome/OrbChromeBar";
 import { OrbHoverBillboard } from "../chrome/OrbHoverBillboard";
 import { OrbLegendOverlay } from "../chrome/OrbLegendOverlay";
+import { OrbPerfOverlay } from "../chrome/OrbPerfOverlay";
 import type { GraphSelectionChordState } from "@/features/graph/lib/graph-selection-chords";
 import {
   OrbWebGpuCanvas,
@@ -314,7 +315,7 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
       const requestId = ++clickRequestIdRef.current;
       void handle
         .pickAsync(clientX, clientY)
-        .then((index) => {
+        .then(({ index }) => {
           if (requestId !== clickRequestIdRef.current) return;
           if (index === ORB_PICK_NO_HIT) {
             setLastPick({ kind: "miss" });
@@ -402,6 +403,7 @@ export function OrbSurface({ bundle }: { bundle: GraphBundle | null }) {
           lastPick={lastPick}
         />
       ) : null}
+      <OrbPerfOverlay />
     </main>
   );
 }

@@ -156,10 +156,27 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   private readonly yawOmega = new OrbYawOmegaSmoother();
   private readonly introDepth = new OrbIntroDepthEnvelope();
   private readonly resizeObserver!: ResizeObserver | null;
+  // Depth attachment for the render pass. Recreated whenever the canvas
+  // resizes (canvas.width/height change). Pairs with the renderPipeline's
+  // depthStencil and the vertex shader's per-particle ndcZ — without all
+  // three matched, depth-test is a no-op and overlapping particles
+  // composite by instance-index order (the see-through twinkle bug).
+  private depthTexture: GPUTexture | null = null;
   private animationFrame: number | null = null;
   private disposed = false;
   private particleCount = 0;
   private lastFrameMs = 0;
+  // Smoothed simulation dt. Raw rAF dt jumps with frame variance —
+  // when the user rotates / zooms / resizes, GPU and CPU spike,
+  // dropping a frame or two; rawDt for that frame is 2-3× nominal,
+  // and feeding it into colorTime causes a visible motion jump (the
+  // user-reported "jaggidy/laggy when rotating" feel). The smoothed
+  // value caps at ~17ms (slightly above 60Hz) and exponentially
+  // averages — under brief load spikes, simulation appears to slow
+  // smoothly rather than jump. This is the canonical fix for
+  // frame-rate-coupled motion stutter on WebGPU and matches how
+  // production particle systems decouple sim from frame variance.
+  private smoothedSimDtSeconds = 1 / 60;
   // Host-side generation token. Pick consumers (Wave 2B hooks) snapshot
   // this at dispatch time and pass it back when readback resolves; if
   // it no longer matches, the result is stale (state changed between
@@ -570,6 +587,8 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       buffer.destroy();
     }
     this.spriteTexture.destroy();
+    this.depthTexture?.destroy();
+    this.depthTexture = null;
   }
 
   private readonly frame = (timestampMs: number) => {
@@ -584,6 +603,21 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     );
     this.lastFrameMs = timestampMs;
     this.resize();
+    // Smooth the simulation dt with a one-pole IIR filter and clamp to
+    // a tight ceiling around 1/60. This is the canonical fix for
+    // frame-rate-coupled motion stutter: even when a frame hitches
+    // (rotate / zoom / first compile / GC), the value fed into
+    // colorTime advances by a near-uniform amount, so particles don't
+    // visibly jump. Camera-driven controllers (rotation / zoom / pan)
+    // continue to use rawDt — they should stay responsive to actual
+    // wall-clock time, only the FBM-driven ambient noise is what reads
+    // as jaggidy when desynced.
+    const NOMINAL_DT = 1 / 60;
+    const SIM_DT_CEILING = NOMINAL_DT * 1.05;
+    const clampedDt = Math.min(rawDt, SIM_DT_CEILING);
+    this.smoothedSimDtSeconds =
+      this.smoothedSimDtSeconds * 0.85 + clampedDt * 0.15;
+    const simDt = this.smoothedSimDtSeconds;
     // Ambient motion (drift FBM time, color cycle) halts on either the
     // user-facing pause or the OS reduced-motion preference. This keeps
     // the prior collapsed-flag behavior even though motionSettings now
@@ -593,12 +627,12 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       this.motionSettings.prefersReducedMotion;
     const motionDt = ambientFrozen
       ? 0
-      : rawDt *
+      : simDt *
         this.motionSettings.motionSpeedMultiplier *
         this.motionSettings.ambientEntropy;
     const colorDt = ambientFrozen
       ? 0
-      : rawDt * this.motionSettings.motionSpeedMultiplier;
+      : simDt * this.motionSettings.motionSpeedMultiplier;
     if (this.particleCount > 0) {
       this.colorTime += colorDt;
     }
@@ -662,6 +696,18 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
           view: currentTexture.createView(),
         },
       ],
+      // Clear to far (1.0) every frame so per-particle ndcZ writes
+      // determine visibility from a fresh slate. storeOp:"discard" —
+      // depth is consumed within the pass; no later pass needs it, so
+      // we don't pay the bandwidth to write it back to memory.
+      depthStencilAttachment: this.depthTexture
+        ? {
+            depthClearValue: 1,
+            depthLoadOp: "clear",
+            depthStoreOp: "discard",
+            view: this.depthTexture.createView(),
+          }
+        : undefined,
       label: "orb.render",
     });
     const renderBundle = this.getRenderBundle();
@@ -690,6 +736,22 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     if (this.canvas.width === width && this.canvas.height === height) return;
     this.canvas.width = width;
     this.canvas.height = height;
+    this.recreateDepthTexture(width, height);
+  }
+
+  // (Re)create the depth texture to match the current canvas size.
+  // Called from resize() when dimensions actually change. ~10-13 MB at
+  // 1080p×1.25 DPR (depth24plus). Single-sample to match the
+  // non-MSAA color attachment — the WebGPU spec requires sample count
+  // parity across attachments in a render pass.
+  private recreateDepthTexture(width: number, height: number): void {
+    this.depthTexture?.destroy();
+    this.depthTexture = this.device.createTexture({
+      format: "depth24plus",
+      label: "orb.depth-texture",
+      size: { depthOrArrayLayers: 1, height, width },
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
   }
 
   private writeFrameUniforms(time: number, motionDt: number): void {
@@ -754,6 +816,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     }
     const bundleEncoder = this.device.createRenderBundleEncoder({
       colorFormats: [this.format],
+      // Must match the render pass's depth attachment + the pipeline's
+      // depthStencil format, or the bundle is layout-incompatible and
+      // executeBundles validation-errors at submit time.
+      depthStencilFormat: "depth24plus",
       label: "orb.render-bundle-encoder",
     });
     bundleEncoder.setPipeline(this.renderPipeline);

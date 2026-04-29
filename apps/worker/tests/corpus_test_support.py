@@ -362,6 +362,15 @@ async def seed_stale_release_scope_corpus_assignment(
 ) -> None:
     connection = await asyncpg.connect(admin_dsn)
     try:
+        source_release_id = await connection.fetchval(
+            """
+            SELECT source_release_id
+            FROM solemd.s2_papers_raw
+            WHERE paper_id = $1
+            """,
+            paper_id,
+        )
+        assert source_release_id is not None
         await connection.execute(
             """
             INSERT INTO solemd.corpus (corpus_id, admission_reason, domain_status)
@@ -372,10 +381,22 @@ async def seed_stale_release_scope_corpus_assignment(
         )
         await connection.execute(
             """
-            UPDATE solemd.s2_papers_raw
-            SET corpus_id = $2
-            WHERE paper_id = $1
+            INSERT INTO solemd.paper_corpus_assignments (
+                s2_source_release_id,
+                paper_id,
+                corpus_id,
+                selector_version,
+                admission_reason
+            )
+            VALUES ($1, $2, $3, 'test-stale-assignment', 'stale_release_scope')
+            ON CONFLICT (s2_source_release_id, paper_id)
+            DO UPDATE SET
+                corpus_id = EXCLUDED.corpus_id,
+                selector_version = EXCLUDED.selector_version,
+                admission_reason = EXCLUDED.admission_reason,
+                updated_at = now()
             """,
+            int(source_release_id),
             paper_id,
             stale_corpus_id,
         )
@@ -458,6 +479,29 @@ async def fetch_selection_artifacts(
         await connection.close()
 
 
+async def fetch_paper_entity_signal_builds(
+    admin_dsn: str,
+) -> list[tuple[str, int | None]]:
+    connection = await asyncpg.connect(admin_dsn)
+    try:
+        rows = await connection.fetch(
+            """
+            SELECT status, row_count
+            FROM solemd.paper_entity_signal_builds
+            ORDER BY started_at
+            """
+        )
+        return [
+            (
+                str(row["status"]),
+                None if row["row_count"] is None else int(row["row_count"]),
+            )
+            for row in rows
+        ]
+    finally:
+        await connection.close()
+
+
 async def fetch_selection_chunks(
     admin_dsn: str,
     run_id: UUID,
@@ -496,14 +540,19 @@ async def fetch_selection_summary_rows(
     try:
         rows = await connection.fetch(
             """
-            SELECT raw.paper_id, summary.current_status, summary.primary_admission_reason
+            SELECT raw.paper_id,
+                   summary.current_status,
+                   summary.primary_admission_reason
             FROM solemd.paper_selection_summary summary
             JOIN solemd.corpus_selection_runs runs
               ON runs.corpus_selection_run_id = summary.corpus_selection_run_id
             JOIN solemd.s2_papers_raw raw
-              ON raw.corpus_id = summary.corpus_id
-             AND raw.source_release_id = runs.s2_source_release_id
+              ON raw.source_release_id = runs.s2_source_release_id
+            LEFT JOIN solemd.paper_corpus_assignments assignments
+              ON assignments.s2_source_release_id = raw.source_release_id
+             AND assignments.paper_id = raw.paper_id
             WHERE summary.corpus_selection_run_id = $1
+              AND coalesce(assignments.corpus_id, raw.corpus_id) = summary.corpus_id
             ORDER BY raw.paper_id
             """,
             run_id,

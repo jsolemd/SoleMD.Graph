@@ -540,16 +540,35 @@ Implemented phases:
 Current execution layer:
 
 - `assets` refreshes the logged curated vocab tables and selector temp assets.
-- `corpus_admission`, `mapped_promotion`, `corpus_baseline_materialization`,
-  and `selection_summary` reuse the same run-scoped selection rollups:
-  `paper_scope`, `entity_aggregate`, and `relation_aggregate`.
+- `corpus_admission` builds the run-scoped `paper_scope` rollup, refreshes the
+  logged `paper_entity_signals` layer for the S2/PT3/entity-asset checksum, and
+  allocates corpus ids for journal, venue-pattern, or curated entity/vocab hits.
+- `mapped_promotion` and `selection_summary` reuse `paper_scope` and
+  `paper_entity_signals`; they build `relation_aggregate` only when mapped or
+  summary logic needs relation-rule signals.
 - `mapped_surface_materialization` adds mapped-only detail rollups:
   `mapped_entity_detail` and `mapped_relation_detail`, then drains mapped
-  surfaces by `corpus_id` hash bucket.
+  surfaces by `corpus_id` hash bucket. Source-author identities are loaded
+  once before bucket drains so parallel chunks attach `paper_authors` without
+  contending on global author upserts.
 - Rollups are UNLOGGED tables in `solemd_scratch`; their durable resume map is
   logged in `solemd.corpus_selection_artifacts`.
-- Mapped materialization chunk state is logged in
+- `paper_scope_identity_reconciliation` is a logged checkpoint in the artifact
+  ledger, not a scratch table. It records that `paper_scope` corpus ids and
+  `paper_corpus_assignments` have been reconciled for the current plan/entity
+  checksum so phase retries do not rebuild the same identity rewrite table.
+- `paper_entity_signals` and `paper_entity_signal_builds` are logged durable
+  tables, not scratch artifacts. They are keyed by S2 release, PT3 release, and
+  the checksum over `vocab_terms`, `vocab_aliases`, and `entity_rules`; each
+  signal row is either a vocab/alias hit used for corpus admission or an
+  entity-rule hit used for mapped promotion.
+- Baseline, mapped materialization, and selection-summary chunk state is logged in
   `solemd.corpus_selection_chunks` and claimed with `FOR UPDATE SKIP LOCKED`.
+  Chunks are seeded from the configured bucket cardinality, not by scanning
+  `paper_scope`, so resumes do not reread the full selection rollup before
+  doing useful work. Baseline materialization drains `papers` and `paper_text`
+  by `corpus_id` bucket before mapped-only surfaces run; summary refresh upserts
+  `paper_selection_summary` through the same bounded bucket contract.
 - `paper_selection_summary` remains the only durable final scoring/control
   surface; any scoring scratch table is only an implementation detail if added
   later.
@@ -561,12 +580,15 @@ Current execution layer:
   the same run id and phase ledger while reducing the failure blast radius of
   each Dramatiq message.
 - `CORPUS_MATERIALIZATION_MAX_PARALLEL_CHUNKS` bounds in-process asyncpg
-  parallelism for mapped bucket drains inside the mapped-surface phase.
+  parallelism for baseline and mapped bucket drains inside their
+  materialization phases.
 - `CORPUS_MATERIALIZATION_CHUNK_MAX_ATTEMPTS` caps poison-bucket retries. A
   failed bucket with attempts at or above the cap is not auto-reset to pending;
   the phase fails immediately until the underlying data/query issue is fixed.
 - `CORPUS_ARTIFACT_RETENTION_RUNS` keeps the latest N run artifacts for a
-  release pair/selector and drops older scratch tables after publish.
+  release pair/selector and drops older unlogged scratch tables after publish.
+  Logged checkpoints remain ledger rows and are never treated as physical
+  scratch tables to drop.
 - Artifact ledger `detail` records `build_and_index_seconds`, `grant_seconds`,
   and `analyze_seconds`; `byte_size`, `row_count`, and timestamps remain the
   durable observability surface for scratch rollups. Per-index timing and
@@ -941,13 +963,17 @@ Locked first-wave evidence policy under `wave_policy_key = 'evidence_missing_pmc
 - only papers missing an active `pmc_bioc` canonical document are eligible
 - the evidence wave is locator-aware and currently requires at least one
   canonical PMC / PMID / DOI locator candidate
+- the evidence wave requires a mapped entity/relation-positive paper, currently
+  `has_mapped_entity_match OR has_mapped_relation_match OR
+  curated_entity_signal_count > 0`; venue-only mapped papers can be enriched
+  for QA, but they do not enter the full-text evidence queue by themselves
 - the evidence wave is recency-gated and currently admits only papers with
   `publication_year IS NULL OR publication_year >= current_year - 10`
 - the evidence wave is high-signal-gated and currently requires
   `evidence_priority_score >= 150`
 - ranking then orders by `evidence_priority_score`, `mapped_priority_score`,
-  relation/entity rule counts, vocab signal density, and citation/reference
-  support
+  relation/entity rule counts, curated vocab/entity signal density, and
+  citation/reference support
 
 ## Explicit follow-on slices after this one
 

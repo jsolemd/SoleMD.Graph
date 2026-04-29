@@ -16,6 +16,7 @@ from corpus_test_support import (
     fetch_selection_artifacts as _fetch_selection_artifacts,
     fetch_selection_chunks as _fetch_selection_chunks,
     fetch_selection_summary_rows as _fetch_selection_summary_rows,
+    fetch_paper_entity_signal_builds as _fetch_paper_entity_signal_builds,
     fetch_wave_members as _fetch_wave_members,
     latest_selection_run_id as _latest_selection_run_id,
     paper_ids_for_corpus_ids as _paper_ids_for_corpus_ids,
@@ -129,13 +130,17 @@ async def test_corpus_selection_runtime_resumes_failed_run_deterministically(
     ]
     artifacts = await _fetch_selection_artifacts(warehouse_dsns["admin"], resumed_run_id)
     assert artifacts == [
-        ("entity_aggregate", "complete", 5, False),
         ("mapped_entity_detail", "complete", 4, False),
         ("mapped_relation_detail", "complete", 1, False),
         ("paper_scope", "complete", 7, False),
+        ("paper_scope_identity_reconciliation", "complete", 0, True),
         ("relation_aggregate", "complete", 1, False),
     ]
+    assert await _fetch_paper_entity_signal_builds(warehouse_dsns["admin"]) == [
+        ("complete", 7)
+    ]
     chunks = await _fetch_selection_chunks(warehouse_dsns["admin"], resumed_run_id)
+    assert len(chunks) == runtime_settings.corpus_materialization_bucket_count
     assert all(status == "complete" for _, status, _ in chunks)
     assert sum(int(row_counts.get("entity_annotations", 0)) for _, _, row_counts in chunks) == 4
 
@@ -152,6 +157,72 @@ async def test_corpus_selection_runtime_resumes_failed_run_deterministically(
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
     try:
+        paper_scope_artifact = await admin_connection.fetchrow(
+            """
+            SELECT storage_schema, storage_table
+            FROM solemd.corpus_selection_artifacts
+            WHERE corpus_selection_run_id = $1
+              AND artifact_kind = 'paper_scope'
+            """,
+            resumed_run_id,
+        )
+        assert paper_scope_artifact is not None
+        paper_scope_indexes = [
+            row["indexdef"]
+            for row in await admin_connection.fetch(
+                """
+                SELECT indexdef
+                FROM pg_indexes
+                WHERE schemaname = $1
+                  AND tablename = $2
+                """,
+                paper_scope_artifact["storage_schema"],
+                paper_scope_artifact["storage_table"],
+            )
+        ]
+        assert any(
+            "has_journal_match" in indexdef and "INCLUDE" in indexdef
+            for indexdef in paper_scope_indexes
+        )
+        assert any(
+            "jsonb_array_length(pattern_matches) > 0" in indexdef
+            for indexdef in paper_scope_indexes
+        )
+        assert any(
+            "(bucket_id, corpus_id)" in indexdef
+            and "WHERE (corpus_id IS NOT NULL)" in indexdef
+            for indexdef in paper_scope_indexes
+        )
+        assert (
+            await admin_connection.fetchval(
+                """
+                SELECT count(*)
+                FROM solemd.corpus_selection_chunks
+                WHERE corpus_selection_run_id = $1
+                  AND phase_name = 'corpus_baseline_materialization'
+                """,
+                resumed_run_id,
+            )
+            == runtime_settings.corpus_materialization_bucket_count
+        )
+        summary_chunk_metrics = await admin_connection.fetchrow(
+            """
+            SELECT
+                count(*) FILTER (WHERE status = 'complete') AS complete_chunks,
+                coalesce(sum((row_counts ->> 'summary_rows')::INTEGER), 0)
+                    AS summary_rows
+            FROM solemd.corpus_selection_chunks
+            WHERE corpus_selection_run_id = $1
+              AND phase_name = 'selection_summary'
+            """,
+            resumed_run_id,
+        )
+        assert summary_chunk_metrics is not None
+        assert (
+            summary_chunk_metrics["complete_chunks"]
+            == runtime_settings.corpus_materialization_bucket_count
+        )
+        assert summary_chunk_metrics["summary_rows"] == 7
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.papers") == 6
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_text") == 6
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_authors") == 5
@@ -395,6 +466,120 @@ async def test_parallel_mapped_materialization_deduplicates_anonymous_authors(
         await admin_connection.close()
     assert author_count == 1
     assert linked_author_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mapped_materialization_deduplicates_reconciled_author_slots(
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
+    await _seed_selection_fixture(warehouse_dsns["admin"])
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        s2_release_id = await admin_connection.fetchval(
+            """
+            SELECT source_release_id
+            FROM solemd.source_releases
+            WHERE source_name = 's2'
+              AND source_release_key = 's2-2026-04-01'
+            """
+        )
+        await admin_connection.execute(
+            """
+            UPDATE solemd.s2_paper_authors_raw
+            SET source_author_id = 'shared-source-author',
+                name_raw = 'Shared Author'
+            WHERE paper_id = 'S2-105'
+            """
+        )
+        await admin_connection.execute(
+            """
+            INSERT INTO solemd.s2_papers_raw (
+                paper_id,
+                source_release_id,
+                corpus_id,
+                pmid,
+                title,
+                abstract,
+                venue_raw,
+                year,
+                payload_checksum
+            )
+            VALUES (
+                'S2-108',
+                $1,
+                NULL,
+                50105,
+                'Duplicate delirium bridge paper',
+                'abstract',
+                'General medicine',
+                2025,
+                'checksum-S2-108'
+            )
+            """,
+            int(s2_release_id),
+        )
+        await admin_connection.execute(
+            """
+            INSERT INTO solemd.s2_paper_authors_raw (
+                paper_id,
+                author_ordinal,
+                source_author_id,
+                name_raw,
+                affiliation_raw
+            )
+            VALUES (
+                'S2-108',
+                0,
+                'shared-source-author',
+                'Shared Longer Author',
+                'Duplicate affiliation'
+            )
+            """
+        )
+    finally:
+        await admin_connection.close()
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        await run_corpus_selection(
+            StartCorpusSelectionRequest(
+                s2_release_tag="s2-2026-04-01",
+                pt3_release_tag="pt3-2026-04-01",
+                selector_version="selector-v1-reconciled-authors",
+                requested_by="tester",
+            ),
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        author_count = await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.authors
+            WHERE source_author_id = 'shared-source-author'
+            """
+        )
+        paper_author_slots = await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.paper_authors paper_authors
+            JOIN solemd.papers papers
+              ON papers.corpus_id = paper_authors.corpus_id
+            WHERE papers.pmid = 50105
+              AND paper_authors.author_ordinal = 0
+            """
+        )
+    finally:
+        await admin_connection.close()
+    assert author_count == 1
+    assert paper_author_slots == 1
 
 
 @pytest.mark.asyncio
@@ -984,14 +1169,14 @@ async def test_corpus_selection_reuses_existing_canonical_identity_by_pmid(
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
     try:
-        raw_corpus_id = await admin_connection.fetchval(
+        assigned_corpus_id = await admin_connection.fetchval(
             """
             SELECT corpus_id
-            FROM solemd.s2_papers_raw
+            FROM solemd.paper_corpus_assignments
             WHERE paper_id = 'S2-103'
             """
         )
-        assert raw_corpus_id == 900001
+        assert assigned_corpus_id == 900001
         canonical_s2_paper_id = await admin_connection.fetchval(
             """
             SELECT s2_paper_id

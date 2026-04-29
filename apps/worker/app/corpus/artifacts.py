@@ -12,14 +12,16 @@ from app.corpus.models import CorpusPlan
 SCRATCH_SCHEMA = "solemd_scratch"
 
 PAPER_SCOPE = "paper_scope"
-ENTITY_AGGREGATE = "entity_aggregate"
 RELATION_AGGREGATE = "relation_aggregate"
 MAPPED_ENTITY_DETAIL = "mapped_entity_detail"
 MAPPED_RELATION_DETAIL = "mapped_relation_detail"
+PAPER_SCOPE_IDENTITY_RECONCILIATION = "paper_scope_identity_reconciliation"
+
+LOGGED_CHECKPOINT_STORAGE_SCHEMA = "solemd"
+LOGGED_CHECKPOINT_STORAGE_TABLE = "corpus_selection_artifacts"
 
 ARTIFACT_SUFFIXES: dict[str, str] = {
     PAPER_SCOPE: "paper_scope",
-    ENTITY_AGGREGATE: "entity_aggregate",
     RELATION_AGGREGATE: "relation_aggregate",
     MAPPED_ENTITY_DETAIL: "mapped_entity_detail",
     MAPPED_RELATION_DETAIL: "mapped_relation_detail",
@@ -242,6 +244,152 @@ async def mark_artifact_failed(
         """
         UPDATE solemd.corpus_selection_artifacts
         SET status = 'failed',
+            completed_at = now(),
+            error_message = $3
+        WHERE corpus_selection_run_id = $1
+          AND artifact_kind = $2
+        """,
+        corpus_selection_run_id,
+        artifact_kind,
+        error_message[:2000],
+    )
+
+
+async def logged_checkpoint_complete(
+    connection: asyncpg.Connection,
+    *,
+    corpus_selection_run_id: UUID,
+    artifact_kind: str,
+    plan_checksum: str,
+    detail_key: str | None = None,
+    detail_value: str | None = None,
+) -> bool:
+    return bool(
+        await connection.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM solemd.corpus_selection_artifacts
+                WHERE corpus_selection_run_id = $1
+                  AND artifact_kind = $2
+                  AND plan_checksum = $3
+                  AND is_logged
+                  AND status = 'complete'
+                  AND (
+                        $4::TEXT IS NULL
+                     OR detail ->> $4::TEXT = $5::TEXT
+                  )
+            )
+            """,
+            corpus_selection_run_id,
+            artifact_kind,
+            plan_checksum,
+            detail_key,
+            detail_value,
+        )
+    )
+
+
+async def mark_logged_checkpoint_building(
+    connection: asyncpg.Connection,
+    *,
+    corpus_selection_run_id: UUID,
+    plan: CorpusPlan,
+    phase_name: str,
+    artifact_kind: str,
+    detail: dict[str, object] | None = None,
+) -> None:
+    await connection.execute(
+        """
+        INSERT INTO solemd.corpus_selection_artifacts (
+            corpus_selection_run_id,
+            s2_source_release_id,
+            pt3_source_release_id,
+            selector_version,
+            phase_name,
+            artifact_kind,
+            storage_schema,
+            storage_table,
+            is_logged,
+            status,
+            plan_checksum,
+            detail,
+            created_at,
+            completed_at,
+            dropped_at,
+            error_message
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8, true, 'building', $9, $10,
+            now(), NULL, NULL, NULL
+        )
+        ON CONFLICT (corpus_selection_run_id, artifact_kind)
+        DO UPDATE SET
+            phase_name = EXCLUDED.phase_name,
+            storage_schema = EXCLUDED.storage_schema,
+            storage_table = EXCLUDED.storage_table,
+            is_logged = true,
+            status = 'building',
+            plan_checksum = EXCLUDED.plan_checksum,
+            detail = EXCLUDED.detail,
+            created_at = now(),
+            completed_at = NULL,
+            dropped_at = NULL,
+            error_message = NULL
+        """,
+        corpus_selection_run_id,
+        plan.s2_source_release_id,
+        plan.pt3_source_release_id,
+        plan.selector_version,
+        phase_name,
+        artifact_kind,
+        LOGGED_CHECKPOINT_STORAGE_SCHEMA,
+        LOGGED_CHECKPOINT_STORAGE_TABLE,
+        plan.plan_checksum,
+        detail or {},
+    )
+
+
+async def mark_logged_checkpoint_complete(
+    connection: asyncpg.Connection,
+    *,
+    corpus_selection_run_id: UUID,
+    artifact_kind: str,
+    row_count: int | None,
+    detail: dict[str, object] | None = None,
+) -> None:
+    await connection.execute(
+        """
+        UPDATE solemd.corpus_selection_artifacts
+        SET status = 'complete',
+            row_count = $3,
+            byte_size = 0,
+            detail = detail || $4::JSONB,
+            completed_at = now(),
+            error_message = NULL
+        WHERE corpus_selection_run_id = $1
+          AND artifact_kind = $2
+        """,
+        corpus_selection_run_id,
+        artifact_kind,
+        row_count,
+        detail or {},
+    )
+
+
+async def mark_logged_checkpoint_failed(
+    connection: asyncpg.Connection,
+    *,
+    corpus_selection_run_id: UUID,
+    artifact_kind: str,
+    error_message: str,
+) -> None:
+    await connection.execute(
+        """
+        UPDATE solemd.corpus_selection_artifacts
+        SET status = 'failed',
+            completed_at = now(),
             error_message = $3
         WHERE corpus_selection_run_id = $1
           AND artifact_kind = $2
@@ -299,6 +447,7 @@ async def garbage_collect_artifacts(
           AND pt3_source_release_id = $2
           AND selector_version = $3
           AND NOT (corpus_selection_run_id = ANY($4::UUID[]))
+          AND is_logged = false
           AND status IN ('complete', 'failed', 'stale')
         ORDER BY created_at
         """,

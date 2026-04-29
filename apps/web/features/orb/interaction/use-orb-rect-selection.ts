@@ -18,6 +18,7 @@ import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { useOrbFocusVisualStore } from "../stores/focus-visual-store";
 import type { OrbSelectionRect } from "./OrbInteractionSurface";
 import { useOrbPickerStore } from "./orb-picker-store";
+import { useSelectionCommitGate } from "./use-selection-commit-gate";
 
 const PAPER_SAMPLE_TABLE = "paper_sample";
 const SELECTED_POINT_INDICES_SCOPE_SQL = buildSelectedViewPredicate();
@@ -98,7 +99,12 @@ export function useOrbRectSelection(options: UseOrbRectSelectionOptions) {
   } = options;
 
   const requestIdRef = useRef(0);
-  const selectionLocked = useDashboardStore((s) => s.selectionLocked);
+  // Per-hook generation token — the highest result.generation we've
+  // accepted so far. Out-of-order resolves whose generation is lower
+  // than this watermark are stale (a bumpPickGeneration() fired after
+  // they dispatched) and must be dropped without committing.
+  const latestGenerationRef = useRef<number>(-Infinity);
+  const gate = useSelectionCommitGate();
   const setCurrentPointScopeSql = useDashboardStore(
     (s) => s.setCurrentPointScopeSql,
   );
@@ -108,24 +114,34 @@ export function useOrbRectSelection(options: UseOrbRectSelectionOptions) {
   );
   const selectNode = useGraphStore((s) => s.selectNode);
   const setFocusedPointIndex = useGraphStore((s) => s.setFocusedPointIndex);
-  const setVisualSelectionIndices = useOrbFocusVisualStore(
-    (s) => s.setSelectionIndices,
+  const setPendingParticleIndices = useOrbFocusVisualStore(
+    (s) => s.setPendingParticleIndices,
   );
 
   return useCallback(
     (rect: OrbSelectionRect, chords: GraphSelectionChordState) => {
       const requestId = ++requestIdRef.current;
-      if (!enabled || queries == null || selectionLocked) return;
+      if (!enabled || queries == null || !gate.canCommit) return;
 
       const handle = useOrbPickerStore.getState().handle;
       if (!handle) return;
+
+      // Snapshot the dispatch revision once per gesture; the resolver
+      // uses this barrier to decide when canonical state has caught up.
+      const dispatchRevision =
+        useDashboardStore.getState().selectedPointRevision;
 
       void handle
         .pickRectAsync(rect, {
           mode: chords.throughVolume ? "through-volume" : "front-slab",
         })
-        .then(async (particleIndices) => {
+        .then(async ({ indices: particleIndices, generation }) => {
           if (requestId !== requestIdRef.current) return;
+          // Stale-pick drop: a later pickRectAsync (or bump) raised
+          // the watermark while this readback was in flight. Discard
+          // silently — committing it would write the wrong set.
+          if (generation < latestGenerationRef.current) return;
+          latestGenerationRef.current = generation;
 
           const normalizedParticles = normalizeParticleIndices(particleIndices);
           if (normalizedParticles.length > maxPoints) {
@@ -160,12 +176,20 @@ export function useOrbRectSelection(options: UseOrbRectSelectionOptions) {
             onSelectionTooLarge?.(pointIndices.length);
             return;
           }
-          const visualSelectionIndices = chords.addToSelection
+          const visualParticleIndices = chords.addToSelection
             ? mergeSelectionPointIndices(
                 useOrbFocusVisualStore.getState().selectionIndices,
                 normalizedParticles,
               )
             : normalizedParticles;
+
+          // Optimistic pending lane — lit immediately so the orb
+          // shows the lasso result while DuckDB writes propagate.
+          // The resolver clears this set once it has reconciled
+          // selection_indices with a higher dispatchRevision.
+          if (pointIndices.length > 0) {
+            setPendingParticleIndices(visualParticleIndices, dispatchRevision);
+          }
 
           await commitSelectionState({
             sourceId:
@@ -187,9 +211,6 @@ export function useOrbRectSelection(options: UseOrbRectSelectionOptions) {
             },
           });
           if (requestId === requestIdRef.current) {
-            setVisualSelectionIndices(
-              pointIndices.length > 0 ? visualSelectionIndices : [],
-            );
             onSelectionCommitted?.(pointIndices.length);
           }
         })
@@ -200,18 +221,18 @@ export function useOrbRectSelection(options: UseOrbRectSelectionOptions) {
     [
       activeLayer,
       enabled,
+      gate,
       maxPoints,
       onSelectionCommitted,
       onSelectionFailed,
       onSelectionTooLarge,
       queries,
       selectNode,
-      selectionLocked,
       setActiveSelectionSourceId,
       setCurrentPointScopeSql,
       setFocusedPointIndex,
+      setPendingParticleIndices,
       setSelectedPointCount,
-      setVisualSelectionIndices,
     ],
   );
 }

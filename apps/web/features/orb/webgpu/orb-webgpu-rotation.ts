@@ -2,7 +2,7 @@ import {
   ROTATION_DRAG_GRACE_MS,
   ROTATION_RUNNING_RPS,
 } from "../../field/shared/landing-feel-constants";
-import { normalizeRadians } from "./orb-webgpu-layout";
+import { halfLifeDecay, normalizeRadians } from "./orb-webgpu-layout";
 
 export type OrbWebGpuRotationState =
   | "running"
@@ -124,15 +124,17 @@ export class OrbWebGpuRotationController {
     }
 
     if (Math.abs(this.nudgeAccumulator) > 1e-5 && input.dtSeconds > 0) {
-      const decay = Math.pow(0.5, input.dtSeconds / NUDGE_HALF_LIFE_SECONDS);
-      const apply = this.nudgeAccumulator * (1 - decay);
+      const apply =
+        this.nudgeAccumulator *
+        (1 - halfLifeDecay(input.dtSeconds, NUDGE_HALF_LIFE_SECONDS));
       this.value = normalizeRadians(this.value + apply);
       this.nudgeAccumulator -= apply;
     }
 
     if (Math.abs(this.pitchNudgeAccumulator) > 1e-5 && input.dtSeconds > 0) {
-      const decay = Math.pow(0.5, input.dtSeconds / NUDGE_HALF_LIFE_SECONDS);
-      const apply = this.pitchNudgeAccumulator * (1 - decay);
+      const apply =
+        this.pitchNudgeAccumulator *
+        (1 - halfLifeDecay(input.dtSeconds, NUDGE_HALF_LIFE_SECONDS));
       this.pitchValue = normalizeRadians(this.pitchValue + apply);
       this.pitchNudgeAccumulator -= apply;
     }

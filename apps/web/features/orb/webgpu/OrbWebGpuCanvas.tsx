@@ -67,6 +67,15 @@ export function OrbWebGpuCanvas({
   const neighborIndices = useOrbFocusVisualStore((s) => s.neighborIndices);
   const scopeIndices = useOrbFocusVisualStore((s) => s.scopeIndices);
   const selectionIndices = useOrbFocusVisualStore((s) => s.selectionIndices);
+  // The store returns a new `pendingParticleIndices` array reference whenever
+  // the pending set changes (see `setPendingParticleIndices` in
+  // focus-visual-store.ts), so reference-equality on this dep alone is
+  // sufficient to invalidate the focus memo. We do NOT key on the global
+  // `revision` tick, which would invalidate flags on every unrelated
+  // focus-store write.
+  const pendingParticleIndices = useOrbFocusVisualStore(
+    (s) => s.pendingParticleIndices,
+  );
 
   const focus = useMemo(
     () => ({
@@ -74,6 +83,7 @@ export function OrbWebGpuCanvas({
       focusIndex,
       hoverIndex,
       neighborIndices,
+      pendingParticleIndices,
       scopeIndices,
       selectionIndices,
     }),
@@ -82,6 +92,7 @@ export function OrbWebGpuCanvas({
       focusIndex,
       hoverIndex,
       neighborIndices,
+      pendingParticleIndices,
       scopeIndices,
       selectionIndices,
     ],
@@ -192,10 +203,13 @@ export function OrbWebGpuCanvas({
         handle = {
           pickAsync: (clientX, clientY) =>
             runtimeRef.current?.pickAsync(clientX, clientY) ??
-            Promise.resolve(-1),
+            Promise.resolve({ index: -1, generation: 0 }),
           pickRectAsync: (rect, options) =>
             runtimeRef.current?.pickRectAsync(rect, options) ??
-            Promise.resolve([]),
+            Promise.resolve({ indices: [], generation: 0 }),
+          bumpPickGeneration: () => {
+            runtimeRef.current?.bumpPickGeneration();
+          },
         };
         controlHandle = {
           applyTwist: (deltaRadians) =>

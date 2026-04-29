@@ -7,6 +7,10 @@ import {
   type GraphSelectionChordState,
 } from "@/features/graph/lib/graph-selection-chords";
 import { useOrbInteraction } from "./orb-interaction-context";
+import {
+  tryReleasePointerCapture,
+  trySetPointerCapture,
+} from "./pointer-capture";
 
 /**
  * Single DOM owner of orb-mode pointer / wheel / touch interaction.
@@ -64,24 +68,6 @@ function rectSize(rect: OrbSelectionRect): { width: number; height: number } {
     width: Math.max(0, rect.right - rect.left),
     height: Math.max(0, rect.bottom - rect.top),
   };
-}
-
-function trySetPointerCapture(element: HTMLElement, pointerId: number): void {
-  try {
-    element.setPointerCapture?.(pointerId);
-  } catch {
-    // Synthetic tests and some browser edge cases can report a pointerId
-    // that is not capturable. The gesture still works when events remain
-    // on the surface, so capture failure should not abort selection.
-  }
-}
-
-function tryReleasePointerCapture(element: HTMLElement, pointerId: number): void {
-  try {
-    element.releasePointerCapture?.(pointerId);
-  } catch {
-    // See trySetPointerCapture.
-  }
 }
 
 interface OrbInteractionSurfaceProps {

@@ -404,9 +404,10 @@ main() {
     clean) clean_session ;;
     status) status_session ;;
     attach) attach_session ;;
+    phone) bash "${ROOT_DIR}/scripts/phone-dev" dev "${@:2}" ;;
     menu) interactive_menu ;;
     *)
-      echo "Usage: $0 [start|stop|restart|clean|status|attach]" >&2
+      echo "Usage: $0 [start|stop|restart|clean|status|attach|phone [wireless-debug-port]]" >&2
       exit 1
       ;;
   esac

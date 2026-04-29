@@ -39,6 +39,15 @@ CREATE INDEX IF NOT EXISTS idx_s2_dataset_diff_files_status
 
 CREATE INDEX IF NOT EXISTS idx_corpus_domain_status
     ON solemd.corpus (domain_status);
+CREATE INDEX IF NOT EXISTS idx_corpus_corpus_scope
+    ON solemd.corpus (corpus_id)
+    WHERE domain_status = 'corpus';
+CREATE INDEX IF NOT EXISTS idx_corpus_mapped_scope
+    ON solemd.corpus (corpus_id)
+    WHERE domain_status = 'mapped';
+CREATE INDEX IF NOT EXISTS idx_corpus_active_scope
+    ON solemd.corpus (corpus_id)
+    WHERE domain_status IN ('corpus', 'mapped');
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_venues_normalized_name
     ON solemd.venues (normalized_name);

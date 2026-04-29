@@ -162,7 +162,12 @@ describe("useOrbClick", () => {
     expect(useDashboardStore.getState().currentPointScopeSql).toBe(
       "index IN (SELECT index FROM selected_point_indices)",
     );
-    expect(useOrbFocusVisualStore.getState().selectionIndices).toEqual([42]);
+    // Wave 2B: shift-click writes optimistic visuals to the pending
+    // lane; canonical `selectionIndices` is owned by the resolver.
+    expect(
+      useOrbFocusVisualStore.getState().pendingParticleIndices,
+    ).toEqual([42]);
+    expect(useOrbFocusVisualStore.getState().selectionIndices).toEqual([]);
   });
 
   it("does not write an explicit selection when only the future expand-links chord is active", async () => {

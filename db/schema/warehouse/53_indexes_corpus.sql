@@ -40,6 +40,14 @@ CREATE INDEX IF NOT EXISTS idx_corpus_selection_signals_corpus_run
 CREATE INDEX IF NOT EXISTS idx_corpus_selection_signals_kind_run
     ON solemd.corpus_selection_signals (signal_kind, corpus_selection_run_id);
 
+CREATE INDEX IF NOT EXISTS idx_paper_corpus_assignments_corpus
+    ON solemd.paper_corpus_assignments (corpus_id);
+CREATE INDEX IF NOT EXISTS idx_paper_corpus_assignments_release_corpus
+    ON solemd.paper_corpus_assignments (s2_source_release_id, corpus_id);
+CREATE INDEX IF NOT EXISTS idx_paper_corpus_assignments_run
+    ON solemd.paper_corpus_assignments (assigned_by_run_id, corpus_id)
+    WHERE assigned_by_run_id IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_corpus_selection_artifacts_run_status
     ON solemd.corpus_selection_artifacts (
         corpus_selection_run_id,
@@ -61,6 +69,64 @@ CREATE INDEX IF NOT EXISTS idx_corpus_selection_chunks_claim
         status,
         bucket_id
     );
+
+CREATE INDEX IF NOT EXISTS idx_paper_entity_signal_builds_status
+    ON solemd.paper_entity_signal_builds (status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_paper_entity_signals_build_paper
+    ON solemd.paper_entity_signals (
+        s2_source_release_id,
+        pt3_source_release_id,
+        entity_signal_checksum,
+        paper_id
+    );
+CREATE INDEX IF NOT EXISTS idx_paper_entity_signals_build_vocab_paper
+    ON solemd.paper_entity_signals (
+        s2_source_release_id,
+        pt3_source_release_id,
+        entity_signal_checksum,
+        paper_id
+    )
+    WHERE term_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_paper_entity_signals_build_term
+    ON solemd.paper_entity_signals (
+        s2_source_release_id,
+        pt3_source_release_id,
+        entity_signal_checksum,
+        term_id,
+        paper_id
+    )
+    WHERE term_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_paper_entity_signals_build_rule
+    ON solemd.paper_entity_signals (
+        s2_source_release_id,
+        pt3_source_release_id,
+        entity_signal_checksum,
+        rule_family_key,
+        paper_id
+    )
+    WHERE rule_family_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_entity_signals_vocab
+    ON solemd.paper_entity_signals (
+        s2_source_release_id,
+        pt3_source_release_id,
+        entity_signal_checksum,
+        paper_id,
+        entity_type,
+        concept_id_raw,
+        term_id
+    )
+    WHERE term_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_entity_signals_rule
+    ON solemd.paper_entity_signals (
+        s2_source_release_id,
+        pt3_source_release_id,
+        entity_signal_checksum,
+        paper_id,
+        entity_type,
+        concept_id_raw,
+        rule_family_key
+    )
+    WHERE rule_family_key IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_status_corpus
     ON solemd.paper_selection_summary (current_status, corpus_id);
@@ -87,6 +153,62 @@ CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_evidence_wave_scan
         evidence_priority_score DESC,
         corpus_id
     );
+CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_run_rag_candidate
+    ON solemd.paper_selection_summary (
+        corpus_selection_run_id,
+        relevance_band,
+        evidence_priority_score DESC,
+        corpus_id
+    )
+    WHERE rag_candidate;
+CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_run_rag_eligible
+    ON solemd.paper_selection_summary (
+        corpus_selection_run_id,
+        content_status,
+        evidence_priority_score DESC,
+        corpus_id
+    )
+    WHERE rag_eligible;
+CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_run_content_status
+    ON solemd.paper_selection_summary (
+        corpus_selection_run_id,
+        content_status,
+        corpus_id
+    );
+CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_topic_tracks
+    ON solemd.paper_selection_summary USING gin (topic_tracks);
+CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_organ_system_tracks
+    ON solemd.paper_selection_summary USING gin (organ_system_tracks);
+CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_quality_warnings
+    ON solemd.paper_selection_summary USING gin (quality_warnings jsonb_path_ops);
+
+CREATE INDEX IF NOT EXISTS idx_pubmed_metadata_fetch_runs_status_started
+    ON solemd.pubmed_metadata_fetch_runs (status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pubmed_metadata_fetch_tasks_claim
+    ON solemd.pubmed_metadata_fetch_tasks (
+        pubmed_metadata_fetch_run_id,
+        status,
+        attempts,
+        pmid
+    );
+CREATE INDEX IF NOT EXISTS idx_pubmed_metadata_publication_types
+    ON solemd.pubmed_metadata USING gin (publication_types);
+CREATE INDEX IF NOT EXISTS idx_pubmed_metadata_mesh_major_terms
+    ON solemd.pubmed_metadata USING gin (mesh_major_terms);
+
+CREATE INDEX IF NOT EXISTS idx_s2_graph_enrichment_runs_status_started
+    ON solemd.s2_graph_enrichment_runs (status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_s2_graph_enrichment_tasks_claim
+    ON solemd.s2_graph_enrichment_tasks (
+        s2_graph_enrichment_run_id,
+        status,
+        attempts,
+        paper_id
+    );
+CREATE INDEX IF NOT EXISTS idx_s2_paper_enrichment_corpus
+    ON solemd.s2_paper_enrichment (corpus_id);
+CREATE INDEX IF NOT EXISTS idx_s2_paper_enrichment_fields_of_study
+    ON solemd.s2_paper_enrichment USING gin (fields_of_study);
 
 CREATE INDEX IF NOT EXISTS idx_corpus_wave_runs_selection_started
     ON solemd.corpus_wave_runs (

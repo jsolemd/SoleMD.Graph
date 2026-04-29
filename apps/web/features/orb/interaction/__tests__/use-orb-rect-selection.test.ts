@@ -39,17 +39,19 @@ function buildQueries(runReadOnlyQuery: jest.Mock): GraphBundleQueries {
 
 function publishPicker(
   indices: number[],
+  generation = 0,
 ): jest.MockedFunction<OrbPickerHandle["pickRectAsync"]> {
   const pickRectAsync = jest
     .fn<
       ReturnType<OrbPickerHandle["pickRectAsync"]>,
       Parameters<OrbPickerHandle["pickRectAsync"]>
     >()
-    .mockResolvedValue(indices);
+    .mockResolvedValue({ indices, generation });
   useOrbPickerStore.getState().setHandle({
-    pickAsync: () => Promise.resolve(-1),
+    pickAsync: () => Promise.resolve({ index: -1, generation }),
     pickSync: () => -1,
     pickRectAsync,
+    bumpPickGeneration: () => {},
   });
   return pickRectAsync;
 }
@@ -100,7 +102,12 @@ describe("useOrbRectSelection", () => {
     expect(useDashboardStore.getState().currentPointScopeSql).toBe(
       "index IN (SELECT index FROM selected_point_indices)",
     );
-    expect(useOrbFocusVisualStore.getState().selectionIndices).toEqual([3, 9]);
+    // Wave 2B: optimistic visual write goes through the pending lane;
+    // canonical `selectionIndices` is owned by the resolver.
+    expect(
+      useOrbFocusVisualStore.getState().pendingParticleIndices,
+    ).toEqual([3, 9]);
+    expect(useOrbFocusVisualStore.getState().selectionIndices).toEqual([]);
     expect(onSelectionCommitted).toHaveBeenCalledWith(2);
   });
 
@@ -175,6 +182,11 @@ describe("useOrbRectSelection", () => {
     expect(useDashboardStore.getState().selectedPointCount).toBe(0);
     expect(useDashboardStore.getState().activeSelectionSourceId).toBeNull();
     expect(useDashboardStore.getState().currentPointScopeSql).toBeNull();
+    // Empty replace must not write a pending lane either; the resolver
+    // owns the canonical clear.
+    expect(useOrbFocusVisualStore.getState().pendingParticleIndices).toEqual(
+      [],
+    );
     expect(useOrbFocusVisualStore.getState().selectionIndices).toEqual([]);
     expect(onSelectionCommitted).toHaveBeenCalledWith(0);
   });

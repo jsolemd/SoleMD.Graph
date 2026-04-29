@@ -1,7 +1,7 @@
 // Camera pan for the WebGPU orb. Pan is in NDC after aspect correction,
 // so a pan of (0.06, 0) is a fixed 6 % of viewport width regardless of
 // the current zoom. Mirrors the zoom controller's reduced-motion gate.
-import { clampFinite } from "./orb-webgpu-layout";
+import { clampFinite, easeTowardTarget } from "./orb-webgpu-layout";
 
 // Bound the pan so the orb cannot exit the viewport entirely. 1.2 lets
 // the user push the body well past the edge for inspection purposes
@@ -60,16 +60,18 @@ export class OrbWebGpuPanController {
       this.valueY = this.targetY;
       return { x: this.valueX, y: this.valueY };
     }
-    if (input.dtSeconds <= 0) return { x: this.valueX, y: this.valueY };
-    const decay = Math.pow(0.5, input.dtSeconds / PAN_HALF_LIFE_SECONDS);
-    this.valueX = this.targetX + (this.valueX - this.targetX) * decay;
-    this.valueY = this.targetY + (this.valueY - this.targetY) * decay;
-    if (Math.abs(this.valueX - this.targetX) < 1e-4) {
-      this.valueX = this.targetX;
-    }
-    if (Math.abs(this.valueY - this.targetY) < 1e-4) {
-      this.valueY = this.targetY;
-    }
+    this.valueX = easeTowardTarget(
+      this.valueX,
+      this.targetX,
+      input.dtSeconds,
+      PAN_HALF_LIFE_SECONDS,
+    );
+    this.valueY = easeTowardTarget(
+      this.valueY,
+      this.targetY,
+      input.dtSeconds,
+      PAN_HALF_LIFE_SECONDS,
+    );
     return { x: this.valueX, y: this.valueY };
   }
 }

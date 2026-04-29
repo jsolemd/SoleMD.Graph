@@ -11,6 +11,7 @@ from app.corpus.materialize_chunks import (
     drain_mapped_chunks,
     drain_mapped_chunks_from_pool,
     ensure_mapped_chunks,
+    parse_command_row_count,
     prepare_mapped_chunks_for_resume,
 )
 from app.corpus.models import CorpusPlan
@@ -42,6 +43,11 @@ async def materialize_mapped_surfaces(
     paper_scope_table = refs[PAPER_SCOPE].qualified_name
     entity_detail_table = detail_refs[MAPPED_ENTITY_DETAIL].qualified_name
     relation_detail_table = detail_refs[MAPPED_RELATION_DETAIL].qualified_name
+    await _upsert_mapped_source_authors(
+        connection,
+        paper_scope_table=paper_scope_table,
+        s2_source_release_id=plan.s2_source_release_id,
+    )
 
     async def materialize_bucket(
         worker_connection: asyncpg.Connection,
@@ -60,7 +66,6 @@ async def materialize_mapped_surfaces(
     await ensure_mapped_chunks(
         connection,
         corpus_selection_run_id=corpus_selection_run_id,
-        paper_scope_table=paper_scope_table,
         bucket_count=bucket_count,
     )
     await prepare_mapped_chunks_for_resume(
@@ -182,27 +187,9 @@ async def _upsert_bucket_authors(
 ) -> int:
     await connection.execute(
         f"""
-        INSERT INTO solemd.authors (source_author_id, display_name)
-        SELECT DISTINCT raw_authors.source_author_id, raw_authors.name_raw
-        FROM solemd.s2_paper_authors_raw raw_authors
-        JOIN {paper_scope_table} scope
-          ON scope.paper_id = raw_authors.paper_id
-         AND scope.bucket_id = $2
-        JOIN solemd.corpus corpus
-          ON corpus.corpus_id = scope.corpus_id
-         AND corpus.domain_status = 'mapped'
-        WHERE scope.source_release_id = $1
-          AND raw_authors.source_author_id IS NOT NULL
-        ON CONFLICT (source_author_id)
-        DO UPDATE SET display_name = EXCLUDED.display_name
-        """,
-        s2_source_release_id,
-        bucket_id,
-    )
-    await connection.execute(
-        f"""
         WITH missing_names AS (
-            SELECT DISTINCT raw_authors.name_raw
+            SELECT DISTINCT ON (solemd.normalize_lookup_key(raw_authors.name_raw))
+                raw_authors.name_raw
             FROM solemd.s2_paper_authors_raw raw_authors
             JOIN {paper_scope_table} scope
               ON scope.paper_id = raw_authors.paper_id
@@ -217,6 +204,10 @@ async def _upsert_bucket_authors(
                     FROM solemd.authors authors
                     WHERE authors.normalized_name = solemd.normalize_lookup_key(raw_authors.name_raw)
               )
+            ORDER BY
+                solemd.normalize_lookup_key(raw_authors.name_raw),
+                length(btrim(raw_authors.name_raw)) DESC,
+                raw_authors.name_raw
         )
         INSERT INTO solemd.authors (display_name)
         SELECT name_raw
@@ -235,34 +226,89 @@ async def _upsert_bucket_authors(
             author_ordinal,
             affiliation_text
         )
+        WITH bucket_author_rows AS MATERIALIZED (
+            SELECT DISTINCT ON (scope.corpus_id, raw_authors.author_ordinal)
+                scope.corpus_id,
+                raw_authors.source_author_id,
+                raw_authors.name_raw,
+                raw_authors.author_ordinal::SMALLINT AS author_ordinal,
+                raw_authors.affiliation_raw
+            FROM solemd.s2_paper_authors_raw raw_authors
+            JOIN {paper_scope_table} scope
+              ON scope.paper_id = raw_authors.paper_id
+             AND scope.bucket_id = $2
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = scope.corpus_id
+             AND corpus.domain_status = 'mapped'
+            WHERE scope.source_release_id = $1
+            ORDER BY
+                scope.corpus_id,
+                raw_authors.author_ordinal,
+                (scope.pmid IS NULL),
+                (scope.doi_norm IS NULL),
+                (scope.pmc_id IS NULL),
+                (raw_authors.source_author_id IS NULL),
+                length(btrim(raw_authors.name_raw)) DESC,
+                scope.paper_id,
+                raw_authors.name_raw
+        )
         SELECT
-            scope.corpus_id,
+            bucket_author_rows.corpus_id,
             authors.author_id,
-            raw_authors.author_ordinal::SMALLINT,
-            raw_authors.affiliation_raw
-        FROM solemd.s2_paper_authors_raw raw_authors
-        JOIN {paper_scope_table} scope
-          ON scope.paper_id = raw_authors.paper_id
-         AND scope.bucket_id = $2
-        JOIN solemd.corpus corpus
-          ON corpus.corpus_id = scope.corpus_id
-         AND corpus.domain_status = 'mapped'
+            bucket_author_rows.author_ordinal,
+            bucket_author_rows.affiliation_raw
+        FROM bucket_author_rows
         JOIN solemd.authors authors
           ON (
-                raw_authors.source_author_id IS NOT NULL
-                AND authors.source_author_id = raw_authors.source_author_id
+                bucket_author_rows.source_author_id IS NOT NULL
+                AND authors.source_author_id = bucket_author_rows.source_author_id
              )
              OR (
-                raw_authors.source_author_id IS NULL
+                bucket_author_rows.source_author_id IS NULL
                 AND authors.source_author_id IS NULL
-                AND authors.normalized_name = solemd.normalize_lookup_key(raw_authors.name_raw)
+                AND authors.normalized_name = solemd.normalize_lookup_key(bucket_author_rows.name_raw)
              )
-        WHERE scope.source_release_id = $1
         """,
         s2_source_release_id,
         bucket_id,
     )
-    return _parse_row_count(command_tag)
+    return parse_command_row_count(command_tag)
+
+
+async def _upsert_mapped_source_authors(
+    connection: asyncpg.Connection,
+    *,
+    paper_scope_table: str,
+    s2_source_release_id: int,
+) -> None:
+    await connection.execute(
+        f"""
+        WITH source_author_rows AS MATERIALIZED (
+            SELECT DISTINCT ON (raw_authors.source_author_id)
+                raw_authors.source_author_id,
+                raw_authors.name_raw
+            FROM solemd.s2_paper_authors_raw raw_authors
+            JOIN {paper_scope_table} scope
+              ON scope.paper_id = raw_authors.paper_id
+            JOIN solemd.corpus corpus
+              ON corpus.corpus_id = scope.corpus_id
+             AND corpus.domain_status = 'mapped'
+            WHERE scope.source_release_id = $1
+              AND raw_authors.source_author_id IS NOT NULL
+            ORDER BY
+                raw_authors.source_author_id,
+                length(btrim(raw_authors.name_raw)) DESC,
+                raw_authors.name_raw
+        )
+        INSERT INTO solemd.authors (source_author_id, display_name)
+        SELECT source_author_id, name_raw
+        FROM source_author_rows
+        ON CONFLICT (source_author_id)
+        DO UPDATE SET display_name = EXCLUDED.display_name
+        WHERE solemd.authors.display_name IS DISTINCT FROM EXCLUDED.display_name
+        """,
+        s2_source_release_id,
+    )
 
 
 async def _insert_bucket_entity_annotations(
@@ -273,6 +319,38 @@ async def _insert_bucket_entity_annotations(
 ) -> int:
     command_tag = await connection.execute(
         f"""
+        WITH bucket_detail AS MATERIALIZED (
+            SELECT DISTINCT ON (
+                detail.corpus_id,
+                detail.start_offset,
+                detail.end_offset,
+                detail.entity_type,
+                digest(detail.concept_id_raw, 'sha256'),
+                detail.resource
+            )
+                detail.corpus_id,
+                detail.source_release_id,
+                detail.start_offset,
+                detail.end_offset,
+                detail.pmid,
+                detail.entity_type,
+                detail.mention_text,
+                detail.concept_id_raw,
+                detail.resource
+            FROM {entity_detail_table} detail
+            WHERE detail.bucket_id = $1
+            ORDER BY
+                detail.corpus_id,
+                detail.start_offset,
+                detail.end_offset,
+                detail.entity_type,
+                digest(detail.concept_id_raw, 'sha256'),
+                detail.resource,
+                detail.source_release_id DESC,
+                detail.pmid,
+                length(btrim(detail.mention_text)) DESC,
+                detail.mention_text
+        )
         INSERT INTO pubtator.entity_annotations (
             corpus_id,
             source_release_id,
@@ -285,17 +363,16 @@ async def _insert_bucket_entity_annotations(
             resource
         )
         SELECT
-            detail.corpus_id,
-            detail.source_release_id,
-            detail.start_offset,
-            detail.end_offset,
-            detail.pmid,
-            detail.entity_type,
-            detail.mention_text,
-            detail.concept_id_raw,
-            detail.resource
-        FROM {entity_detail_table} detail
-        WHERE detail.bucket_id = $1
+            bucket_detail.corpus_id,
+            bucket_detail.source_release_id,
+            bucket_detail.start_offset,
+            bucket_detail.end_offset,
+            bucket_detail.pmid,
+            bucket_detail.entity_type,
+            bucket_detail.mention_text,
+            bucket_detail.concept_id_raw,
+            bucket_detail.resource
+        FROM bucket_detail
         ON CONFLICT (
             corpus_id,
             start_offset,
@@ -312,7 +389,7 @@ async def _insert_bucket_entity_annotations(
         """,
         bucket_id,
     )
-    return _parse_row_count(command_tag)
+    return parse_command_row_count(command_tag)
 
 
 async def _insert_bucket_relations(
@@ -350,6 +427,35 @@ async def _insert_bucket_relations_by_source(
     )
     command_tag = await connection.execute(
         f"""
+        WITH bucket_detail AS MATERIALIZED (
+            SELECT DISTINCT ON (
+                detail.corpus_id,
+                digest(detail.subject_entity_id, 'sha256'),
+                detail.relation_type,
+                digest(detail.object_entity_id, 'sha256')
+            )
+                detail.corpus_id,
+                detail.source_release_id,
+                detail.pmid,
+                detail.relation_type,
+                detail.subject_entity_id,
+                detail.object_entity_id,
+                detail.subject_type,
+                detail.object_type,
+                detail.relation_source
+            FROM {relation_detail_table} detail
+            WHERE detail.bucket_id = $1
+              AND detail.relation_source = $2
+            ORDER BY
+                detail.corpus_id,
+                digest(detail.subject_entity_id, 'sha256'),
+                detail.relation_type,
+                digest(detail.object_entity_id, 'sha256'),
+                detail.source_release_id DESC,
+                detail.pmid,
+                detail.subject_type,
+                detail.object_type
+        )
         INSERT INTO pubtator.relations (
             corpus_id,
             source_release_id,
@@ -362,18 +468,16 @@ async def _insert_bucket_relations_by_source(
             relation_source
         )
         SELECT
-            detail.corpus_id,
-            detail.source_release_id,
-            detail.pmid,
-            detail.relation_type,
-            detail.subject_entity_id,
-            detail.object_entity_id,
-            detail.subject_type,
-            detail.object_type,
-            detail.relation_source
-        FROM {relation_detail_table} detail
-        WHERE detail.bucket_id = $1
-          AND detail.relation_source = $2
+            bucket_detail.corpus_id,
+            bucket_detail.source_release_id,
+            bucket_detail.pmid,
+            bucket_detail.relation_type,
+            bucket_detail.subject_entity_id,
+            bucket_detail.object_entity_id,
+            bucket_detail.subject_type,
+            bucket_detail.object_type,
+            bucket_detail.relation_source
+        FROM bucket_detail
         ON CONFLICT (
             corpus_id,
             (digest(subject_entity_id, 'sha256')),
@@ -391,61 +495,4 @@ async def _insert_bucket_relations_by_source(
         bucket_id,
         relation_source,
     )
-    return _parse_row_count(command_tag)
-
-
-async def _mark_chunk_complete(
-    connection: asyncpg.Connection,
-    *,
-    corpus_selection_run_id: UUID,
-    bucket_id: int,
-    row_counts: dict[str, int],
-) -> None:
-    await connection.execute(
-        """
-        UPDATE solemd.corpus_selection_chunks
-        SET status = 'complete',
-            completed_at = now(),
-            row_counts = $4,
-            updated_at = now(),
-            error_message = NULL
-        WHERE corpus_selection_run_id = $1
-          AND phase_name = $2
-          AND bucket_id = $3
-        """,
-        corpus_selection_run_id,
-        MAPPED_SURFACES_PHASE_NAME,
-        bucket_id,
-        row_counts,
-    )
-
-
-async def _mark_chunk_failed(
-    connection: asyncpg.Connection,
-    *,
-    corpus_selection_run_id: UUID,
-    bucket_id: int,
-    error_message: str,
-) -> None:
-    await connection.execute(
-        """
-        UPDATE solemd.corpus_selection_chunks
-        SET status = 'failed',
-            error_message = $4,
-            updated_at = now()
-        WHERE corpus_selection_run_id = $1
-          AND phase_name = $2
-          AND bucket_id = $3
-        """,
-        corpus_selection_run_id,
-        MAPPED_SURFACES_PHASE_NAME,
-        bucket_id,
-        error_message[:2000],
-    )
-
-
-def _parse_row_count(command_tag: str) -> int:
-    try:
-        return int(command_tag.rsplit(" ", 1)[-1])
-    except ValueError:
-        return 0
+    return parse_command_row_count(command_tag)
