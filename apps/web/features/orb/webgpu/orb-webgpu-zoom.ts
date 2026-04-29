@@ -9,9 +9,15 @@
 // applyZoom always commit instantly; the smoothing happens between
 // commits. This keeps inspection responsive while making continuous
 // keyboard / wheel input feel calm.
-import { clampFinite } from "./orb-webgpu-layout";
+import { clampFinite, easeTowardTarget } from "./orb-webgpu-layout";
 
-export const ORB_ZOOM_DEFAULT = 1;
+// 0.7 default keeps the BLOB_RADIUS = 1.40 sphere inside the viewport
+// (otherwise the 1.40 × 1.0 projection clips the silhouette at the
+// canvas edges). Net effect: same on-screen size as the legacy 0.62
+// radius / 1.0 zoom orb, but particles distributed across a sphere
+// 2.26× bigger in 3D — so inter-particle gaps grow without the orb
+// growing on screen.
+export const ORB_ZOOM_DEFAULT = 0.7;
 export const ORB_ZOOM_MIN = 0.5;
 export const ORB_ZOOM_MAX = 4;
 // 120 ms half-life — snappy enough that wheel and +/- inputs feel
@@ -56,12 +62,12 @@ export class OrbWebGpuZoomController {
       this.value = this.targetValue;
       return this.value;
     }
-    if (input.dtSeconds <= 0) return this.value;
-    const decay = Math.pow(0.5, input.dtSeconds / ZOOM_HALF_LIFE_SECONDS);
-    this.value = this.targetValue + (this.value - this.targetValue) * decay;
-    if (Math.abs(this.value - this.targetValue) < 1e-4) {
-      this.value = this.targetValue;
-    }
+    this.value = easeTowardTarget(
+      this.value,
+      this.targetValue,
+      input.dtSeconds,
+      ZOOM_HALF_LIFE_SECONDS,
+    );
     return this.value;
   }
 }

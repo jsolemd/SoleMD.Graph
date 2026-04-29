@@ -22,7 +22,7 @@ describe("orb WebGPU zoom controller", () => {
     ctrl.setZoom(2);
     ctrl.tick({ dtSeconds: 1 / 60, prefersReducedMotion: false });
     const afterOneTick = ctrl.zoom;
-    expect(afterOneTick).toBeGreaterThan(1);
+    expect(afterOneTick).toBeGreaterThan(ORB_ZOOM_DEFAULT);
     expect(afterOneTick).toBeLessThan(2);
 
     for (let i = 0; i < 600; i += 1) {

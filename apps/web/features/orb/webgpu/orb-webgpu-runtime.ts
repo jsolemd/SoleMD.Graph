@@ -42,10 +42,14 @@ import {
 } from "./orb-webgpu-perf";
 
 // Resident-canvas DPR cap. WebGPU pixel cost scales quadratically with
-// the canvas size, and 1.75× of CSS pixels is enough to stay crisp on
-// retina laptops without blowing through the GPU's per-frame budget on
-// hi-DPI external displays where DPR can exceed 2.5.
-const ORB_CANVAS_DPR_CAP = 1.75;
+// the canvas size — at 1M particles the fragment shader runs millions
+// of times per frame, so DPR is the highest-leverage perf knob. 1.25×
+// CSS pixels gives ~49% fragment-budget headroom vs the prior 1.75
+// cap on retina (2.0 DPR) displays. The orb's soft alpha-blended
+// sprites + halo/ring effects mask the modest downsampling — the orb
+// itself reads identically; only crisp UI text below would differ,
+// and that's not part of the canvas surface.
+const ORB_CANVAS_DPR_CAP = 1.25;
 
 // 21-bit pick-index ceiling. The WGSL pick kernel packs (depthQ << 21)
 // | index into a single u32 for atomicMin reduction (see
@@ -181,6 +185,12 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
   // and its 16 MB writeBuffer skip entirely — biggest CPU win at 1M.
   private hasActiveFlag = false;
   private interactionWindowEndMs = 0;
+  // Forces the next frame's integrate compute to run even when the
+  // orb would otherwise be skipped (paused, no interaction). Set after
+  // any upload that changes particle state (seed, sizes, flags) so the
+  // GPU's DisplayParticle buffer gets repopulated before the render
+  // pass reads it. Cleared once the integrate dispatch fires.
+  private displayDirty = false;
   private motionSettings: OrbWebGpuMotionSettings = {
     ambientEntropy: 1,
     motionSpeedMultiplier: 1,
@@ -261,6 +271,12 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       arrays.sizes.subarray(0, count),
     );
     this.uploadFlags(arrays.flags.subarray(0, count));
+    // Force one integrate dispatch on the next frame so the
+    // DisplayParticle buffer gets populated from the freshly-seeded
+    // ambient state before render reads it. Without this, an orb
+    // mounted with reduced-motion or pause active would render an
+    // empty/garbage display buffer.
+    this.displayDirty = true;
   }
 
   // Dispatch the GPU seed pass. Single submission, separate from the
@@ -301,6 +317,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
       startElement,
       elementCount,
     );
+    // Chunks change per-paper radius — force one integrate dispatch
+    // so the DisplayParticle buffer reflects the new sizes even on
+    // paused / idle states.
+    this.displayDirty = true;
   }
 
   uploadFlags(flags: Uint32Array): void {
@@ -326,6 +346,10 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     if (wasActive && !anyFlag && this.focusIndex < 0) {
       this.openDecayWindow();
     }
+    // Flags drive shader color tinting / halo / ring per-particle, so
+    // any flag change requires a fresh integrate dispatch even when
+    // motion is paused.
+    this.displayDirty = true;
   }
 
   setFocusIndex(index: number | null): void {
@@ -607,12 +631,25 @@ class OrbWebGpuRuntimeImpl implements OrbWebGpuRuntime {
     this.writeFrameUniforms(timestampMs / 1000, motionDt);
 
     const encoder = this.device.createCommandEncoder({ label: "orb.frame" });
-    if (this.particleCount > 0) {
+    // Skip the integrate compute when nothing visible would change:
+    // ambient motion is paused (motionDt = 0) AND no interaction is
+    // pulling weights AND no decay tail is playing AND no upload has
+    // dirtied the display buffer. The render pass keeps drawing the
+    // last computed display buffer state, so the orb stays visible —
+    // it just stops animating. At 1M particles this skips ~3.2B FBM
+    // ALU ops per frame on truly-paused states.
+    const isAnimating =
+      motionDt > 0 ||
+      this.hasActiveFlag ||
+      this.focusIndex >= 0 ||
+      performance.now() <= this.interactionWindowEndMs;
+    if (this.particleCount > 0 && (isAnimating || this.displayDirty)) {
       const computePass = encoder.beginComputePass({ label: "orb.integrate" });
       computePass.setPipeline(this.computePipeline);
       computePass.setBindGroup(0, this.computeBindGroup);
       computePass.dispatchWorkgroups(Math.ceil(this.particleCount / 64));
       computePass.end();
+      this.displayDirty = false;
     }
 
     const currentTexture = this.context.getCurrentTexture();
