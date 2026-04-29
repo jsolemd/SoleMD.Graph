@@ -26,6 +26,8 @@ import {
   ORB_WEBGPU_SCOPE_FLAG,
 } from "./orb-webgpu-particles";
 import { ORB_WEBGPU_SHADER_NOISE_WGSL } from "./orb-webgpu-shader-noise";
+import { ORB_WEBGPU_SHADER_PHYSICS_WGSL } from "./orb-webgpu-shader-physics";
+import { ORB_WEBGPU_SHADER_SEED_WGSL } from "./orb-webgpu-shader-seed";
 
 export const ORB_WEBGPU_SHADER_SOURCE = /* wgsl */ `
 struct FrameUniforms {
@@ -82,10 +84,10 @@ struct DisplayParticle {
 };
 
 // computePositions / computeVelocities / computeAttributes are declared
-// read_write so the seedAmbientGeometry compute entrypoint can write
-// the GPU-synthesized Fibonacci layout, ambient drift, and base attribute
-// variance once at first non-empty upload. integrateParticles still only
-// reads these — read_write is a superset of read.
+// read_write so the seedAmbientGeometry compute entrypoint can initialize
+// the GPU-synthesized ambient field. integrateParticles then updates
+// computePositions.xyz and computeVelocities.xyz as persistent physics
+// state before writing the render/pick DisplayParticle contract.
 @group(0) @binding(${COMPUTE_POSITION_INDEX}) var<storage, read_write> computePositions: array<vec4f>;
 @group(0) @binding(${COMPUTE_VELOCITY_INDEX}) var<storage, read_write> computeVelocities: array<vec4f>;
 @group(0) @binding(${COMPUTE_ATTRIBUTE_INDEX}) var<storage, read_write> computeAttributes: array<vec4f>;
@@ -184,41 +186,37 @@ fn iHashToFloat(h: u32) -> f32 {
   return f32(h >> 8u) / 16777216.0;
 }
 
+${ORB_WEBGPU_SHADER_PHYSICS_WGSL}
+
 // Sample the global "noise color" from the rainbow palette LUT. The
-// 8-texel palette texture is configured with linear filter + repeat-U,
-// so a normalized cursor in [0, 1) sweeps the wheel once per period
-// with a hardware-blended transition across each stop boundary. This
-// reproduces the prior Three.js orb's GSAP-tweened uColorNoise without
-// any per-frame CPU work or shader-side palette indexing — exactly
-// the same single global color drives every particle, and only the
-// per-particle vNoise modulates how far each one travels from the
-// fixed base toward this noise color.
+// palette texture is configured with linear filter + repeat-U, so a
+// normalized cursor in [0, 1) sweeps the wheel once per period with a
+// hardware-blended transition across each stop boundary. This reproduces
+// the prior Three.js orb's GSAP-tweened uColorNoise without any per-frame
+// CPU work or shader-side palette indexing — exactly the same single
+// global color drives every particle, and only per-particle vNoise
+// modulates how far each one travels from the fixed base toward this
+// noise color.
 // Global palette sample — matches the original landing's character:
 // at any instant ALL hot particles converge on the SAME color (the
 // current rainbow stop); the global cycle moves the color through
-// the rainbow over LANDING_RAINBOW_PERIOD_SECONDS. Spatial spread
+// the rainbow over ORB_PALETTE_PERIOD_SECONDS. Spatial spread
 // comes from vNoise (FBM patches), not from per-particle color
 // phase. The 9de1986 per-particle phase variant was tried and
 // rejected: at 1M density it produced mottled multi-stop hot regions
 // instead of the original's "everyone the same warm color, cool
 // patches around them" feel.
 //
-// Cosine ease across stop boundaries dwells on each stop and
-// transitions fast through the middle — that's what reads as the
-// burst rhythm. Implemented by easing the cursor's per-stop
-// fractional component so the hardware sampler still does the
-// actual color lookup.
+// Linear cursor progression matches the landing GSAP cycle's ease:"none"
+// behavior. The prior cosine dwell/pop made the whole 1M-particle orb read
+// like a synchronized mood ring instead of Maze's quieter global-noise
+// color breathing through FBM patches.
 fn landingNoiseColor(colorTime: f32) -> vec3f {
-  let rawCursor = colorTime / LANDING_RAINBOW_PERIOD_SECONDS;
-  let scaled = rawCursor * 8.0;
-  let stop = floor(scaled);
-  let frac = scaled - stop;
-  let eased = 0.5 - 0.5 * cos(frac * 3.14159265);
-  let easedCursor = (stop + eased) / 8.0;
+  let rawCursor = colorTime / ORB_PALETTE_PERIOD_SECONDS;
   return textureSampleLevel(
     paletteTexture,
     paletteSampler,
-    vec2f(easedCursor, 0.5),
+    vec2f(rawCursor, 0.5),
     0.0,
   ).rgb;
 }
@@ -256,7 +254,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let p = computePositions[i];
   let motion = computeVelocities[i];
   let attr = computeAttributes[i];
-  let speed = attr.rgb;
+  let speed = max(motion.w, 0.001);
   let flag = computeFlags[i];
   let weights = computeWeights[i];
   let hoverW = clamp(weights.x, 0.0, 1.0);
@@ -267,9 +265,38 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let frequency = computeFrame.fieldParams.z;
   let waveSpeed = computeFrame.fieldParams.w;
   let colorTime = computeFrame.colorTime * waveSpeed;
+  let depthScale = clamp(depth * 3.3333333, 0.5, 1.8);
+  let homePosition = homePositionForIndex(i);
+  let position = p.xyz;
+  let normal = normalize(position + vec3f(0.0001, 0.0001, 0.0001));
+  let dt = clamp(computeFrame.dt, 0.0, ORB_PHYSICS_DT_MAX_SECONDS);
+  let rawFlow = organicFlowField(position, colorTime, speed);
+  let flow = tangentProject(rawFlow, normal);
+  let homePull = tangentProject(homePosition - position, normal);
+  let yawOmega = computeFrame.baseColor.w;
+  let yawTangent = tangentProject(vec3f(position.z, 0.0, -position.x), normal);
+  let acceleration =
+    flow * ORB_PHYSICS_FLOW_ACCELERATION * depthScale +
+    homePull * ORB_PHYSICS_HOME_PULL +
+    yawTangent * yawOmega * ORB_PHYSICS_SWIRL_ACCELERATION;
+  var velocity = motion.xyz + acceleration * dt;
+  let velocityDecay = pow(
+    0.5,
+    dt / max(ORB_PHYSICS_VELOCITY_HALF_LIFE_SECONDS, 0.0001),
+  );
+  velocity = tangentProject(velocity * velocityDecay, normal);
+  velocity = clampVecLength(velocity, ORB_PHYSICS_MAX_SPEED);
+  var currentPos = position;
+  if (dt > 0.0) {
+    currentPos = normalize(position + velocity * dt) * ORB_BLOB_RADIUS;
+  }
+  computePositions[i] = vec4f(currentPos, 0.0);
+  computeVelocities[i] = vec4f(velocity, motion.w);
+  let displayNormal = normalize(currentPos + vec3f(0.0001, 0.0001, 0.0001));
+
   let fieldNoise = landingFieldNoise(
-    p.xyz * frequency,
-    motion,
+    currentPos * frequency,
+    computeVelocities[i],
     i,
     colorTime,
   );
@@ -284,45 +311,14 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   // Per-particle "personality": same value drives bulge reach and
   // palette amp so the most-saturated particles also bulge most, just
   // some particles always do so more dramatically than others.
-  // burstAmp bumped from mean 4.0 → 5.0 to push more particles past
-  // the saturation knee at the orb's tighter framing.
+  // burstAmp sits near Maze's fixed *4.0 multiplier. Keeping a narrow
+  // 3.5..4.5 range preserves a little particle-to-particle personality
+  // without pushing mid-vNoise particles into saturated "mood ring" cores.
   let pHash = particleHash(i);
   let burstScale = 0.06 + pHash * 0.08;     // mean 0.10, range 0.06..0.14
-  let burstAmp = 4.0 + pHash * 2.0;          // mean 5.0,  range 4.0..6.0
-  // Maze-faithful scalar liveDrift: one noise call modulates the
-  // particle's baked aMove direction. Each particle traces a straight-
-  // line back-and-forth oscillation along its own random direction —
-  // matches the original landing/Maze blob exactly. Soft sprite
-  // overlap (smoothstep alpha falloff in fragment) is what makes the
-  // ensemble read as flowing rather than gridded jitter.
-  let liveDrift = landingMotionNoise(i, motion, colorTime);
-  let normal = normalize(p.xyz + vec3f(0.0001, 0.0001, 0.0001));
-  // Yaw angular velocity (rad/sec, smoothed in the runtime) is packed
-  // into baseColor.w. Tangent to a yaw spin around the world Y axis is
-  // (p.z, 0, -p.x); scaling by omega and a small coefficient gives a
-  // tangential drift that lags the rigid camera rotation, producing a
-  // visible "swirl" while the user is dragging. The 0.018 magnitude is
-  // tuned so a typical drag (~3 rad/sec peak) shifts particles by a few
-  // percent of the blob radius — enough to read as flow without breaking
-  // the hand-off back to the FBM-driven idle motion.
-  let yawOmega = computeFrame.baseColor.w;
-  let tangential = vec3f(p.z, 0.0, -p.x) * yawOmega * 0.018;
-  // Per-particle directional drift — Lissajous trajectory.
-  // motion.xyz: baked random per-particle direction. speed (attr.rgb):
-  // per-axis scalar. depth: BLOB_DEPTH. liveDriftVec: 3 independent
-  // simplex2 oscillators, one per axis — particles trace curved 3D
-  // paths rather than straight lines.
-  //
-  // Divided by max(viewZoom, 0.5): pins screen-space velocity constant
-  // across zoom (matches landing's uScale = 1/baseScale behavior). At
-  // zoom 4× the world displacement shrinks 4×, so screen pixels-per-
-  // second stays the same — no zoom-amplified jaggedness.
-  let zoomDamp = 1.0 / max(computeFrame.viewZoom, 0.5);
+  let burstAmp = 3.5 + pHash * 1.0;          // mean 4.0,  range 3.5..4.5
   let displacedXyz =
-    p.xyz * (1.0 + amplitude * fieldNoise + vNoise * burstScale + liveDrift * 0.012) +
-    normal * liveDrift * 0.010 +
-    motion.xyz * speed * depth * liveDrift * zoomDamp +
-    tangential;
+    currentPos * (1.0 + amplitude * fieldNoise + vNoise * burstScale);
   let projected = projectedCenter(
     displacedXyz,
     computeFrame.aspect,
@@ -330,7 +326,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
     computeFrame.viewZoom,
     computeFrame.viewPan,
   );
-  let rotatedNormal = normalize(computeFrame.rotation * normal);
+  let rotatedNormal = normalize(computeFrame.rotation * displayNormal);
   // Camera-facing brightness driver. dot(N, +Z) is +1 on the near pole,
   // -1 on the far pole; clamp to [0, 1] so the entire back hemisphere
   // settles at the floor instead of leaking into the brightening path
@@ -355,9 +351,9 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   let noiseColor = landingNoiseColor(computeFrame.colorTime);
   // Maze-verbatim per-particle lerp: stay near baseColor when vNoise
   // is low; spike toward the global noiseColor when vNoise is high.
-  // burstAmp (3..5, mean 4) replaces the prior fixed * 4.0 — same
-  // average overshoot but per-particle variance, so some hot particles
-  // saturate harder than others at the same vNoise.
+  // burstAmp (3.5..4.5, mean 4) stays centered on Maze's fixed *4.0
+  // while adding only a narrow personality band, so hot particles tint
+  // softly instead of clipping in lockstep.
   let burstColor = clamp(
     baseColor + vNoise * burstAmp * (noiseColor - baseColor),
     vec3f(0.0),
@@ -378,7 +374,7 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   // gives hot particles up to 30% extra screen area — they pop out of
   // the cool field as visibly bigger AND more saturated.
   radius = radius * (1.0 + vNoise * 0.30);
-  radius = radius * (1.0 + liveDrift * 0.020) * computeFrame.viewZoom;
+  radius = radius * computeFrame.viewZoom;
   var color = burstColor * depthLight;
   // Outer clamp on the depthLight-coupled term: WebGPU blend factors use
   // (1 - A_src) for one-minus-src-alpha, so source alpha above 1.0 is
@@ -429,16 +425,16 @@ fn integrateParticles(@builtin(global_invocation_id) id: vec3u) {
   ring = mix(ring, 1.0, focusW);
 
   // GPU-resident neighborhood halo around the focused particle. Compute
-  // distance in base (paper-bound) space against computePositions[focus]
+  // distance in base (paper-bound) space against reconstructed home
   // so the halo is stable regardless of per-frame FBM drift; falls off
   // smoothly via smoothstep so there's no hard edge to the cluster.
   let focusIdxRaw = computeFrame.focusIndex;
   if (focusIdxRaw >= 0) {
     let focusIdx = u32(focusIdxRaw);
     if (focusIdx < computeFrame.count && focusIdx != i) {
-      let focusPos = computePositions[focusIdx].xyz;
-      let dist = length(p.xyz - focusPos);
-      let clusterBoost = smoothstep(0.28, 0.0, dist);
+      let focusPos = homePositionForIndex(focusIdx);
+      let dist = length(homePosition - focusPos);
+      let clusterBoost = smoothstep(ORB_FOCUS_CLUSTER_RADIUS, 0.0, dist);
       color = mix(color, vec3f(1.0, 0.92, 0.66), clusterBoost * 0.35);
       alpha = max(alpha, 0.55 * clusterBoost);
       halo = max(halo, 0.45 * clusterBoost);
@@ -464,12 +460,12 @@ fn vertexMain(
   let scale = vec2f(radius / max(renderFrame.aspect, 0.1), radius);
   var out: VertexOut;
   // Real per-particle depth in NDC [0, 1]. display.center.z is the
-  // post-rotation Z in [-2, 2] (+Z is the near pole — see the comment
-  // block above projectedCenter). Mapping (2 - z) * 0.25 gives nearer
-  // = smaller, which wins under depthCompare:"less". Same mapping the
-  // pick kernel uses for atomicMin tie-break (see pickParticle), so
-  // pick depth and render depth stay consistent.
-  let ndcZ = clamp((2.0 - display.center.z) * 0.25, 0.0, 1.0);
+  // post-rotation Z (+Z is the near pole — see the comment block above
+  // projectedCenter). depthFromZ maps ORB_DEPTH_RANGE_RADIUS .. -radius
+  // to near .. far; smaller wins under depthCompare:"less". Same helper
+  // feeds the pick kernel tie-break, so pick depth and render depth stay
+  // consistent.
+  let ndcZ = depthFromZ(display.center.z);
   out.position = vec4f(display.center.xy + corner * scale, ndcZ, 1.0);
   out.local = corner;
   out.color = display.color;
@@ -521,83 +517,7 @@ fn fragmentMain(in: VertexOut) -> @location(0) vec4f {
 // + modulo-wrap, which produced visible "sea-urchin" radial spokes at
 // 1M particles because every Nth particle aliased onto the same source
 // xyz. Fibonacci spiral on the unit sphere distributes 1M points
-// quasi-uniformly without any modulo wrap. Velocities and attributes
-// are synthesized here too — both are only read, never updated post-init.
-@compute @workgroup_size(64)
-fn seedAmbientGeometry(@builtin(global_invocation_id) id: vec3u) {
-  let i = id.x;
-  let count = computeFrame.count;
-  if (i >= count) {
-    return;
-  }
-
-  // Hash-driven uniform random sphere sampling via the inverse-CDF
-  // method: cos(theta) = 2u - 1 (uniform in [-1, 1] → polar angle
-  // weighted by surface area), phi = 2π v (uniform azimuth). The two
-  // hashes are decorrelated by salting iHash with the golden-ratio
-  // constant on the second draw. This matches the legacy field's
-  // rejection-sampled blob source visually — soft, fuzzy, organic —
-  // without the Fibonacci parastichies (visible 21/34/55 spiral
-  // families) that show up at 1M density on a golden-angle lattice.
-  // No pole convergence either, since uniform u doesn't oversample
-  // either polar cap.
-  let h1 = iHashToFloat(iHash(i));
-  let h2 = iHashToFloat(iHash(i ^ 0x9e3779b9u));
-  let cosTheta = 2.0 * h1 - 1.0;
-  let sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
-  let phi = 6.2831853 * h2;
-  let unit = vec3f(cos(phi) * sinTheta, cosTheta, sin(phi) * sinTheta);
-  // BLOB_RADIUS = 1.40. Sized for the 1M-particle density target —
-  // particles at 60× the legacy density need a much wider sphere for
-  // the landing's soft, organic texture to read. At 1.40 the cloud
-  // spans most of the viewport at default zoom while still leaving
-  // inter-particle gaps clearly visible. Particles remain uniform
-  // sphere distribution from the inverse-CDF hash above, so density
-  // stays even across the globe; only the gap grows. Tunable: drop
-  // toward 0.62 for the legacy compact orb feel, push up further
-  // if particle count grows.
-  let pos = unit * 1.40;
-  computePositions[i] = vec4f(pos, 0.0);
-
-  // Per-particle directional vector — three independent hash salts give
-  // an uncorrelated 3D direction in [-1, 1]^3 per particle, mirroring the
-  // landing's aMove attribute (uniform random per axis). Scaled by 0.5
-  // so peak displacement in the integrate compute
-  // (motion.xyz * speed * depth * liveDrift, with speed≈0.5, depth=0.3,
-  // |liveDrift|≤1) lands at ~0.075 absolute = 5% of BLOB_RADIUS,
-  // matching landing's relative wobble at the orb's tighter framing.
-  // Replaces the prior tangent*0.003 (single-axis swirl, 25,000×
-  // too small in absolute terms for the orb's geometry).
-  let h3 = iHashToFloat(iHash(i ^ 0x68bc21ebu));
-  let h4 = iHashToFloat(iHash(i ^ 0xb2a82e27u));
-  let h5 = iHashToFloat(iHash(i ^ 0xc4d7a3feu));
-  let h6 = iHashToFloat(iHash(i ^ 0x9747b28cu));
-  let aMove = vec3f(h3 * 2.0 - 1.0, h4 * 2.0 - 1.0, h5 * 2.0 - 1.0);
-  // Magnitude 0.30 (was 0.5) — at 1M density each particle's wobble
-  // overlaps several neighbors, so the perceptual rate is faster than
-  // landing's 16k sparse field at the same formula. 0.30 gives ~3% of
-  // BLOB_RADIUS peak displacement per axis, half a percentage point
-  // more than the calm side of the reference original.
-  //
-  // motion.w is the per-particle time-scale for landingMotionNoise
-  // (liveDrift). Range [0.2, 1.0] (was [0.5, 1.5]) — wider variance
-  // means some particles drift on a 20-second period and others on a
-  // 4-second period, no two are in lockstep. Mean ~0.6, so the
-  // ensemble rhythm is ~40% slower than landing's uniform speed=1.
-  let perParticleSpeed = 0.2 + h6 * 0.8;
-  computeVelocities[i] = vec4f(aMove * 0.30, perParticleSpeed);
-
-  // Per-index hash gives every particle its own subtle attribute jitter
-  // so the FBM-driven motion doesn't read as lockstep across the cloud.
-  // attr.rgb feeds per-axis speed scaling; attr.w is alpha. Reuses h3
-  // from the aMove block above — same hash, no extra ALU.
-  computeAttributes[i] = vec4f(
-    0.5 + h3 * 0.1,
-    0.5 + (1.0 - h3) * 0.1,
-    0.5 + h3 * 0.05,
-    0.82,
-  );
-}
+${ORB_WEBGPU_SHADER_SEED_WGSL}
 
 @compute @workgroup_size(64)
 fn pickParticle(@builtin(global_invocation_id) id: vec3u) {
@@ -608,7 +528,7 @@ fn pickParticle(@builtin(global_invocation_id) id: vec3u) {
   let display = pickDisplay[i];
   let center = display.center.xy;
   // display.center.w is the final post-everything visual radius written
-  // by integrateParticles (visualRadius * (1 + liveDrift*0.020) * viewZoom).
+  // by integrateParticles (visualRadius * viewZoom).
   // Pick uses the same value the renderer drew with — no extra inflation —
   // so a click anywhere inside the visible sprite registers as a hit.
   let radius = display.center.w;
@@ -621,15 +541,15 @@ fn pickParticle(@builtin(global_invocation_id) id: vec3u) {
   // depth pack:
   // - Bits 0..20 carry the particle index (up to 2_097_151 particles).
   // - Bits 21..31 carry the depth quantum; lower = nearer the camera.
-  // - +Z is the near pole (see comment block above projectedCenter):
-  //   dot(N, +Z)=+1 on the near hemisphere → (2 - z) shrinks for near
-  //   particles, so atomicMin selects the front-most candidate.
-  // - Range mapping: z in [-2, 2] (post-rotation, pre-projection scale)
-  //   → depthQ in [0, 2046]; clamped to 2046 (not 2047) so the worst
-  //   real pick result can never collide with the 0xFFFFFFFF "no hit"
-  //   sentinel (2047 << 21 | 0x1FFFFF == 0xFFFFFFFF).
+  // - +Z is the near pole (see comment block above projectedCenter), so
+  //   depthFromZ returns smaller values for near particles and atomicMin
+  //   selects the front-most candidate.
+  // - Range mapping: z in [-ORB_DEPTH_RANGE_RADIUS, ORB_DEPTH_RANGE_RADIUS]
+  //   → depthQ in [0, 2046]; clamped to 2046 (not 2047) so the worst real
+  //   pick result can never collide with the 0xFFFFFFFF "no hit" sentinel
+  //   (2047 << 21 | 0x1FFFFF == 0xFFFFFFFF).
   // - Ties on depthQ break by the lower particle index.
-  let depthQ = u32(clamp((2.0 - display.center.z) * 0.25, 0.0, 1.0) * 2046.0);
+  let depthQ = u32(depthFromZ(display.center.z) * 2046.0);
   if (d <= radius && i <= 0x1FFFFFu) {
     atomicMin(&pickResult[0], (depthQ << 21u) | i);
   }

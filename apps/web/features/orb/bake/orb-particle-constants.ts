@@ -32,12 +32,11 @@ export const ORB_BLOB_FREQUENCY = 0.8;
 //
 // Landing renders its FBM-driven radial breathing as sub-pixel particle
 // dots in a wide-camera context — at that framing, ±5% radial swing
-// reads as gentle field shimmer. The orb fills most of the canvas at
-// 1M density with BLOB_RADIUS=1.40, so the same 0.05 amplitude reads
-// as the entire orb pulsating in/out (the user-reported regression).
+// reads as gentle field shimmer. Even after widening the WebGPU sphere,
+// the 1M-density orb still occupies a focused inspection viewport, so
+// the same 0.05 amplitude reads as the entire orb pulsating in/out (the
+// user-reported regression).
 //
-// 0.02 keeps a soft breathing rhythm without dominating perception, so
-// per-particle directional drift (motion.xyz × speed × depth ×
-// liveDrift) becomes the visible motion lane instead — the Maze/landing
-// "flowing particles" feel.
+// 0.02 keeps a soft radial breathing rhythm without dominating the
+// persistent velocity integration that now owns organic particle motion.
 export const ORB_BLOB_AMPLITUDE = 0.02;

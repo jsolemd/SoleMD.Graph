@@ -7,8 +7,8 @@ import { resolvePickFromCandidates } from "../orb-webgpu-picking";
 
 // JS mirror of WGSL `visualRadius` + the post-`integrateParticles`
 // multipliers in orb-webgpu-shader.ts. The WGSL `computeDisplay[i].center.w`
-// is `visualRadius(...) * (1 + liveDrift * 0.020) * viewZoom`. The pick
-// kernel reads that same value as its hit threshold — no extra inflation.
+// is `visualRadius(...) * viewZoom`. The pick kernel reads that same value
+// as its hit threshold — no extra inflation.
 // This helper pins both halves so a future shader refactor can't desync
 // the renderer and the picker.
 function computeFinalRadius(input: {
@@ -19,7 +19,6 @@ function computeFinalRadius(input: {
   hoverW: number;
   selectW: number;
   focusW: number;
-  liveDrift: number;
   viewZoom: number;
 }): number {
   const pulse = 0.5 + 0.5 * Math.sin(input.colorTime * 4.2);
@@ -33,10 +32,6 @@ function computeFinalRadius(input: {
   radius *= 1.0 + (1.46 - 1.0) * input.selectW;
   radius *= 1.0 + (1.70 - 1.0) * input.hoverW;
   radius *= 1.0 + (2.15 - 1.0) * input.focusW;
-  // Post-everything multipliers applied by `integrateParticles` after
-  // `visualRadius` returns. Pick reads `display.center.w` which already
-  // contains these.
-  radius *= 1.0 + input.liveDrift * 0.020;
   radius *= input.viewZoom;
   return radius;
 }
@@ -51,7 +46,6 @@ describe("orb WebGPU pick radius parity (visual ≡ pick threshold)", () => {
     hoverW: 0,
     selectW: 0,
     focusW: 0,
-    liveDrift: 0,
     viewZoom: 1.0,
   } as const;
 
@@ -87,13 +81,6 @@ describe("orb WebGPU pick radius parity (visual ≡ pick threshold)", () => {
     expect(r).toBeCloseTo(BASE * 1.4, 9);
   });
 
-  it("liveDrift adds a ±2% jitter to the radius", () => {
-    const max = computeFinalRadius({ ...DEFAULT_INPUT, liveDrift: 1 });
-    const min = computeFinalRadius({ ...DEFAULT_INPUT, liveDrift: -1 });
-    expect(max).toBeCloseTo(BASE * 1.020, 9);
-    expect(min).toBeCloseTo(BASE * 0.980, 9);
-  });
-
   it("table case: deterministic across (depth, hover, select, focus, zoom)", () => {
     // Pin a representative row so a future shader edit that drifts any
     // visualRadius coefficient explicitly fails this test.
@@ -105,17 +92,15 @@ describe("orb WebGPU pick radius parity (visual ≡ pick threshold)", () => {
       hoverW: 0.5,
       selectW: 0.25,
       focusW: 0.0,
-      liveDrift: 0.4,
       viewZoom: 1.2,
     });
     // Manual closed form:
     //   depth term = clamp(1 + 0.5*0.1, 0.88, 1.10) = 1.05
     //   selectW = 0.25 → 1 + 0.46*0.25 = 1.115
     //   hoverW  = 0.5  → 1 + 0.70*0.5  = 1.35
-    //   liveDrift = 0.4 → 1 + 0.020*0.4 = 1.008
     //   viewZoom = 1.2
-    //   total = BASE * 1.05 * 1.115 * 1.35 * 1.008 * 1.2
-    const expected = BASE * 1.05 * 1.115 * 1.35 * 1.008 * 1.2;
+    //   total = BASE * 1.05 * 1.115 * 1.35 * 1.2
+    const expected = BASE * 1.05 * 1.115 * 1.35 * 1.2;
     expect(r).toBeCloseTo(expected, 9);
   });
 
@@ -154,7 +139,7 @@ describe("orb WebGPU pick radius parity (visual ≡ pick threshold)", () => {
   });
 
   // --- Algorithmic pick decision: front-most particle wins via atomicMin
-  // on (depthQ << 16) | index. Re-test that resolvePickFromCandidates
+  // on (depthQ << 21) | index. Re-test that resolvePickFromCandidates
   // (the JS mirror of the WGSL reduction) returns the right index when
   // multiple particles pass the screen-radius gate.
   describe("resolvePickFromCandidates after the radius parity fix", () => {
@@ -165,13 +150,12 @@ describe("orb WebGPU pick radius parity (visual ≡ pick threshold)", () => {
     it("front-most candidate wins among multiple survivors", () => {
       // Three particles all passed the screen-radius gate (the new
       // un-inflated radius); atomicMin selects the smallest depthQ.
-      // depthQ = u32(clamp((2 - z) * 0.25, 0, 1) * 65535) — smaller
-      // depthQ ↔ larger z (nearer to camera under the +Z near-pole
-      // convention).
+      // depthQ = u32(depthFromZ(z) * 2046) — smaller depthQ ↔ larger z
+      // (nearer to camera under the +Z near-pole convention).
       const winner = resolvePickFromCandidates([
-        { depthQ: 24000, index: 4 }, // z ≈ 0.535, mid-back
-        { depthQ: 8000, index: 11 }, // z ≈ 1.51,  front-most
-        { depthQ: 32000, index: 7 }, // z ≈ 0.046, mid-front
+        { depthQ: 750, index: 4 }, // mid-front
+        { depthQ: 150, index: 11 }, // front-most
+        { depthQ: 1100, index: 7 }, // mid-back
       ]);
       expect(winner).toBe(11);
     });

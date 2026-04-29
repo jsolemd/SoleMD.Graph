@@ -170,7 +170,7 @@ export function clientRectToClip(
 
 // JS mirror of the WGSL atomicMin reduction in orb-webgpu-shader.ts pick
 // kernel. Each candidate is a particle that already passed the
-// screen-distance gate. The WGSL packs (depthQ << 16) | index into one
+// screen-distance gate. The WGSL packs (depthQ << 21) | index into one
 // u32 and atomicMin's it into a single slot, so the winner is the
 // smallest depthQ — and on tie, the smallest index. This pure JS form
 // is unit-tested in orb-webgpu-pick-depth-order.test.ts so refactors of

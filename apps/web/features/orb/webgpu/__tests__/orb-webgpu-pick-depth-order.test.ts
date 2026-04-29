@@ -2,7 +2,7 @@ import { ORB_PICK_NO_HIT } from "../../interaction/orb-picker-store";
 import { resolvePickFromCandidates } from "../orb-webgpu-picking";
 
 // JS mirror of the WGSL atomicMin reduction. The WGSL kernel packs
-// (depthQ << 16) | index into one u32 and atomicMin's it into a single
+// (depthQ << 21) | index into one u32 and atomicMin's it into a single
 // slot, so the winner is the smallest depthQ first, smallest index on
 // tie. These tests pin that rule so a future shader refactor stays in
 // sync with the host-side helper.

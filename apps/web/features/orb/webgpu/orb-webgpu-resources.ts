@@ -32,7 +32,7 @@ import {
   storageEntry,
 } from "./orb-webgpu-layout";
 import { ORB_WEBGPU_SHADER_SOURCE } from "./orb-webgpu-shader";
-import { LANDING_RAINBOW_RGB } from "../../field/shared/landing-feel-constants";
+import { ORB_PALETTE_RGB } from "./orb-webgpu-visual-config";
 
 export interface OrbWebGpuRuntimeResources {
   attributesBuffer: GPUBuffer;
@@ -188,8 +188,8 @@ export async function createOrbWebGpuResources(
   });
   // positions/velocities/attributes are bound as read_write storage so
   // the seedAmbientGeometry compute pass can populate them once at first
-  // upload. integrateParticles only reads them, but read_write is a
-  // superset of read so a single layout works for both pipelines.
+  // upload and integrateParticles can keep positions/velocities as
+  // persistent GPU physics state. A single layout covers both pipelines.
   const computeBindGroupLayout = device.createBindGroupLayout({
     entries: [
       storageEntry(COMPUTE_POSITION_INDEX, GPUShaderStage.COMPUTE, "storage"),
@@ -454,16 +454,15 @@ export async function createOrbWebGpuResources(
   };
 }
 
-// Bake the LANDING_RAINBOW_RGB palette into a 1-row 8-column RGBA8Unorm
-// texture. Using `rgba8unorm` (not `rgba8unorm-srgb`) keeps the linear
-// filter blending in the same color space as the prior shader's GSAP
-// linear RGB tween, so the visual character of the palette ramp matches
-// what we had in Three.js.
+// Bake the orb palette into a 1-row RGBA8Unorm texture. Using
+// `rgba8unorm` (not `rgba8unorm-srgb`) keeps the linear filter blending
+// in the same color space as the prior shader's GSAP linear RGB tween, so
+// the visual character of the palette ramp matches what we had in Three.js.
 function createOrbPaletteTexture(device: GPUDevice): GPUTexture {
-  const stops = LANDING_RAINBOW_RGB.length;
+  const stops = ORB_PALETTE_RGB.length;
   const data = new Uint8Array(stops * 4);
   for (let i = 0; i < stops; i += 1) {
-    const [r, g, b] = LANDING_RAINBOW_RGB[i] ?? [0, 0, 0];
+    const [r, g, b] = ORB_PALETTE_RGB[i] ?? [0, 0, 0];
     data[i * 4 + 0] = r;
     data[i * 4 + 1] = g;
     data[i * 4 + 2] = b;

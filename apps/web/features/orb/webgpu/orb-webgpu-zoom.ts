@@ -10,15 +10,18 @@
 // commits. This keeps inspection responsive while making continuous
 // keyboard / wheel input feel calm.
 import { clampFinite, easeTowardTarget } from "./orb-webgpu-layout";
+import {
+  ORB_ZOOM_DEFAULT,
+  ORB_ZOOM_MAX,
+  ORB_ZOOM_MIN,
+} from "./orb-webgpu-visual-config";
 
-// 0.55 default leaves visible margin around the BLOB_RADIUS = 1.40
-// sphere — orb sits inside the viewport with breathing room. Lowering
-// zoom shrinks both the sphere AND each particle's sprite size, so
-// the cloud reads as a smaller, denser-feeling orb against a darker
-// background — closer to the landing's framing.
-export const ORB_ZOOM_DEFAULT = 0.55;
-export const ORB_ZOOM_MIN = 0.5;
-export const ORB_ZOOM_MAX = 4;
+export { ORB_ZOOM_DEFAULT, ORB_ZOOM_MAX, ORB_ZOOM_MIN };
+
+// 0.385 default pairs with BLOB_RADIUS = 2.0, preserving the prior
+// apparent footprint (1.40 * 0.55 ~= 2.0 * 0.385) while giving particles
+// more world-space room. The lower zoom floor keeps the same inspection
+// range available after the wider sphere retune.
 // 120 ms half-life — snappy enough that wheel and +/- inputs feel
 // connected to the screen, slow enough that keyboard-repeat doesn't
 // flash discrete steps. Pan uses 250 ms because translation reads as

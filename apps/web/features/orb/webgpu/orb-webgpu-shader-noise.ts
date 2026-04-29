@@ -4,18 +4,15 @@
 // modularization limit. Concatenated into the WGSL module via template
 // interpolation.
 
-import { LANDING_RAINBOW_PERIOD_SECONDS } from "../../field/shared/landing-feel-constants";
-
-function toWgslFloat(value: number): string {
-  return Number.isInteger(value) ? `${value}.0` : value.toFixed(6);
-}
+import {
+  ORB_FIELD_NOISE_TIME_SCALE,
+  ORB_PALETTE_PERIOD_SECONDS,
+  formatWgslFloat,
+} from "./orb-webgpu-visual-config";
 
 export const ORB_WEBGPU_SHADER_NOISE_WGSL = /* wgsl */ `
-const LANDING_RAINBOW_PERIOD_SECONDS = ${toWgslFloat(LANDING_RAINBOW_PERIOD_SECONDS)};
-
-fn mod2892(x: vec2f) -> vec2f {
-  return x - floor(x * (1.0 / 289.0)) * 289.0;
-}
+const ORB_PALETTE_PERIOD_SECONDS = ${formatWgslFloat(ORB_PALETTE_PERIOD_SECONDS)};
+const ORB_FIELD_NOISE_TIME_SCALE = ${formatWgslFloat(ORB_FIELD_NOISE_TIME_SCALE)};
 
 fn mod2893(x: vec3f) -> vec3f {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
@@ -27,10 +24,6 @@ fn mod2894(x: vec4f) -> vec4f {
 
 fn mod2891(x: f32) -> f32 {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
-}
-
-fn permute3(x: vec3f) -> vec3f {
-  return mod2893(((x * 34.0) + 1.0) * x);
 }
 
 fn permute4(x: vec4f) -> vec4f {
@@ -59,45 +52,6 @@ fn grad4(j: f32, ip: vec4f) -> vec4f {
     select(0.0, 1.0, pw < 0.0),
   );
   return vec4f(pxyz + (s.xyz * 2.0 - vec3f(1.0)) * s.w, pw);
-}
-
-fn simplexNoise2(v: vec2f) -> f32 {
-  let c = vec4f(
-    0.211324865405187,
-    0.366025403784439,
-    -0.577350269189626,
-    0.024390243902439,
-  );
-  var i = floor(v + dot(v, c.yy));
-  let x0 = v - i + dot(i, c.xx);
-  var i1 = vec2f(0.0, 1.0);
-  if (x0.x > x0.y) {
-    i1 = vec2f(1.0, 0.0);
-  }
-  var x12 = x0.xyxy + c.xxzz;
-  x12 = vec4f(x12.xy - i1, x12.zw);
-  i = mod2892(i);
-  let p = permute3(
-    permute3(i.y + vec3f(0.0, i1.y, 1.0)) +
-    i.x + vec3f(0.0, i1.x, 1.0)
-  );
-  var m = max(
-    0.5 - vec3f(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)),
-    vec3f(0.0),
-  );
-  m = m * m;
-  m = m * m;
-  let x = 2.0 * fract(p * c.www) - vec3f(1.0);
-  let h = abs(x) - vec3f(0.5);
-  let ox = floor(x + vec3f(0.5));
-  let a0 = x - ox;
-  m = m * (1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h));
-  let g = vec3f(
-    a0.x * x0.x + h.x * x0.y,
-    a0.y * x12.x + h.y * x12.y,
-    a0.z * x12.z + h.z * x12.w,
-  );
-  return 130.0 * dot(m, g);
 }
 
 fn simplexNoise4(v: vec4f) -> f32 {
@@ -189,29 +143,11 @@ fn landingFieldNoise(
 ) -> f32 {
   _ = motion;
   _ = instanceIndex;
-  // 0.20× time scale on the field-noise sample (down from 0.25). This
+  // ORB_FIELD_NOISE_TIME_SCALE on the field-noise sample (down from 0.25). This
   // slows both the spatial drift of color regions and the radial
-  // breathing rhythm — the user-perceived "color movement" — without
-  // touching per-particle motion noise (which stays at 0.25).
-  return landingFbm(p, colorTime * 0.20);
+  // breathing rhythm — the user-perceived "color movement". Stateful
+  // particle motion is integrated separately in orb-webgpu-shader.ts.
+  return landingFbm(p, colorTime * ORB_FIELD_NOISE_TIME_SCALE);
 }
 
-// Single scalar simplex2 oscillator — Maze-faithful. The original
-// landing/Maze blob shader uses ONE noise call per particle to drive
-// a straight-line oscillation along the particle's baked aMove
-// direction. The Lissajous variant (3 independent axes) was tried and
-// rejected: it deviates from Maze's character and at 1M density
-// produces visible figure-8 loops rather than the original's calm
-// ensemble drift. The "robotic at zoom" perception was actually the
-// hard alpha-test 0.4 silhouette aliasing — fixed in the fragment
-// shader by smoothstepping the alpha falloff so soft halos can bleed
-// across particle boundaries the way Maze's alpha-blended sprites do.
-fn landingMotionNoise(
-  instanceIndex: u32,
-  motion: vec4f,
-  colorTime: f32,
-) -> f32 {
-  let speed = max(motion.w, 0.001);
-  return simplexNoise2(vec2f(f32(instanceIndex), colorTime * 0.25 * speed));
-}
 `;
