@@ -22,14 +22,16 @@ export const RENDER_SPRITE_SAMPLER_INDEX = 21;
 export const U32_BYTES = 4;
 export const VEC4_BYTES = 16;
 export const DISPLAY_PARTICLE_BYTES = VEC4_BYTES * 3;
-// FrameUniforms layout (80 bytes, 16-byte aligned):
+// FrameUniforms layout (128 bytes, 16-byte aligned):
 //  0  time, dt, count, viewZoom
-// 16  aspect, radiusScale, rotationYaw, colorTime
-// 32  baseColor (vec4f)
-// 48  fieldParams (vec4f)
-// 64  viewPan (vec2f), rotationPitch, focusIndex (i32, -1 = none)
-export const FRAME_UNIFORM_BYTES = 80;
-export const FRAME_UNIFORM_FOCUS_INDEX_OFFSET = 76;
+// 16  aspect, radiusScale, colorTime, focusIndex (i32, -1 = none)
+// 32  baseColor (vec4f) — RGB + yawOmega in .w
+// 48  fieldParams (vec4f) — amplitude, depth, frequency, waveSpeed
+// 64  viewPan (vec2f), 8 bytes pad to align mat3 at 80
+// 80  rotation (mat3x3<f32>) — 3 vec3 columns, each padded to 16 bytes
+// Yaw + pitch are baked into this matrix CPU-side so the per-particle
+// compute shader does one mat3 × vec3 instead of 4 cos + 4 sin.
+export const FRAME_UNIFORM_BYTES = 128;
 export const PICK_PARAM_BYTES = 16;
 export const RECT_PARAM_BYTES = 32;
 
@@ -106,6 +108,31 @@ export function normalizeRadians(value: number): number {
 export function clampFinite(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+// Half-life decay factor for an exponentially smoothed signal: after
+// `halfLifeSeconds` of dt, the residual is exactly 0.5. Shared by every
+// orb camera controller (zoom, pan, rotation nudges) so the ease feels
+// consistent across input axes.
+export function halfLifeDecay(dtSeconds: number, halfLifeSeconds: number): number {
+  if (dtSeconds <= 0) return 1;
+  return Math.pow(0.5, dtSeconds / halfLifeSeconds);
+}
+
+// Per-frame ease of a scalar value toward a target with an exponential
+// half-life. Snaps to the target once within `snapEpsilon` so a
+// long-running ease eventually settles exactly rather than drifting on
+// floating-point residue.
+export function easeTowardTarget(
+  value: number,
+  target: number,
+  dtSeconds: number,
+  halfLifeSeconds: number,
+  snapEpsilon = 1e-4,
+): number {
+  if (dtSeconds <= 0) return value;
+  const next = target + (value - target) * halfLifeDecay(dtSeconds, halfLifeSeconds);
+  return Math.abs(next - target) < snapEpsilon ? target : next;
 }
 
 function alignTo(value: number, alignment: number): number {
