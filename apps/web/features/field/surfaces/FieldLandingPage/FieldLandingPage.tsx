@@ -18,10 +18,6 @@ import {
 import { GraphLoadingChrome } from "@/features/graph/components/shell/loading/GraphLoadingChrome";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 import type { ShellVariant } from "@/features/graph/components/shell/use-shell-variant";
-import {
-  useGraphWarmup,
-  type GraphWarmupStatus,
-} from "@/features/graph/hooks/use-graph-warmup";
 import type { PanelEdgeTocEntry } from "@/features/wiki/components/PanelEdgeToc";
 import { ViewportTocRail } from "@/features/wiki/components/ViewportTocRail";
 import { APP_CHROME_PX } from "@/lib/density";
@@ -40,7 +36,10 @@ import {
   FIELD_SECTION_MANIFEST,
 } from "./field-landing-content";
 import { FieldCtaSection } from "./FieldCtaSection";
-import { FieldGraphWarmupAction } from "./FieldGraphWarmupAction";
+import {
+  FieldGraphWarmupAction,
+  type FieldGraphAvailabilityStatus,
+} from "./FieldGraphWarmupAction";
 import { FieldHeroSection } from "./FieldHeroSection";
 import { FieldScrollCue } from "./FieldScrollCue";
 import { FieldStoryChapter } from "./FieldStoryChapter";
@@ -96,7 +95,7 @@ function FieldLandingShellContent({
   reducedMotion,
   showViewportToc,
 }: {
-  graphStatus: GraphWarmupStatus;
+  graphStatus: FieldGraphAvailabilityStatus;
   isCompactFieldViewport: boolean;
   reducedMotion: boolean;
   showViewportToc: boolean;
@@ -328,7 +327,7 @@ function FieldLandingShell({
   graphStatus,
   shellVariant,
 }: {
-  graphStatus: GraphWarmupStatus;
+  graphStatus: FieldGraphAvailabilityStatus;
   shellVariant: ShellVariant;
 }) {
   const reducedMotion = useReducedMotion();
@@ -377,9 +376,9 @@ export function FieldLandingPage({
   bundle: GraphBundle | null;
 }) {
   const forcedGraphReady = useLandingGraphReadyDebugOverride();
-  const { status } = useGraphWarmup(bundle);
   const shellVariant = useShellVariantContext();
-  const graphStatus: GraphWarmupStatus = forcedGraphReady ? "ready" : status;
+  const graphStatus: FieldGraphAvailabilityStatus =
+    forcedGraphReady || bundle != null ? "ready" : "unavailable";
 
   return (
     <FieldLandingShell

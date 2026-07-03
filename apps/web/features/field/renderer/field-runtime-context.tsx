@@ -15,9 +15,9 @@ import type {
 } from "../scene/visual-presets";
 
 /**
- * Bridge for the layout-owned landing FieldCanvas.
+ * Bridge for the FieldRuntimeShell-owned landing FieldCanvas.
  *
- * The Canvas/FieldScene stay under the (dashboard) layout for the landing
+ * The Canvas/FieldScene stay under FieldRuntimeShell for the landing
  * storytelling surface. Landing still needs access to in-R3F artifacts:
  * controllers for hotspot overlays, camera for DOM projection,
  * stageReady, and sceneStateRef. This context is that thin handoff.
@@ -54,7 +54,7 @@ export function useFieldRuntime(): FieldRuntimeBridge {
   const ctx = useContext(FieldRuntimeContext);
   if (!ctx) {
     throw new Error(
-      "useFieldRuntime must be used within DashboardClientShell",
+      "useFieldRuntime must be used within FieldRuntimeShell",
     );
   }
   return ctx;

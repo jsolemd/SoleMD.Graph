@@ -111,7 +111,7 @@ const sectionRef = useRef<HTMLElement | null>(null);
               opacity: graphReady ? 1 : 0.58,
             }}
           >
-            {graphReady ? "Enter" : "Graph still warming"}
+            {graphReady ? "Enter" : "Graph unavailable"}
           </motion.button>
         </motion.div>
       </div>

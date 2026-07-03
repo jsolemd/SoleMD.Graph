@@ -18,15 +18,14 @@ import {
   chromeFlushSurfaceStyle,
   graphControlBtnStyles,
 } from "@/features/graph/components/panels/PanelShell";
-import type { GraphWarmupStatus } from "@/features/graph/hooks/use-graph-warmup";
 import { fieldLoopClock } from "@/features/field";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
+export type FieldGraphAvailabilityStatus = "ready" | "unavailable";
 type WarmupActionPhase = "loading" | "ready-playing" | "ready-idle";
 
 const READY_LABEL = "Enter Graph";
-const LOADING_LABEL = "Graph Loading";
 const UNAVAILABLE_LABEL = "Graph unavailable";
 const GRAPH_ICON_FALLBACK: LottieRgba = [0.102, 0.106, 0.118, 0.68];
 const LOTTIE_VISUAL_SIZE = "calc(var(--icon-size) * 0.82)";
@@ -61,7 +60,7 @@ export function FieldGraphWarmupAction({
   status,
   onOpenGraph,
 }: {
-  status: GraphWarmupStatus;
+  status: FieldGraphAvailabilityStatus;
   onOpenGraph: () => void;
 }) {
   const router = useRouter();
@@ -145,9 +144,7 @@ export function FieldGraphWarmupAction({
   const tooltipLabel =
     status === "ready"
       ? READY_LABEL
-      : status === "unavailable"
-        ? UNAVAILABLE_LABEL
-        : LOADING_LABEL;
+      : UNAVAILABLE_LABEL;
   const iconOpacity = iconColor?.[3] ?? GRAPH_ICON_FALLBACK[3];
   const isInteractive = status === "ready";
 

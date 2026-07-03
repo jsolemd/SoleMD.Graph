@@ -81,6 +81,7 @@ jest.mock("framer-motion", () => ({
       ...rest
     }: React.PropsWithChildren<Record<string, unknown>>) => {
       delete rest.drag;
+      delete rest.dragConstraints;
       delete rest.dragControls;
       delete rest.dragListener;
       delete rest.dragMomentum;

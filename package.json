@@ -6,6 +6,14 @@
     "apps/*",
     "packages/*"
   ],
+  "overrides": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
   "scripts": {
     "dev": "npm run dev --workspace @solemd/web",
     "dev:phone": "bash ./scripts/phone-dev dev",
@@ -18,6 +26,7 @@
     "dev:stack:attach": "bash ./scripts/graph-stack attach",
     "build": "npm run build --workspace @solemd/web",
     "build:webpack": "npm run build:webpack --workspace @solemd/web",
+    "check:public-routes": "npm run check:public-routes --workspace @solemd/web",
     "start": "npm run start --workspace @solemd/web",
     "lint": "npm run lint --workspace @solemd/web",
     "typecheck": "npm run typecheck --workspace @solemd/web",

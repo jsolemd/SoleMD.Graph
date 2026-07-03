@@ -2,6 +2,9 @@
 
 import dynamic from "next/dynamic";
 import type { GraphBundle } from "@solemd/graph";
+import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
+import { useShellVariant } from "@/features/graph/components/shell/use-shell-variant";
+import { FieldRuntimeShell } from "../renderer/FieldRuntimeShell";
 
 const FieldLandingPage = dynamic(
   () =>
@@ -24,5 +27,13 @@ export function FieldLandingRoute({
 }: {
   bundle: GraphBundle | null;
 }) {
-  return <FieldLandingPage bundle={bundle} />;
+  const shellVariant = useShellVariant();
+
+  return (
+    <ShellVariantProvider value={shellVariant}>
+      <FieldRuntimeShell mode="landing">
+        <FieldLandingPage bundle={bundle} />
+      </FieldRuntimeShell>
+    </ShellVariantProvider>
+  );
 }

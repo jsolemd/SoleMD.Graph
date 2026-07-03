@@ -35,12 +35,16 @@ import { WikiModuleContent, getWikiModule } from "@/features/wiki/components/Wik
 import { PanelEdgeToc, entriesFromModuleSections } from "@/features/wiki/components/PanelEdgeToc";
 import { WikiModuleSearch } from "@/features/wiki/components/WikiModuleSearch";
 import { WikiPageView } from "@/features/wiki/components/WikiPageView";
+import type {
+  WikiPageGraphActionProviderProps,
+} from "@/features/wiki/components/WikiPageView";
 import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiSearch } from "@/features/wiki/components/WikiSearch";
 import { WikiBrowseSheet } from "@/features/wiki/components/WikiBrowseSheet";
 import { WikiContextActions, WikiNavigation } from "@/features/wiki/components/WikiNavigation";
 import { AnimationEmbed } from "@/features/wiki/components/elements/AnimationEmbed";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
+import { useWikiGraphSync } from "@/features/wiki/hooks/use-wiki-graph-sync";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import type { GraphBundle, GraphBundleQueries } from "@solemd/graph";
 import { resolveGraphReleaseId } from "@solemd/graph";
@@ -48,6 +52,21 @@ import { resolveGraphReleaseId } from "@solemd/graph";
 interface WikiPanelProps {
   bundle: GraphBundle;
   queries: GraphBundleQueries;
+}
+
+function GraphBackedWikiPageActions({
+  children,
+  currentSlug,
+  pageGraphRefs,
+  queries,
+}: WikiPageGraphActionProviderProps) {
+  const actions = useWikiGraphSync({
+    queries,
+    pageGraphRefs,
+    currentSlug,
+  });
+
+  return <>{children(actions)}</>;
 }
 
 export function WikiPanel({ bundle, queries }: WikiPanelProps) {
@@ -241,6 +260,7 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
               slug={currentRoute.slug}
               graphReleaseId={graphReleaseId}
               queries={queries}
+              graphActionProvider={GraphBackedWikiPageActions}
               onNavigate={handleOpenPage}
               tocAnchorRef={wikiPageViewportRef}
             />

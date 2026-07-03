@@ -2,35 +2,15 @@
 
 import { usePathname } from "next/navigation";
 import {
-  useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
-  type MutableRefObject,
   type ReactNode,
 } from "react";
-import type { Camera } from "three";
-import { FieldCanvas } from "@/features/field/renderer/FieldCanvas";
 import {
-  FieldModeProvider,
   type FieldMode,
 } from "@/features/field/renderer/field-mode-context";
-import {
-  FieldRuntimeContext,
-  type FieldRuntimeBridge,
-} from "@/features/field/renderer/field-runtime-context";
-import {
-  createFieldSceneState,
-  FIELD_STAGE_ITEM_IDS,
-  type FieldSceneState,
-  type FieldStageItemId,
-} from "@/features/field/scene/visual-presets";
-import {
-  createFieldSceneStore,
-  FieldSceneStoreProvider,
-} from "@/features/field/scroll/field-scene-store";
-import type { FieldController } from "@/features/field/controller/FieldController";
+import { FieldRuntimeShell } from "@/features/field/renderer/FieldRuntimeShell";
 import {
   OrbInteractionContext,
   type OrbInteractionBridge,
@@ -56,11 +36,11 @@ export function resolveFieldMode(
 }
 
 /**
- * Layout-owned client shell for the (dashboard) route group.
+ * Layout-owned client shell for the graph/dashboard route group.
  *
- * Mounts the R3F FieldCanvas for landing. The /graph 3D path owns its
- * own raw WebGPU canvas in OrbSurface; the layout no longer installs
- * WebGL blob mutation or picking subscribers for orb mode.
+ * The /graph 3D path owns its raw WebGPU canvas in OrbSurface; this shell
+ * adds graph/orb providers around the shared FieldRuntimeShell without
+ * making the public landing route import orb code.
  *
  * Scope contract:
  * - Canvas + scene store + field mode live HERE.
@@ -77,39 +57,11 @@ export function DashboardClientShell({
   const pathname = usePathname();
   const rendererMode = useDashboardStore((s) => s.rendererMode);
   const fieldMode = resolveFieldMode(pathname, rendererMode);
-
-  // sceneStateRef + sceneStore must survive route swaps. useMemo with an
-  // empty dep array gives us layout-stable references as long as the
-  // layout itself is cached.
-  const sceneStateRef = useMemo<MutableRefObject<FieldSceneState>>(
-    () => ({ current: createFieldSceneState() }),
-    [],
-  );
-  const sceneStore = useMemo(
-    () => createFieldSceneStore(sceneStateRef.current),
-    [sceneStateRef],
-  );
-
-  const cameraRef = useRef<Camera | null>(null);
-  const controllersRef = useRef<
-    Partial<Record<FieldStageItemId, FieldController>>
-  >({});
-  const [controllerEpoch, setControllerEpoch] = useState(0);
-  const [stageReady, setStageReady] = useState(false);
   // The OrbInteractionSurface lives inside `{children}`; the bridge is
   // hoisted here so touch/hover/selection bindings can follow the live
   // DOM element across the 3D ↔ 2D toggle.
   const [orbSurfaceElement, setOrbSurfaceElement] =
     useState<HTMLDivElement | null>(null);
-
-  const handleControllerReady = useCallback(
-    (id: FieldStageItemId, controller: FieldController) => {
-      if (controllersRef.current[id] === controller) return;
-      controllersRef.current[id] = controller;
-      setControllerEpoch((n) => n + 1);
-    },
-    [],
-  );
 
   useEffect(() => {
     if (fieldMode === "orb") return;
@@ -140,18 +92,6 @@ export function DashboardClientShell({
     };
   }, []);
 
-  const bridge = useMemo<FieldRuntimeBridge>(
-    () => ({
-      cameraRef,
-      controllersRef,
-      controllerEpoch,
-      sceneStateRef,
-      setStageReady,
-      stageReady,
-    }),
-    [controllerEpoch, sceneStateRef, stageReady],
-  );
-
   const orbInteractionBridge = useMemo<OrbInteractionBridge>(
     () => ({
       surfaceElement: orbSurfaceElement,
@@ -162,25 +102,9 @@ export function DashboardClientShell({
 
   return (
     <ShellVariantProvider value={shellVariant}>
-      <FieldModeProvider mode={fieldMode}>
-        <FieldSceneStoreProvider store={sceneStore}>
-          <FieldRuntimeContext.Provider value={bridge}>
-            <OrbInteractionContext.Provider value={orbInteractionBridge}>
-              {fieldMode === "landing" ? (
-                <FieldCanvas
-                  activeIds={FIELD_STAGE_ITEM_IDS}
-                  cameraRef={cameraRef}
-                  className="fixed inset-0"
-                  onControllerReady={handleControllerReady}
-                  sceneStateRef={sceneStateRef}
-                  stageReady={stageReady}
-                />
-              ) : null}
-              {children}
-            </OrbInteractionContext.Provider>
-          </FieldRuntimeContext.Provider>
-        </FieldSceneStoreProvider>
-      </FieldModeProvider>
+      <OrbInteractionContext.Provider value={orbInteractionBridge}>
+        <FieldRuntimeShell mode={fieldMode}>{children}</FieldRuntimeShell>
+      </OrbInteractionContext.Provider>
     </ShellVariantProvider>
   );
 }
