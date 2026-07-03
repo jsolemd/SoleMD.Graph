@@ -10,6 +10,11 @@ ADB="${SOLEMD_PHONE_ADB:-/mnt/c/Users/Jon/AppData/Local/Android/Sdk/platform-too
 PHONE_HOST="${SOLEMD_PHONE_HOST:-100.105.176.74}"
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 BROWSER_PACKAGE="${SOLEMD_PHONE_BROWSER_PACKAGE:-com.android.chrome}"
+INFRA_DIR="${SOLEMD_INFRA_DIR:-/workspaces/SoleMD.Infra}"
+MOBILE_REVIEW_SCRIPT="${SOLEMD_MOBILE_REVIEW_SCRIPT:-${INFRA_DIR}/mcp/chrome-devtools-mcp/scripts/open-mobile-review.sh}"
+PHONE_CDP_PORT="${SOLEMD_PHONE_CDP_PORT:-19223}"
+PHONE_DEVTOOLS="${SOLEMD_PHONE_DEVTOOLS:-1}"
+PHONE_DEVTOOLS_REQUIRED="${SOLEMD_PHONE_DEVTOOLS_REQUIRED:-0}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -110,6 +115,27 @@ wait_for_listener() {
   return 1
 }
 
+http_ready() {
+  local url="$1"
+  curl -fsS -m 2 "${url}" >/dev/null 2>&1
+}
+
+wait_for_http() {
+  local url="$1"
+  local attempts="${2:-30}"
+  local sleep_seconds="${3:-0.5}"
+  local i
+
+  for ((i = 0; i < attempts; i += 1)); do
+    if http_ready "${url}"; then
+      return 0
+    fi
+    sleep "${sleep_seconds}"
+  done
+
+  return 1
+}
+
 start_frontend_if_needed() {
   if listener_exists "${FRONTEND_PORT}"; then
     return 0
@@ -153,6 +179,49 @@ connect_phone() {
   printf "%s\n" "${serial}"
 }
 
+devtools_failure() {
+  local message="$1"
+
+  if [[ "${PHONE_DEVTOOLS_REQUIRED}" == "1" ]]; then
+    echo "${message}" >&2
+    exit 1
+  fi
+
+  echo "warning: ${message}" >&2
+}
+
+ensure_mobile_devtools_bridge() {
+  local serial="$1"
+  local cdp_url="http://127.0.0.1:${PHONE_CDP_PORT}/json/version"
+  local dev_url="http://localhost:${FRONTEND_PORT}"
+
+  if [[ "${PHONE_DEVTOOLS}" == "0" ]]; then
+    echo "Mobile DevTools bridge skipped (SOLEMD_PHONE_DEVTOOLS=0)."
+    return 0
+  fi
+
+  if [[ ! -x "${MOBILE_REVIEW_SCRIPT}" ]]; then
+    devtools_failure "mobile DevTools bootstrap not executable: ${MOBILE_REVIEW_SCRIPT}"
+    return 0
+  fi
+
+  "${ADB}" -s "${serial}" forward "tcp:${PHONE_CDP_PORT}" "localabstract:chrome_devtools_remote" >/dev/null
+
+  if ! wait_for_http "${cdp_url}" 30 0.5; then
+    devtools_failure "Android Chrome CDP did not become reachable at ${cdp_url}"
+    return 0
+  fi
+
+  if ! LOCAL_CDP_URL="${cdp_url}" \
+      CHROME_DEVTOOLS_LOCAL_MOBILE_TARGET_PORT="${PHONE_CDP_PORT}" \
+      bash "${MOBILE_REVIEW_SCRIPT}" --source local --url "${dev_url}" --device "${serial}"; then
+    devtools_failure "mobile DevTools MCP bootstrap failed"
+    return 0
+  fi
+
+  echo "Mobile DevTools MCP ready: http://127.0.0.1:8400/mcp (mode: mobile)"
+}
+
 open_phone() {
   local serial="$1"
 
@@ -163,10 +232,12 @@ open_phone() {
     "${BROWSER_PACKAGE}" >/dev/null
 
   echo "Opened SoleMD.Graph on phone via ${serial} -> http://localhost:${FRONTEND_PORT}"
+  ensure_mobile_devtools_bridge "${serial}"
 }
 
 print_status() {
   local saved_port=""
+  local cdp_url="http://127.0.0.1:${PHONE_CDP_PORT}/json/version"
 
   echo "frontend url: http://127.0.0.1:${FRONTEND_PORT}"
   if listener_exists "${FRONTEND_PORT}"; then
@@ -185,6 +256,18 @@ print_status() {
 
   echo "adb devices:"
   "${ADB}" devices -l || true
+
+  if http_ready "${cdp_url}"; then
+    echo "mobile cdp:   reachable on :${PHONE_CDP_PORT}"
+  else
+    echo "mobile cdp:   not reachable on :${PHONE_CDP_PORT}"
+  fi
+
+  if curl -fsS -m 2 http://127.0.0.1:8400/status 2>/dev/null | grep -q '"mobile":{"available":true'; then
+    echo "mcp mobile:   ready on :8400"
+  else
+    echo "mcp mobile:   not ready"
+  fi
 }
 
 usage() {
@@ -194,6 +277,10 @@ Usage:
   scripts/phone-dev open [wireless-debug-port]
   scripts/phone-dev dev [wireless-debug-port]
   scripts/phone-dev status
+
+Environment:
+  SOLEMD_PHONE_DEVTOOLS=0           Open/reverse only; skip mobile DevTools MCP.
+  SOLEMD_PHONE_DEVTOOLS_REQUIRED=1  Fail if the mobile DevTools MCP bridge fails.
 
 Examples:
   npm run phone:port -- 36327
@@ -209,9 +296,13 @@ main() {
 
   require_cmd python3
   require_cmd ss
+  require_cmd curl
   require_file "${ADB}"
 
   case "${action}" in
+    -h|--help|help)
+      usage
+      ;;
     set-port)
       port="$(resolve_port "${2:-}")"
       serial="$(connect_phone "${port}" | tail -n 1)"

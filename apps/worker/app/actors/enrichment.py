@@ -14,9 +14,13 @@ from app.enrichment.runtime import (
 )
 
 
+PUBMED_ENRICHMENT_QUEUE = "enrichment_pubmed"
+S2_GRAPH_ENRICHMENT_QUEUE = "enrichment_s2"
+
+
 @dramatiq.actor(
     actor_name="enrichment.pubmed_metadata",
-    queue_name="enrichment",
+    queue_name=PUBMED_ENRICHMENT_QUEUE,
     max_retries=0,
     time_limit=12 * 60 * 60 * 1000,
 )
@@ -31,7 +35,7 @@ async def enrich_pubmed_metadata(**payload: object) -> None:
 
 @dramatiq.actor(
     actor_name="enrichment.s2_graph",
-    queue_name="enrichment",
+    queue_name=S2_GRAPH_ENRICHMENT_QUEUE,
     max_retries=0,
     time_limit=6 * 60 * 60 * 1000,
 )

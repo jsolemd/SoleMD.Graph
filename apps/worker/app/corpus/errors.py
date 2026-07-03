@@ -43,3 +43,15 @@ class UnsupportedWavePolicy(CorpusError):
 
 class SelectionRunNotPublished(CorpusError):
     """No published corpus selection exists for the requested release pair."""
+
+
+class SelectionSummaryRefreshAlreadyInProgress(CorpusError):
+    """The requested selection-summary refresh is already running."""
+
+
+class SelectionSummaryRefreshPrerequisiteMissing(CorpusError):
+    """A required summary-refresh prerequisite is missing or incomplete."""
+
+
+class CorpusQualityAuditAlreadyInProgress(CorpusError):
+    """The requested corpus-quality audit is already running."""

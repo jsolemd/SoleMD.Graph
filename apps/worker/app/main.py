@@ -35,19 +35,10 @@ from app.ingest.source_retention import (
 )
 from app.ingest.s2_diff import plan_s2_diffs, record_s2_diff_plan
 from app.ingest.s2_datasets_api import SemanticScholarDatasetsApiError
-from app.corpus.cli import (
-    enqueue_corpus_selection_phase_requests,
-    enqueue_corpus_selection_request,
-    enqueue_evidence_wave_request,
-    parse_corpus_selection_request,
-    parse_evidence_wave_request,
-)
-from app.corpus.runtime import (
-    dispatch_evidence_wave as run_evidence_wave_dispatch,
-    run_corpus_selection,
-)
+from app.corpus.main_commands import add_corpus_command_parsers, handle_corpus_command
 from app.evidence.cli import enqueue_paper_text_request, parse_paper_text_request
 from app.evidence.runtime import acquire_paper_text
+from app.pmc_fulltext.cli import add_pmc_fulltext_command_parsers, handle_pmc_fulltext_command
 from app.enrichment.cli import (
     enqueue_pubmed_metadata_enrichment_request,
     enqueue_s2_graph_enrichment_request,
@@ -222,98 +213,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("USER"),
     )
 
-    enqueue_corpus_selection_parser = subparsers.add_parser(
-        "enqueue-corpus-selection",
-        help="Validate and enqueue one release-pair corpus-selection request.",
-    )
-    enqueue_corpus_selection_parser.add_argument("s2_release_tag")
-    enqueue_corpus_selection_parser.add_argument("pt3_release_tag")
-    enqueue_corpus_selection_parser.add_argument("selector_version")
-    enqueue_corpus_selection_parser.add_argument("--force-new-run", action="store_true")
-    enqueue_corpus_selection_parser.add_argument(
-        "--requested-by",
-        default=os.environ.get("USER"),
-    )
-    enqueue_corpus_selection_parser.add_argument(
-        "--phase",
-        action="append",
-        dest="phases",
-        default=None,
-    )
-
-    dispatch_corpus_selection_parser = subparsers.add_parser(
-        "dispatch-corpus-selection",
-        help="Validate and enqueue the dispatch-triggered corpus-selection payload.",
-    )
-    dispatch_corpus_selection_parser.add_argument("s2_release_tag")
-    dispatch_corpus_selection_parser.add_argument("pt3_release_tag")
-    dispatch_corpus_selection_parser.add_argument("selector_version")
-    dispatch_corpus_selection_parser.add_argument("--force-new-run", action="store_true")
-    dispatch_corpus_selection_parser.add_argument(
-        "--requested-by",
-        default=os.environ.get("USER"),
-    )
-    dispatch_corpus_selection_parser.add_argument(
-        "--phase",
-        action="append",
-        dest="phases",
-        default=None,
-    )
-
-    run_corpus_selection_parser = subparsers.add_parser(
-        "run-corpus-selection-now",
-        help="Run one release-pair corpus-selection request directly in-process.",
-    )
-    run_corpus_selection_parser.add_argument("s2_release_tag")
-    run_corpus_selection_parser.add_argument("pt3_release_tag")
-    run_corpus_selection_parser.add_argument("selector_version")
-    run_corpus_selection_parser.add_argument("--force-new-run", action="store_true")
-    run_corpus_selection_parser.add_argument(
-        "--requested-by",
-        default=os.environ.get("USER"),
-    )
-    run_corpus_selection_parser.add_argument(
-        "--phase",
-        action="append",
-        dest="phases",
-        default=None,
-    )
-
-    enqueue_evidence_wave_parser = subparsers.add_parser(
-        "enqueue-evidence-wave",
-        help="Validate and enqueue one mapped-paper evidence child wave.",
-    )
-    enqueue_evidence_wave_parser.add_argument("s2_release_tag")
-    enqueue_evidence_wave_parser.add_argument("pt3_release_tag")
-    enqueue_evidence_wave_parser.add_argument("selector_version")
-    enqueue_evidence_wave_parser.add_argument(
-        "--wave-policy-key",
-        default="evidence_missing_pmc_bioc",
-    )
-    enqueue_evidence_wave_parser.add_argument("--force-new-run", action="store_true")
-    enqueue_evidence_wave_parser.add_argument(
-        "--requested-by",
-        default=os.environ.get("USER"),
-    )
-    enqueue_evidence_wave_parser.add_argument("--max-papers", type=int, default=None)
-
-    run_evidence_wave_parser = subparsers.add_parser(
-        "run-evidence-wave-now",
-        help="Run one mapped-paper evidence child wave directly in-process.",
-    )
-    run_evidence_wave_parser.add_argument("s2_release_tag")
-    run_evidence_wave_parser.add_argument("pt3_release_tag")
-    run_evidence_wave_parser.add_argument("selector_version")
-    run_evidence_wave_parser.add_argument(
-        "--wave-policy-key",
-        default="evidence_missing_pmc_bioc",
-    )
-    run_evidence_wave_parser.add_argument("--force-new-run", action="store_true")
-    run_evidence_wave_parser.add_argument(
-        "--requested-by",
-        default=os.environ.get("USER"),
-    )
-    run_evidence_wave_parser.add_argument("--max-papers", type=int, default=None)
+    add_corpus_command_parsers(subparsers)
+    add_pmc_fulltext_command_parsers(subparsers)
 
     enqueue_pubmed_metadata_parser = subparsers.add_parser(
         "enqueue-pubmed-metadata",
@@ -468,83 +369,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         print(asyncio.run(_run()))
         return 0
-    if args.command in {"enqueue-corpus-selection", "dispatch-corpus-selection"}:
-        request = parse_corpus_selection_request(
-            s2_release_tag=args.s2_release_tag,
-            pt3_release_tag=args.pt3_release_tag,
-            selector_version=args.selector_version,
-            force_new_run=args.force_new_run,
-            trigger="manual" if args.command == "enqueue-corpus-selection" else "dispatch",
-            requested_by=args.requested_by,
-            phase_allowlist=args.phases,
-        )
-        if args.command == "dispatch-corpus-selection":
-            enqueue_corpus_selection_phase_requests(request)
-        else:
-            enqueue_corpus_selection_request(request)
+    corpus_exit_code = handle_corpus_command(args, broker)
+    if corpus_exit_code is not None:
+        return corpus_exit_code
+    pmc_fulltext_exit_code = handle_pmc_fulltext_command(args)
+    if pmc_fulltext_exit_code is not None:
         broker.close()
-        return 0
-    if args.command == "run-corpus-selection-now":
-        request = parse_corpus_selection_request(
-            s2_release_tag=args.s2_release_tag,
-            pt3_release_tag=args.pt3_release_tag,
-            selector_version=args.selector_version,
-            force_new_run=args.force_new_run,
-            trigger="manual",
-            requested_by=args.requested_by,
-            phase_allowlist=args.phases,
-        )
-
-        async def _run() -> str:
-            pools = await open_pools(settings, names=("ingest_write",))
-            try:
-                return await run_corpus_selection(
-                    request,
-                    ingest_pool=pools.get("ingest_write"),
-                    runtime_settings=settings,
-                )
-            finally:
-                await pools.close()
-
-        print(asyncio.run(_run()))
-        return 0
-    if args.command == "enqueue-evidence-wave":
-        request = parse_evidence_wave_request(
-            s2_release_tag=args.s2_release_tag,
-            pt3_release_tag=args.pt3_release_tag,
-            selector_version=args.selector_version,
-            wave_policy_key=args.wave_policy_key,
-            force_new_run=args.force_new_run,
-            requested_by=args.requested_by,
-            max_papers=args.max_papers,
-        )
-        enqueue_evidence_wave_request(request)
-        broker.close()
-        return 0
-    if args.command == "run-evidence-wave-now":
-        request = parse_evidence_wave_request(
-            s2_release_tag=args.s2_release_tag,
-            pt3_release_tag=args.pt3_release_tag,
-            selector_version=args.selector_version,
-            wave_policy_key=args.wave_policy_key,
-            force_new_run=args.force_new_run,
-            requested_by=args.requested_by,
-            max_papers=args.max_papers,
-        )
-
-        async def _run() -> str:
-            pools = await open_pools(settings, names=("ingest_write",))
-            try:
-                return await run_evidence_wave_dispatch(
-                    request,
-                    ingest_pool=pools.get("ingest_write"),
-                    runtime_settings=settings,
-                )
-            finally:
-                await pools.close()
-
-        print(asyncio.run(_run()))
-        return 0
+        return pmc_fulltext_exit_code
     if args.command == "enqueue-pubmed-metadata":
         request = parse_pubmed_metadata_enrichment_request(
             corpus_selection_run_id=args.corpus_selection_run_id,

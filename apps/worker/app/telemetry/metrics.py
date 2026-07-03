@@ -206,6 +206,23 @@ PAPER_TEXT_INPROGRESS = Gauge(
     multiprocess_mode="livesum",
 )
 
+ENRICHMENT_API_REQUESTS_TOTAL = Counter(
+    "enrichment_api_requests_total",
+    "External enrichment API requests by provider, outcome, and status code.",
+    ["provider", "outcome", "status_code"],
+)
+ENRICHMENT_API_REQUEST_DURATION_SECONDS = Histogram(
+    "enrichment_api_request_duration_seconds",
+    "External enrichment API request wall-clock duration.",
+    ["provider", "outcome"],
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, float("inf")),
+)
+ENRICHMENT_API_REQUESTED_RECORDS_TOTAL = Counter(
+    "enrichment_api_requested_records_total",
+    "External enrichment API input records requested by provider and outcome.",
+    ["provider", "outcome"],
+)
+
 
 @dataclass(slots=True)
 class ActiveRunTracker:
@@ -515,6 +532,19 @@ def record_evidence_text_document_rows(
 
 def record_evidence_text_failure(*, failure_class: str) -> None:
     PAPER_TEXT_FAILURES_TOTAL.labels(failure_class).inc()
+
+
+def observe_enrichment_api_request(
+    *,
+    provider: str,
+    outcome: str,
+    status_code: str,
+    duration_seconds: float,
+    requested_records: int,
+) -> None:
+    ENRICHMENT_API_REQUESTS_TOTAL.labels(provider, outcome, status_code).inc()
+    ENRICHMENT_API_REQUEST_DURATION_SECONDS.labels(provider, outcome).observe(duration_seconds)
+    ENRICHMENT_API_REQUESTED_RECORDS_TOTAL.labels(provider, outcome).inc(requested_records)
 
 
 @asynccontextmanager

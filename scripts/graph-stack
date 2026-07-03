@@ -404,7 +404,19 @@ main() {
     clean) clean_session ;;
     status) status_session ;;
     attach) attach_session ;;
-    phone) bash "${ROOT_DIR}/scripts/phone-dev" dev "${@:2}" ;;
+    phone)
+      case "${2:-}" in
+        "")
+          bash "${ROOT_DIR}/scripts/phone-dev" dev
+          ;;
+        dev|open|set-port|status|-h|--help|help)
+          bash "${ROOT_DIR}/scripts/phone-dev" "${@:2}"
+          ;;
+        *)
+          bash "${ROOT_DIR}/scripts/phone-dev" dev "${2}"
+          ;;
+      esac
+      ;;
     menu) interactive_menu ;;
     *)
       echo "Usage: $0 [start|stop|restart|clean|status|attach|phone [wireless-debug-port]]" >&2

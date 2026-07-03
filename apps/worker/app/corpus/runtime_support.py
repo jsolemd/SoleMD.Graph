@@ -31,6 +31,30 @@ def digest_payload(payload: dict) -> str:
     ).hexdigest()
 
 
+def corpus_selection_run_label(
+    *,
+    selector_version: str,
+    s2_release_tag: str,
+    pt3_release_tag: str,
+) -> str:
+    return f"{selector_version}:{s2_release_tag}:{pt3_release_tag}"
+
+
+def corpus_wave_run_label(
+    *,
+    wave_policy_key: str,
+    selector_version: str,
+    s2_release_tag: str,
+    pt3_release_tag: str,
+) -> str:
+    selection_label = corpus_selection_run_label(
+        selector_version=selector_version,
+        s2_release_tag=s2_release_tag,
+        pt3_release_tag=pt3_release_tag,
+    )
+    return f"{wave_policy_key}:{selection_label}"
+
+
 def emit_event(event_name: str, **fields: object) -> None:
     LOGGER.info("%s %s", event_name, json.dumps(fields, sort_keys=True, default=_json_default))
 

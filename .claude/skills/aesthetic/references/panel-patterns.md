@@ -24,6 +24,42 @@ import {
 } from "@/features/graph/components/panels/PanelShell";
 ```
 
+### Barrel exports (canonical surface)
+
+Verified against `apps/web/features/graph/components/panels/PanelShell/index.ts`:
+
+- **Shells / containers** — `PanelShell`, `PANEL_TOP`, `BottomTrayShell`,
+  `PopoverSurface`, `OverlaySurface`, `OverlayCard`, `MetaPill`,
+  `PanelSearchField`
+- **Header actions** — `PanelHeaderActions`, `PanelHeaderDivider`,
+  `PanelIconAction`, `PanelScaleControl`, `PanelWindowActions`
+- **Primitives** — `PanelBody`, `PanelDivider`, `PanelInlineLoader`,
+  `GatedSwitch`, plus `PANEL_BODY_INNER_CLASS`,
+  `PANEL_BODY_VIEWPORT_CLASS` for layout hooks
+- **Style objects** — surface tier (`panelSurfaceStyle`,
+  `promptSurfaceStyle`, `panelCardStyle`, `panelAccentCardStyle`,
+  `panelAccentCardEntityStyle`, `panelErrorStyle`,
+  `chromeFlushSurfaceStyle`, `chromePillSurfaceStyle`); text tier
+  (`panelTextStyle`, `panelTextMutedStyle`, `panelTextDimStyle`,
+  `panelChromeStyle`, `panelStatValueStyle`, `sectionLabelStyle`,
+  `panelTableHeaderStyle`, `panelMonoLabelStyle`); pills/badges
+  (`panelPillStyles`, `panelTypePillStyles`, `pillActiveColors`,
+  `pillInactiveColors`, `badgeAccentStyles`, `badgeOutlineStyles`);
+  controls (`panelSwitchStyles`, `switchLabelStyle`, `panelSelectStyles`,
+  `iconBtnStyles`, `panelIconBtnStyles`, `graphControlBtnStyles`,
+  `nativeIconBtnFrameStyle`, `nativeIconBtnInnerStyle`,
+  `disabledNativeIconBtnStyle`); class-name companions
+  (`panelCardClassName`, `panelAccentCardClassName`,
+  `panelAccentCardEntityClassName`)
+- **Scaling** — `panelScaledPx`, `createPanelScaleStyle`,
+  `PANEL_ACCENT`, `PANEL_SCALE_CSS_VAR`, `ChromeSurfaceMode` (type)
+- **Surface-styles set** — `compactSegmentedControlStyles`,
+  `insetCodeBlockStyle`, `insetTableFrameStyle`, `metaPillStyle`,
+  `overlayCardSurfaceStyle`, `overlayScrimStyle`, `overlayStrongScrimStyle`
+
+The `surface-lab/` subdirectory (`SurfaceLabPage`, `SurfaceLabReference`)
+is the rendered verification surface, not part of the styles barrel.
+
 ## Style Objects (from `panel-styles.ts`)
 
 ### Surfaces
@@ -55,7 +91,7 @@ import {
 |--------|-------|
 | `panelPillStyles` | 14×auto, 8px, mode-accent tint — Mantine `Badge` |
 | `panelTypePillStyles` | 14×auto, 8px, neutral tint — Mantine `Badge` |
-| `interactivePillBase` + `pillActiveColors` / `pillInactiveColors` | Raw-span pills (non-Mantine) |
+| `pillActiveColors` / `pillInactiveColors` | Raw-span pill color pairs (non-Mantine). The shared `interactivePillBase` shape lives in `panel-styles.ts` but is not re-exported through the barrel — co-locate it if you need it externally |
 | `badgeAccentStyles` / `badgeOutlineStyles` | Mantine Badge `styles` presets |
 
 ### Switches, selects
@@ -183,3 +219,39 @@ export function MyPanel() {
 ## Cosmograph Widget Hosting
 
 Wrap Cosmograph widgets (Timeline, Histogram, SizeLegend) inside a `PanelShell` using Mantine `Stack`/`Group` for layout. CSS vars on the panel cascade into the widget — no inline styles on the widget containers. If a widget needs to diverge from the cascade, override its `--cosmograph-<widget>-*` vars in `tokens.css` `html:root` — not on the component.
+
+## Container Queries — Docked / Floating / Fullscreen
+
+Panels swap modes (docked, popped-out, fullscreen) by changing their host
+width, not their viewport context. The canonical adaptive layout pattern
+inside a panel is therefore a CSS container query on the host, not a
+viewport media query.
+
+```tsx
+<PanelShell
+  className="@container/panel"
+  style={panelSurfaceStyle}
+>
+  <PanelBody>
+    <div className="grid grid-cols-1 gap-3 @sm/panel:grid-cols-2 @md/panel:grid-cols-3">
+      {/* internal layout adapts to PanelShell width, not viewport */}
+    </div>
+  </PanelBody>
+</PanelShell>
+```
+
+```css
+/* Equivalent in plain CSS */
+.panel-host {
+  container-type: inline-size;
+  container-name: panel;
+}
+
+@container panel (min-width: 480px) {
+  .panel-grid { grid-template-columns: 1fr 1fr; }
+}
+```
+
+Reach for media queries only when a layout decision genuinely depends on
+the device viewport (mobile shell vs. desktop shell). Inside a panel,
+container queries are the right primitive.

@@ -4,12 +4,15 @@ import dramatiq
 
 from app.config import settings
 from app.corpus.errors import (
+    CorpusQualityAuditAlreadyInProgress,
     CorpusSelectionAlreadyInProgress,
     CorpusSelectionAlreadyPublished,
     CorpusWaveAlreadyInProgress,
     CorpusWaveAlreadyPublished,
     MissingCuratedAssets,
     SelectionRunNotPublished,
+    SelectionSummaryRefreshAlreadyInProgress,
+    SelectionSummaryRefreshPrerequisiteMissing,
     SelectorPlanDrift,
     UnsupportedWavePolicy,
     UpstreamReleaseMissing,
@@ -19,11 +22,19 @@ from app.corpus.models import (
     CORPUS_SELECTION_PHASES,
     CorpusSelectionPhase,
     DispatchEvidenceWaveRequest,
+    StartCorpusQualityAuditRequest,
     StartCorpusSelectionRequest,
+    StartSelectionSummaryRefreshRequest,
+)
+from app.corpus.quality_audit import (
+    run_corpus_quality_audit as run_corpus_quality_audit_operation,
 )
 from app.corpus.runtime import (
     dispatch_evidence_wave as run_evidence_wave_dispatch,
     run_corpus_selection,
+)
+from app.corpus.summary_refresh import (
+    run_selection_summary_refresh as run_selection_summary_refresh_operation,
 )
 from app.db import ensure_worker_pools_open
 
@@ -38,6 +49,17 @@ SELECTION_PHASE_ACTOR_THROWS = (
 )
 CORPUS_SELECTION_ACTOR_TIME_LIMIT_MS = 6 * 60 * 60 * 1000
 CORPUS_WAVE_ACTOR_TIME_LIMIT_MS = 6 * 60 * 60 * 1000
+SUMMARY_REFRESH_ACTOR_THROWS = (
+    SelectionRunNotPublished,
+    SelectionSummaryRefreshAlreadyInProgress,
+    SelectionSummaryRefreshPrerequisiteMissing,
+    SelectorPlanDrift,
+)
+QUALITY_AUDIT_ACTOR_THROWS = (
+    CorpusQualityAuditAlreadyInProgress,
+    SelectionRunNotPublished,
+    SelectorPlanDrift,
+)
 
 
 async def _dispatch_evidence_wave_payload(payload: dict[str, object]) -> None:
@@ -178,5 +200,41 @@ async def run_selection_phase(**payload: object) -> None:
 )
 async def dispatch_evidence_wave_actor(**payload: object) -> None:
     await _dispatch_evidence_wave_payload(dict(payload))
+
+
+@dramatiq.actor(
+    actor_name="corpus.refresh_selection_summary",
+    queue_name="corpus",
+    max_retries=0,
+    time_limit=CORPUS_SELECTION_ACTOR_TIME_LIMIT_MS,
+    throws=SUMMARY_REFRESH_ACTOR_THROWS,
+)
+async def refresh_selection_summary_actor(**payload: object) -> None:
+    request = StartSelectionSummaryRefreshRequest.model_validate(payload)
+    pools = await ensure_worker_pools_open(settings, names=("ingest_write",))
+    await run_selection_summary_refresh_operation(
+        request,
+        ingest_pool=pools.get("ingest_write"),
+    )
+
+
+@dramatiq.actor(
+    actor_name="corpus.run_quality_audit",
+    queue_name="corpus",
+    max_retries=0,
+    time_limit=CORPUS_SELECTION_ACTOR_TIME_LIMIT_MS,
+    throws=QUALITY_AUDIT_ACTOR_THROWS,
+)
+async def run_quality_audit_actor(**payload: object) -> None:
+    request = StartCorpusQualityAuditRequest.model_validate(payload)
+    pools = await ensure_worker_pools_open(settings, names=("ingest_write",))
+    await run_corpus_quality_audit_operation(
+        request,
+        ingest_pool=pools.get("ingest_write"),
+    )
+
+
 dispatch_evidence_wave = dispatch_evidence_wave_actor
 dispatch_selection_phases = dispatch_selection_phases_actor
+refresh_selection_summary = refresh_selection_summary_actor
+run_quality_audit = run_quality_audit_actor

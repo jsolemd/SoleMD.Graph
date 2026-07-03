@@ -112,6 +112,53 @@ paper_text_acquisition_run_status:
   failed: 4
   aborted: 5
 
+pmc_fulltext_fetch_run_status:
+  running: running
+  complete: complete
+  failed: failed
+  aborted: aborted
+
+pmc_fulltext_source_provider:
+  pmc_oa: pmc_oa
+  pmc_oai: pmc_oai
+  pmc_bioc: pmc_bioc
+
+pmc_fulltext_document_status:
+  parsed: parsed
+  unavailable: unavailable
+  fetch_failed: fetch_failed
+  parse_failed: parse_failed
+
+pmc_fulltext_section_role:
+  unknown: unknown
+  abstract: abstract
+  introduction: introduction
+  methods: methods
+  materials: materials
+  subjects_population: subjects_population
+  results: results
+  discussion: discussion
+  conclusion: conclusion
+  limitations: limitations
+  case_report: case_report
+  data_availability: data_availability
+  ethics: ethics
+  funding: funding
+  conflict_of_interest: conflict_of_interest
+  acknowledgments: acknowledgments
+  author_contributions: author_contributions
+  supplement: supplement
+  references: references
+  other: other
+
+pmc_fulltext_passage_role:
+  abstract: abstract
+  body: body
+  figure_caption: figure_caption
+  table_caption: table_caption
+  table_body: table_body
+  other: other
+
 corpus_selection_run_status:
   started: 1
   assets: 2

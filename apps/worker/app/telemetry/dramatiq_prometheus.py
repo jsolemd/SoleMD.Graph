@@ -20,6 +20,18 @@ def _run_evidence_metrics_server() -> int:
     return _run_scope_metrics_server("evidence")
 
 
+def _run_enrichment_metrics_server() -> int:
+    return _run_scope_metrics_server("enrichment")
+
+
+def _run_s2_enrichment_metrics_server() -> int:
+    return _run_scope_metrics_server("enrichment_s2")
+
+
+def _run_pubmed_enrichment_metrics_server() -> int:
+    return _run_scope_metrics_server("enrichment_pubmed")
+
+
 def _run_cli_metrics_server() -> int:
     return _run_scope_metrics_server("cli")
 
@@ -28,6 +40,9 @@ _SCOPE_FORK_RUNNERS: dict[str, Callable[[], int]] = {
     "ingest": _run_ingest_metrics_server,
     "corpus": _run_corpus_metrics_server,
     "evidence": _run_evidence_metrics_server,
+    "enrichment": _run_enrichment_metrics_server,
+    "enrichment_s2": _run_s2_enrichment_metrics_server,
+    "enrichment_pubmed": _run_pubmed_enrichment_metrics_server,
     "cli": _run_cli_metrics_server,
 }
 

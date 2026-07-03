@@ -6,6 +6,9 @@ paper-text acquisition lanes now live here:
 - `app/main.py` owns the startup probe plus the operator CLI entrypoints
   (`check`, `enqueue-release`, `dispatch-manifest`,
   `enqueue-corpus-selection`, `run-corpus-selection-now`,
+  `enqueue-selection-summary-refresh`,
+  `run-selection-summary-refresh-now`,
+  `enqueue-corpus-quality-audit`, `run-corpus-quality-audit-now`,
   `enqueue-evidence-wave`, `run-evidence-wave-now`,
   `enqueue-evidence-text`, `run-evidence-text-now`,
   `enqueue-pubmed-metadata`, `run-pubmed-metadata-now`,
@@ -33,7 +36,7 @@ paper-text acquisition lanes now live here:
 - `app/corpus/` owns selection policies, curated asset materialization,
   release-pair planning, selection runtime orchestration, mapped promotion,
   reusable selection rollups, mapped-surface materialization, summary refresh,
-  and evidence-wave dispatch.
+  quality-audit snapshots, and evidence-wave dispatch.
 - `app/evidence/` owns the targeted paper-level evidence-text refresh lane
   backed by the PMC BioC API.
 - `app/actors/evidence.py` owns the paper-level actor
@@ -43,9 +46,13 @@ paper-text acquisition lanes now live here:
 - `app/enrichment/` owns mapped-paper metadata enrichment for PubMed EFetch and
   the Semantic Scholar Graph API.
 - `app/actors/enrichment.py` owns the mapped-paper metadata actors
-  `enrichment.pubmed_metadata` and `enrichment.s2_graph`.
-- `app/enrichment_worker.py` is the dedicated Dramatiq worker root for the
-  `enrichment` queue and binds only the `ingest_write` pool.
+  `enrichment.pubmed_metadata` and `enrichment.s2_graph`, on separate
+  provider queues so PubMed and S2 rate policies do not block each other.
+- `app/enrichment_worker.py` is the dedicated S2 Graph enrichment worker root
+  for the `enrichment_s2` queue and binds only the `ingest_write` pool.
+- `app/pubmed_enrichment_worker.py` is the dedicated PubMed metadata worker
+  root for the `enrichment_pubmed` queue and binds only the `ingest_write`
+  pool.
 
 Local commands from the repo root:
 
@@ -58,6 +65,10 @@ uv run --project apps/worker python -m app.main source-retention s2 2026-03-10
 uv run --project apps/worker python -m app.main s2-diff-plan 2026-03-10 latest --family papers
 uv run --project apps/worker python -m app.main enqueue-corpus-selection 2026-03-10 2026-03-21 v1
 uv run --project apps/worker python -m app.main run-corpus-selection-now 2026-03-10 2026-03-21 v1
+uv run --project apps/worker python -m app.main enqueue-selection-summary-refresh 019dd220-3f38-7684-9014-cd97657f05c5
+uv run --project apps/worker python -m app.main run-selection-summary-refresh-now 019dd220-3f38-7684-9014-cd97657f05c5
+uv run --project apps/worker python -m app.main enqueue-corpus-quality-audit 019dd220-3f38-7684-9014-cd97657f05c5 --sample-size 12
+uv run --project apps/worker python -m app.main run-corpus-quality-audit-now 019dd220-3f38-7684-9014-cd97657f05c5 --sample-size 12
 uv run --project apps/worker python -m app.main enqueue-evidence-wave 2026-03-10 2026-03-21 v1 --max-papers 100
 uv run --project apps/worker python -m app.main run-evidence-wave-now 2026-03-10 2026-03-21 v1 --max-papers 100
 uv run --project apps/worker python -m app.main enqueue-evidence-text 123456 --requested-by operator
@@ -67,7 +78,8 @@ uv run --project apps/worker python -m app.main enqueue-s2-graph-enrichment 019d
 dramatiq_queue_prefetch=1 POOL_INGEST_MIN=1 POOL_INGEST_MAX=8 INGEST_MAX_CONCURRENT_FILES=1 INGEST_MAX_CONCURRENT_BATCHES_PER_FILE=2 uv run --project apps/worker dramatiq app.ingest_worker --processes 8 --threads 1 --queues ingest ingest_file
 uv run --project apps/worker dramatiq app.corpus_worker --processes 1 --threads 1 --queues corpus
 uv run --project apps/worker dramatiq app.evidence_worker --processes 1 --threads 1 --queues evidence
-uv run --project apps/worker dramatiq app.enrichment_worker --processes 1 --threads 1 --queues enrichment
+uv run --project apps/worker dramatiq app.enrichment_worker --processes 1 --threads 1 --queues enrichment_s2
+uv run --project apps/worker dramatiq app.pubmed_enrichment_worker --processes 1 --threads 1 --queues enrichment_pubmed
 ```
 
 The `check` command verifies the current env contract can reach the local
@@ -120,11 +132,26 @@ executing the PMC BioC-backed refresh path.
 `enqueue-pubmed-metadata` / `run-pubmed-metadata-now` and
 `enqueue-s2-graph-enrichment` / `run-s2-graph-enrichment-now` use logged
 run/task ledgers, `FOR UPDATE SKIP LOCKED` claims, bounded attempts, and
-provider-specific request limits. PubMed EFetch uses POST batches up to 200
-PMIDs and `NCBI_API_KEY` when present, capped below the documented keyed rate.
-S2 Graph enrichment uses the batch paper endpoint, `x-api-key`, one request per
-second by default, and mapped-only task seeding. Run API-backed commands through
-`solemd op-run graph -- ...` so keys are injected without being written to disk.
+provider-specific queues and request limits. PubMed EFetch uses POST batches up
+to 200 PMIDs and requires `NCBI_API_EMAIL` plus `NCBI_API_TOOL` before it will run;
+with `NCBI_API_KEY` present, the client caps itself below the documented keyed
+rate. PubMed uses a schedule-aware cap: weekday peak hours use
+`PUBMED_METADATA_PEAK_REQUESTS_PER_SECOND` (default `1.0`), while weekends and
+9 PM-5 AM Eastern use `PUBMED_METADATA_REQUESTS_PER_SECOND` capped below the
+keyed provider limit. S2 Graph enrichment requires `S2_API_KEY`, uses the batch
+paper endpoint, `x-api-key`, one request per second by default, and mapped-only
+task seeding.
+Both enrichment run ledgers persist the effective non-secret provider contract
+in `detail`: provider name, endpoint, requested fields, batch size, configured
+and effective request rates, provider rate limit, timeout, attempts, and whether
+an API key/contact email was present. Prometheus metrics
+`enrichment_api_requests_total`, `enrichment_api_request_duration_seconds`, and
+`enrichment_api_requested_records_total` expose live API traffic by provider,
+outcome, and status code when the provider worker roots are scraped. Run API-backed
+commands through `solemd op-run graph -- ...` so keys are injected without being
+written to disk. Provider records that are validly absent are terminal
+`not_found` tasks, not API failures, so large sweeps can complete while still
+auditing stale IDs.
 Corpus selection builds run-scoped UNLOGGED rollups in `solemd_scratch` and
 tracks them in logged `solemd.corpus_selection_artifacts` rows, so a crash can
 resume from the current run rather than losing the scratch-table map. Mapped
@@ -140,6 +167,20 @@ older scratch tables after publish. `enqueue-corpus-selection` still enqueues on
 full release-pair job; `dispatch-corpus-selection` enqueues
 `corpus.dispatch_selection_phases`, which chains one phase per Dramatiq message
 through `corpus.run_selection_phase`.
+`enqueue-selection-summary-refresh` and `run-selection-summary-refresh-now`
+rerun only the `selection_summary` phase for a published selection run after the
+full PubMed and S2 Graph enrichment ledgers are complete. The operation validates
+that required scratch artifacts still exist, chooses the latest completed full
+provider runs unless explicit run IDs are supplied, resets only
+`selection_summary` chunks, and records the attempt in
+`solemd.corpus_selection_summary_refresh_runs` with pre/post summary counts and
+provider task counts.
+`enqueue-corpus-quality-audit` and `run-corpus-quality-audit-now` snapshot the
+refreshed `paper_selection_summary` into logged
+`solemd.corpus_quality_audit_runs` rows. The audit is run-scoped and stores
+quality distributions, relation diagnostics, top signal inventories, and
+deterministic paper samples for the next selector-calibration loop; it does not
+mutate corpus or mapped status.
 
 Telemetry is now worker-owned under `app/telemetry/`.
 
@@ -152,7 +193,8 @@ Telemetry is now worker-owned under `app/telemetry/`.
   `corpus -> .state/prometheus/corpus -> :9465`,
   `evidence -> .state/prometheus/evidence -> :9466`,
   `cli -> .state/prometheus/cli -> :9467`,
-  `enrichment -> .state/prometheus/enrichment -> :9468`.
+  `enrichment_s2 -> .state/prometheus/enrichment_s2 -> :9468`,
+  `enrichment_pubmed -> .state/prometheus/enrichment_pubmed -> :9469`.
 - The CLI uses its own `cli` multiprocess scope for direct runs/tests but is
   not a standing scrape target.
 - Leave `WORKER_METRICS_PORT` unset for local multi-root development. Setting

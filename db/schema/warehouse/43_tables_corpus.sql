@@ -344,7 +344,7 @@ CREATE TABLE IF NOT EXISTS solemd.pubmed_metadata_fetch_tasks (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (pubmed_metadata_fetch_run_id, pmid),
     CONSTRAINT ck_pubmed_metadata_fetch_tasks_status
-        CHECK (status IN ('pending', 'running', 'complete', 'failed')),
+        CHECK (status IN ('pending', 'running', 'complete', 'not_found', 'failed')),
     CONSTRAINT ck_pubmed_metadata_fetch_tasks_attempts
         CHECK (attempts >= 0)
 );
@@ -421,7 +421,7 @@ CREATE TABLE IF NOT EXISTS solemd.s2_graph_enrichment_tasks (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (s2_graph_enrichment_run_id, paper_id),
     CONSTRAINT ck_s2_graph_enrichment_tasks_status
-        CHECK (status IN ('pending', 'running', 'complete', 'failed')),
+        CHECK (status IN ('pending', 'running', 'complete', 'not_found', 'failed')),
     CONSTRAINT ck_s2_graph_enrichment_tasks_attempts
         CHECK (attempts >= 0)
 );
@@ -459,6 +459,79 @@ CREATE TABLE IF NOT EXISTS solemd.s2_paper_enrichment (
         CHECK (influential_citation_count >= 0)
 );
 ALTER TABLE solemd.s2_paper_enrichment SET (fillfactor = 90);
+
+CREATE TABLE IF NOT EXISTS solemd.corpus_selection_summary_refresh_runs (
+    corpus_selection_summary_refresh_run_id UUID PRIMARY KEY DEFAULT uuidv7(),
+    corpus_selection_run_id UUID NOT NULL
+        REFERENCES solemd.corpus_selection_runs (corpus_selection_run_id)
+        ON DELETE RESTRICT,
+    selector_version TEXT NOT NULL,
+    s2_graph_enrichment_run_id UUID
+        REFERENCES solemd.s2_graph_enrichment_runs (s2_graph_enrichment_run_id)
+        ON DELETE SET NULL,
+    pubmed_metadata_fetch_run_id UUID
+        REFERENCES solemd.pubmed_metadata_fetch_runs (pubmed_metadata_fetch_run_id)
+        ON DELETE SET NULL,
+    requested_by TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    plan_checksum TEXT NOT NULL,
+    summary_row_count BIGINT,
+    chunk_count INTEGER,
+    s2_enrichment_row_count BIGINT,
+    s2_not_found_count BIGINT,
+    pubmed_metadata_row_count BIGINT,
+    pubmed_not_found_count BIGINT,
+    pre_refresh_detail JSONB NOT NULL DEFAULT '{}'::JSONB,
+    post_refresh_detail JSONB NOT NULL DEFAULT '{}'::JSONB,
+    error_message TEXT,
+    CONSTRAINT ck_corpus_selection_summary_refresh_runs_status
+        CHECK (status IN ('running', 'complete', 'failed')),
+    CONSTRAINT ck_corpus_selection_summary_refresh_runs_counts
+        CHECK (
+            (summary_row_count IS NULL OR summary_row_count >= 0)
+            AND (chunk_count IS NULL OR chunk_count >= 1)
+            AND (s2_enrichment_row_count IS NULL OR s2_enrichment_row_count >= 0)
+            AND (s2_not_found_count IS NULL OR s2_not_found_count >= 0)
+            AND (pubmed_metadata_row_count IS NULL OR pubmed_metadata_row_count >= 0)
+            AND (pubmed_not_found_count IS NULL OR pubmed_not_found_count >= 0)
+        )
+);
+ALTER TABLE solemd.corpus_selection_summary_refresh_runs SET (fillfactor = 90);
+
+CREATE TABLE IF NOT EXISTS solemd.corpus_quality_audit_runs (
+    corpus_quality_audit_run_id UUID PRIMARY KEY DEFAULT uuidv7(),
+    corpus_selection_run_id UUID NOT NULL
+        REFERENCES solemd.corpus_selection_runs (corpus_selection_run_id)
+        ON DELETE RESTRICT,
+    selector_version TEXT NOT NULL,
+    requested_by TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    plan_checksum TEXT NOT NULL,
+    sample_size INTEGER NOT NULL DEFAULT 12,
+    summary_row_count BIGINT,
+    mapped_row_count BIGINT,
+    rag_eligible_row_count BIGINT,
+    distributions JSONB NOT NULL DEFAULT '{}'::JSONB,
+    relation_diagnostic JSONB NOT NULL DEFAULT '{}'::JSONB,
+    top_signals JSONB NOT NULL DEFAULT '{}'::JSONB,
+    samples JSONB NOT NULL DEFAULT '{}'::JSONB,
+    findings JSONB NOT NULL DEFAULT '[]'::JSONB,
+    error_message TEXT,
+    CONSTRAINT ck_corpus_quality_audit_runs_status
+        CHECK (status IN ('running', 'complete', 'failed')),
+    CONSTRAINT ck_corpus_quality_audit_runs_counts
+        CHECK (
+            sample_size BETWEEN 1 AND 50
+            AND (summary_row_count IS NULL OR summary_row_count >= 0)
+            AND (mapped_row_count IS NULL OR mapped_row_count >= 0)
+            AND (rag_eligible_row_count IS NULL OR rag_eligible_row_count >= 0)
+        )
+);
+ALTER TABLE solemd.corpus_quality_audit_runs SET (fillfactor = 90);
 
 CREATE TABLE IF NOT EXISTS solemd.corpus_wave_runs (
     corpus_wave_run_id UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -501,5 +574,222 @@ CREATE TABLE IF NOT EXISTS solemd.corpus_wave_members (
         CHECK (priority_score >= 0)
 );
 ALTER TABLE solemd.corpus_wave_members SET (fillfactor = 100);
+
+CREATE TABLE IF NOT EXISTS solemd.pmc_fulltext_fetch_runs (
+    pmc_fulltext_fetch_run_id UUID PRIMARY KEY DEFAULT uuidv7(),
+    requested_by TEXT,
+    selector_version TEXT NOT NULL,
+    source_order TEXT[] NOT NULL,
+    limit_count INTEGER,
+    requests_per_second NUMERIC(8, 3) NOT NULL DEFAULT 1.000,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'running',
+    candidate_count BIGINT NOT NULL DEFAULT 0,
+    unavailable_count BIGINT NOT NULL DEFAULT 0,
+    fetched_count BIGINT NOT NULL DEFAULT 0,
+    parsed_count BIGINT NOT NULL DEFAULT 0,
+    promoted_count BIGINT NOT NULL DEFAULT 0,
+    skipped_count BIGINT NOT NULL DEFAULT 0,
+    failed_count BIGINT NOT NULL DEFAULT 0,
+    run_config JSONB NOT NULL DEFAULT '{}'::JSONB,
+    qa_detail JSONB NOT NULL DEFAULT '{}'::JSONB,
+    error_message TEXT,
+    CONSTRAINT ck_pmc_fulltext_fetch_runs_status
+        CHECK (status IN ('running', 'complete', 'failed', 'aborted')),
+    CONSTRAINT ck_pmc_fulltext_fetch_runs_limit
+        CHECK (limit_count IS NULL OR limit_count >= 1),
+    CONSTRAINT ck_pmc_fulltext_fetch_runs_counts
+        CHECK (
+            candidate_count >= 0
+            AND unavailable_count >= 0
+            AND fetched_count >= 0
+            AND parsed_count >= 0
+            AND promoted_count >= 0
+            AND skipped_count >= 0
+            AND failed_count >= 0
+        )
+);
+ALTER TABLE solemd.pmc_fulltext_fetch_runs SET (fillfactor = 90);
+
+CREATE TABLE IF NOT EXISTS solemd.pmc_fulltext_documents (
+    pmc_fulltext_document_id UUID PRIMARY KEY DEFAULT uuidv7(),
+    pmc_fulltext_fetch_run_id UUID
+        REFERENCES solemd.pmc_fulltext_fetch_runs (pmc_fulltext_fetch_run_id)
+        ON DELETE SET NULL,
+    corpus_id BIGINT NOT NULL
+        REFERENCES solemd.corpus (corpus_id)
+        ON DELETE CASCADE,
+    pmcid TEXT NOT NULL,
+    source_provider TEXT NOT NULL,
+    source_url TEXT,
+    source_package_path TEXT,
+    source_checksum TEXT NOT NULL,
+    parser_name TEXT NOT NULL,
+    parser_version TEXT NOT NULL,
+    license TEXT,
+    license_url TEXT,
+    license_source_provider TEXT,
+    status TEXT NOT NULL,
+    error_reason TEXT,
+    fetched_at TIMESTAMPTZ,
+    parsed_at TIMESTAMPTZ,
+    is_current BOOLEAN NOT NULL DEFAULT true,
+    passage_count INTEGER NOT NULL DEFAULT 0,
+    retrievable_passage_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_pmc_fulltext_documents_source
+        UNIQUE (pmcid, source_provider, source_checksum, parser_version),
+    CONSTRAINT ck_pmc_fulltext_documents_provider
+        CHECK (source_provider IN ('pmc_oa', 'pmc_oai', 'pmc_bioc')),
+    CONSTRAINT ck_pmc_fulltext_documents_status
+        CHECK (status IN ('parsed', 'unavailable', 'fetch_failed', 'parse_failed')),
+    CONSTRAINT ck_pmc_fulltext_documents_counts
+        CHECK (passage_count >= 0 AND retrievable_passage_count >= 0)
+);
+ALTER TABLE solemd.pmc_fulltext_documents SET (fillfactor = 90);
+ALTER TABLE solemd.pmc_fulltext_documents ALTER COLUMN error_reason SET COMPRESSION lz4;
+
+CREATE TABLE IF NOT EXISTS solemd.pmc_fulltext_sections (
+    pmc_fulltext_section_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    pmc_fulltext_document_id UUID NOT NULL
+        REFERENCES solemd.pmc_fulltext_documents (pmc_fulltext_document_id)
+        ON DELETE CASCADE,
+    corpus_id BIGINT NOT NULL
+        REFERENCES solemd.corpus (corpus_id)
+        ON DELETE CASCADE,
+    pmcid TEXT NOT NULL,
+    section_ordinal INTEGER NOT NULL,
+    parent_section_ordinal INTEGER,
+    section_ordinal_path TEXT NOT NULL,
+    title TEXT,
+    section_label TEXT,
+    depth INTEGER NOT NULL,
+    section_type TEXT,
+    section_role TEXT NOT NULL DEFAULT 'unknown',
+    section_role_codes TEXT[] NOT NULL DEFAULT ARRAY['unknown']::TEXT[],
+    section_role_confidence NUMERIC(4, 3) NOT NULL DEFAULT 0.000,
+    section_role_source TEXT NOT NULL DEFAULT 'unknown',
+    source_type TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_pmc_fulltext_sections_ordinal
+        UNIQUE (pmc_fulltext_document_id, section_ordinal),
+    CONSTRAINT uq_pmc_fulltext_sections_path
+        UNIQUE (pmc_fulltext_document_id, section_ordinal_path),
+    CONSTRAINT ck_pmc_fulltext_sections_depth
+        CHECK (depth >= 0),
+    CONSTRAINT ck_pmc_fulltext_sections_role
+        CHECK (
+            section_role IN (
+                'unknown',
+                'abstract',
+                'introduction',
+                'methods',
+                'materials',
+                'subjects_population',
+                'results',
+                'discussion',
+                'conclusion',
+                'limitations',
+                'case_report',
+                'data_availability',
+                'ethics',
+                'funding',
+                'conflict_of_interest',
+                'acknowledgments',
+                'author_contributions',
+                'supplement',
+                'references',
+                'other'
+            )
+        ),
+    CONSTRAINT ck_pmc_fulltext_sections_role_codes
+        CHECK (
+            cardinality(section_role_codes) >= 1
+            AND section_role_codes <@ ARRAY[
+                'unknown',
+                'abstract',
+                'introduction',
+                'methods',
+                'materials',
+                'subjects_population',
+                'results',
+                'discussion',
+                'conclusion',
+                'limitations',
+                'case_report',
+                'data_availability',
+                'ethics',
+                'funding',
+                'conflict_of_interest',
+                'acknowledgments',
+                'author_contributions',
+                'supplement',
+                'references',
+                'other'
+            ]::TEXT[]
+        ),
+    CONSTRAINT ck_pmc_fulltext_sections_role_confidence
+        CHECK (section_role_confidence >= 0.000 AND section_role_confidence <= 1.000),
+    CONSTRAINT ck_pmc_fulltext_sections_role_source
+        CHECK (btrim(section_role_source) <> '')
+);
+ALTER TABLE solemd.pmc_fulltext_sections SET (fillfactor = 100);
+ALTER TABLE solemd.pmc_fulltext_sections ALTER COLUMN title SET COMPRESSION lz4;
+
+CREATE TABLE IF NOT EXISTS solemd.pmc_fulltext_passages (
+    pmc_fulltext_passage_id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    pmc_fulltext_document_id UUID NOT NULL
+        REFERENCES solemd.pmc_fulltext_documents (pmc_fulltext_document_id)
+        ON DELETE CASCADE,
+    corpus_id BIGINT NOT NULL
+        REFERENCES solemd.corpus (corpus_id)
+        ON DELETE CASCADE,
+    pmcid TEXT NOT NULL,
+    section_ordinal INTEGER NOT NULL,
+    section_ordinal_path TEXT NOT NULL,
+    passage_ordinal INTEGER NOT NULL,
+    passage_role TEXT NOT NULL,
+    source_type TEXT,
+    text TEXT NOT NULL,
+    char_count INTEGER NOT NULL,
+    token_estimate INTEGER NOT NULL,
+    text_checksum TEXT NOT NULL,
+    is_retrievable BOOLEAN NOT NULL DEFAULT true,
+    parser_name TEXT NOT NULL,
+    parser_version TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_pmc_fulltext_passages_ordinal
+        UNIQUE (pmc_fulltext_document_id, passage_ordinal),
+    CONSTRAINT ck_pmc_fulltext_passages_role
+        CHECK (
+            passage_role IN (
+                'abstract',
+                'body',
+                'figure_caption',
+                'table_caption',
+                'table_body',
+                'other'
+            )
+        ),
+    CONSTRAINT ck_pmc_fulltext_passages_counts
+        CHECK (char_count > 0 AND token_estimate >= 1)
+);
+ALTER TABLE solemd.pmc_fulltext_passages SET (fillfactor = 100);
+ALTER TABLE solemd.pmc_fulltext_passages ALTER COLUMN text SET COMPRESSION lz4;
+
+ALTER TABLE solemd.paper_selection_summary
+    ADD COLUMN IF NOT EXISTS pmc_fulltext_document_id UUID
+        REFERENCES solemd.pmc_fulltext_documents (pmc_fulltext_document_id)
+        ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS pmc_fulltext_passage_count INTEGER,
+    ADD COLUMN IF NOT EXISTS pmc_fulltext_promoted_at TIMESTAMPTZ;
+
+ALTER TABLE solemd.paper_selection_summary
+    DROP CONSTRAINT IF EXISTS ck_paper_selection_summary_pmc_passage_count;
+ALTER TABLE solemd.paper_selection_summary
+    ADD CONSTRAINT ck_paper_selection_summary_pmc_passage_count
+        CHECK (pmc_fulltext_passage_count IS NULL OR pmc_fulltext_passage_count >= 0);
 
 RESET ROLE;

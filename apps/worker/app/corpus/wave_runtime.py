@@ -30,6 +30,7 @@ from app.corpus.runtime_support import (
     CORPUS_WAVE_STATUS_MEMBER_SELECTION,
     CORPUS_WAVE_STATUS_PUBLISHED,
     CORPUS_WAVE_STATUS_STARTED,
+    corpus_wave_run_label,
     digest_payload,
     emit_event,
     utc_now_iso,
@@ -87,9 +88,11 @@ async def dispatch_evidence_wave(
                 async with track_active_worker_run(
                     worker_scope="corpus",
                     run_kind="evidence_wave",
-                    run_label=(
-                        f"{request.wave_policy_key}:{request.selector_version}:"
-                        f"{request.s2_release_tag}:{request.pt3_release_tag}"
+                    run_label=corpus_wave_run_label(
+                        wave_policy_key=request.wave_policy_key,
+                        selector_version=request.selector_version,
+                        s2_release_tag=request.s2_release_tag,
+                        pt3_release_tag=request.pt3_release_tag,
                     ),
                     selector_version=request.selector_version,
                     wave_policy_key=request.wave_policy_key,

@@ -15,6 +15,8 @@ _SCOPE_PORT_OFFSETS = {
     "evidence": 2,
     "cli": 3,
     "enrichment": 4,
+    "enrichment_s2": 4,
+    "enrichment_pubmed": 5,
 }
 
 

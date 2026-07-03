@@ -66,8 +66,15 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
   - `solemd.s2_graph_enrichment_runs`
   - `solemd.s2_graph_enrichment_tasks`
   - `solemd.s2_paper_enrichment`
+  - `solemd.corpus_selection_summary_refresh_runs`
+  - `solemd.corpus_quality_audit_runs`
   - `solemd.corpus_wave_runs`
   - `solemd.corpus_wave_members`
+- PMC full-text enrichment lineage and normalized retrieval materialization:
+  - `solemd.pmc_fulltext_fetch_runs`
+  - `solemd.pmc_fulltext_documents`
+  - `solemd.pmc_fulltext_sections`
+  - `solemd.pmc_fulltext_passages`
 - evidence-text audit surface for warehouse-local quality review:
   - `solemd.paper_text_contract_audit`
 - chunking hardening on the same stock-PG surface:

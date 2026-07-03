@@ -238,7 +238,7 @@ export abstract class FieldController {
     isMobile: boolean,
     pointTexture: Texture,
     lightMode = 0,
-    options: { scopeDimEnabled?: boolean } = {},
+    options: { initialAlpha?: number; scopeDimEnabled?: boolean } = {},
   ): LayerUniforms {
     const preset = this.params;
     const { shader } = preset;
@@ -255,7 +255,7 @@ export abstract class FieldController {
       uScale: { value: 1 / preset.sceneScale },
       uSpeed: { value: shader.speed },
       uSize: { value: shader.size },
-      uAlpha: { value: shader.alpha },
+      uAlpha: { value: options.initialAlpha ?? shader.alpha },
       uDepth: { value: shader.depth },
       uAmplitude: { value: shader.amplitude },
       uFrequency: { value: shader.frequency },

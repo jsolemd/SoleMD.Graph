@@ -13,8 +13,18 @@
  */
 
 import { act } from "react";
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import type { MutableRefObject } from "react";
+
+type MockFrameState = {
+  camera: { fov: number; position: { z: number } };
+  gl: {
+    domElement: { height: number; width: number };
+    getPixelRatio: () => number;
+  };
+};
+
+const mockFrameCallbacks: Array<(state: MockFrameState, delta: number) => void> = [];
 
 // --- Mock @react-three/fiber ----------------------------------------------
 // FieldScene calls useThree to read viewport size and useFrame to drive per
@@ -24,9 +34,9 @@ import type { MutableRefObject } from "react";
 jest.mock("@react-three/fiber", () => ({
   useThree: (selector: (state: unknown) => unknown) =>
     selector({ size: { width: 1200, height: 800 } }),
-  // Capture frame callbacks but never invoke them — unit test is about
-  // mount/unmount lifecycle, not per-frame behaviour.
-  useFrame: () => {},
+  useFrame: (callback: (state: MockFrameState, delta: number) => void) => {
+    mockFrameCallbacks.push(callback);
+  },
 }));
 
 // --- Mock Mantine color scheme --------------------------------------------
@@ -58,13 +68,32 @@ jest.mock("three", () => {
 function makeFakeController(id: string) {
   return {
     id,
+    params: {
+      shader: {
+        alpha: 1,
+        alphaMobile: 1,
+      },
+    },
     destroy: jest.fn(),
     setPointSource: jest.fn(),
-    attach: jest.fn(),
-    createLayerUniforms: jest.fn(() => ({
+    attach: jest.fn(function (
+      this: Record<string, unknown>,
+      attachment: Record<string, unknown>,
+    ) {
+      Object.assign(this, attachment);
+    }),
+    createLayerUniforms: jest.fn((
+      _isMobile: boolean,
+      _pointTexture: unknown,
+      _lightMode = 0,
+      options: { initialAlpha?: number } = {},
+    ) => ({
+      uAlpha: { value: options.initialAlpha ?? 1 },
       uIsMobile: { value: false },
       uLightMode: { value: 0 },
     })),
+    tick: jest.fn(),
+    projectHotspots: jest.fn(),
   };
 }
 
@@ -104,6 +133,7 @@ jest.mock("../../asset/point-source-registry", () => {
     aFunnelStartShift: new Float32Array(1),
     aFunnelEndShift: new Float32Array(1),
     aBucket: new Float32Array(1),
+    aClickPack: new Float32Array(4),
   };
   const source = {
     buffers,
@@ -129,9 +159,9 @@ jest.mock("../../scene/visual-presets", () => ({
   FIELD_STAGE_ITEM_IDS: ["blob", "stream", "objectFormation"] as const,
   DEFAULT_FIELD_SCENE: {
     items: {
-      blob: {},
-      stream: {},
-      objectFormation: {},
+      blob: { visibility: 1 },
+      stream: { visibility: 0 },
+      objectFormation: { visibility: 0 },
     },
   },
   visualPresets: { blob: {}, stream: {}, objectFormation: {} },
@@ -142,9 +172,11 @@ jest.mock("../field-shaders", () => ({
   FIELD_VERTEX_SHADER: "void main(){}",
   FIELD_FRAGMENT_SHADER: "void main(){}",
 }));
+const mockFieldClockTick = jest.fn();
+const mockGetFieldElapsedSeconds = jest.fn(() => 0);
 jest.mock("../field-loop-clock", () => ({
-  fieldLoopClock: { tick: () => {} },
-  getFieldElapsedSeconds: () => 0,
+  fieldLoopClock: { tick: (dtSec: number) => mockFieldClockTick(dtSec) },
+  getFieldElapsedSeconds: () => mockGetFieldElapsedSeconds(),
 }));
 
 // --- Mock breakpoints -----------------------------------------------------
@@ -176,6 +208,7 @@ afterAll(() => {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockFrameCallbacks.length = 0;
 });
 
 // Import AFTER mocks are registered so FieldScene picks up the stubs.
@@ -191,7 +224,47 @@ function renderScene() {
   );
 }
 
+function runFieldFrame() {
+  act(() => {
+    for (const callback of mockFrameCallbacks) {
+      callback(
+        {
+          camera: { fov: 45, position: { z: 400 } },
+          gl: {
+            domElement: { height: 800, width: 1200 },
+            getPixelRatio: () => 1,
+          },
+        },
+        1 / 60,
+      );
+    }
+  });
+}
+
 describe("FieldScene WebGL dispose lifecycle", () => {
+  it("initializes hidden non-hero layers from scene visibility", () => {
+    renderScene();
+
+    expect(blobFake.createLayerUniforms).toHaveBeenCalledWith(
+      false,
+      fakePointTexture,
+      0,
+      expect.objectContaining({ initialAlpha: 1, scopeDimEnabled: true }),
+    );
+    expect(streamFake.createLayerUniforms).toHaveBeenCalledWith(
+      false,
+      fakePointTexture,
+      0,
+      expect.objectContaining({ initialAlpha: 0 }),
+    );
+    expect(objectFormationFake.createLayerUniforms).toHaveBeenCalledWith(
+      false,
+      fakePointTexture,
+      0,
+      expect.objectContaining({ initialAlpha: 0 }),
+    );
+  });
+
   it("calls controller.destroy() exactly once per controller on unmount", () => {
     const { unmount } = renderScene();
 
@@ -239,8 +312,23 @@ describe("FieldScene WebGL dispose lifecycle", () => {
   });
 });
 
-describe("FieldScene effect dep stability", () => {
-  it("does not re-invoke controller.attach on every render commit", () => {
+describe("FieldScene stage-ready gating", () => {
+  // Contract: pre-ready frames must not start the module clock (the epoch is
+  // set by the first getFieldElapsedSeconds call). If the clock accrues while
+  // the landing chunk is still loading, BlobController's 1.4 s sphere-
+  // formation intro completes invisibly and the orb never forms on screen.
+  it("neither ticks nor reads the field clock before stageReady", () => {
+    renderScene();
+    runFieldFrame();
+
+    expect(mockFieldClockTick).not.toHaveBeenCalled();
+    expect(mockGetFieldElapsedSeconds).not.toHaveBeenCalled();
+    expect(blobFake.tick).not.toHaveBeenCalled();
+    expect(streamFake.tick).not.toHaveBeenCalled();
+    expect(objectFormationFake.tick).not.toHaveBeenCalled();
+  });
+
+  it("starts the clock and controller ticks on the first stage-ready frame", () => {
     const sceneStateRef: MutableRefObject<FieldSceneState> = {
       current: {
         items: { blob: {}, stream: {}, objectFormation: {} },
@@ -249,13 +337,54 @@ describe("FieldScene effect dep stability", () => {
     const { rerender } = render(
       <FieldScene sceneStateRef={sceneStateRef} stageReady={false} />,
     );
+    runFieldFrame();
+    expect(mockFieldClockTick).not.toHaveBeenCalled();
 
-    const attachAfterFirstRender = blobFake.attach.mock.calls.length;
+    rerender(<FieldScene sceneStateRef={sceneStateRef} stageReady={true} />);
+    runFieldFrame();
+
+    expect(mockFieldClockTick).toHaveBeenCalledTimes(1);
+    expect(mockGetFieldElapsedSeconds).toHaveBeenCalled();
+    expect(blobFake.tick).toHaveBeenCalledTimes(1);
+    expect(streamFake.tick).toHaveBeenCalledTimes(1);
+    expect(objectFormationFake.tick).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("FieldScene effect dep stability", () => {
+  it("attaches controllers when refs commit and not on every render", async () => {
+    const sceneStateRef: MutableRefObject<FieldSceneState> = {
+      current: {
+        items: { blob: {}, stream: {}, objectFormation: {} },
+      } as unknown as FieldSceneState,
+    };
+    const onControllerReady = jest.fn();
+    const { rerender } = render(
+      <FieldScene
+        onControllerReady={onControllerReady}
+        sceneStateRef={sceneStateRef}
+        stageReady={false}
+      />,
+    );
+    runFieldFrame();
+
+    await waitFor(() => {
+      expect(blobFake.attach).toHaveBeenCalled();
+      expect(streamFake.attach).toHaveBeenCalled();
+      expect(objectFormationFake.attach).toHaveBeenCalled();
+    });
+    expect(onControllerReady).toHaveBeenCalledTimes(3);
+
+    const attachAfterRefsCommit = blobFake.attach.mock.calls.length;
 
     // Force several renders without changing any identity-stable prop.
     for (let i = 0; i < 5; i += 1) {
       rerender(
-        <FieldScene sceneStateRef={sceneStateRef} stageReady={false} />,
+        <FieldScene
+          onControllerReady={onControllerReady}
+          sceneStateRef={sceneStateRef}
+          stageReady={false}
+        />,
       );
     }
 
@@ -263,6 +392,7 @@ describe("FieldScene effect dep stability", () => {
     // every commit (5 extra invocations). With proper deps, no extra calls
     // should fire because activeIdSet, controllers, and onControllerReady
     // are all stable.
-    expect(blobFake.attach.mock.calls.length).toBe(attachAfterFirstRender);
+    expect(blobFake.attach.mock.calls.length).toBe(attachAfterRefsCommit);
+    expect(onControllerReady).toHaveBeenCalledTimes(3);
   });
 });

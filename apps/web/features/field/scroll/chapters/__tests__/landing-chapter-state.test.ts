@@ -11,6 +11,14 @@ function setChapterProgress(progress: number) {
 }
 
 describe("landing chapter state", () => {
+  it("opens the hero at the baseline contained-orb state", () => {
+    const sceneState = createFieldSceneState();
+
+    const firstPaintState = resolveLandingBlobChapterState(sceneState);
+    expect(firstPaintState.wrapperScale).toBe(1);
+    expect(firstPaintState.alpha).toBe(visualPresets.blob.shader.alpha);
+  });
+
   it("builds blob model rotation through hero, surface rail, and story one before story two takes over", () => {
     const sceneState = createFieldSceneState();
 

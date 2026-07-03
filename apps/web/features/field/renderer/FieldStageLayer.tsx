@@ -5,8 +5,9 @@ import {
   type Group,
   type Points,
   type ShaderMaterial,
+  type ShaderMaterialParameters,
 } from "three";
-import type { MutableRefObject } from "react";
+import { useCallback, useMemo, type MutableRefObject } from "react";
 import type { LayerUniforms } from "../controller/FieldController";
 import type { FieldPointSource } from "../asset/point-source-types";
 import {
@@ -37,6 +38,30 @@ function resolveFieldBlending() {
   }
 }
 
+export function createFieldStageMaterialArgs(
+  uniforms: LayerUniforms,
+): [ShaderMaterialParameters] {
+  return [
+    {
+      blending: resolveFieldBlending(),
+      depthTest: false,
+      depthWrite: false,
+      fragmentShader: FIELD_FRAGMENT_SHADER,
+      transparent: true,
+      uniforms,
+      vertexShader: FIELD_VERTEX_SHADER,
+    },
+  ];
+}
+
+export function attachHiddenStageWrapper(
+  handles: StageLayerHandle,
+  node: Group | null,
+) {
+  handles.wrapper.current = node;
+  if (node) node.visible = false;
+}
+
 export function FieldStageLayer({
   handles,
   source,
@@ -48,8 +73,33 @@ export function FieldStageLayer({
 }) {
   const { buffers } = source;
 
+  // The uniforms bag must reach the material through the ShaderMaterial
+  // CONSTRUCTOR, never through the R3F `uniforms` prop: since R3F 9.6,
+  // applyProps clones every uniform record passed as a prop ("stable
+  // target reference"), which severs the by-reference contract this
+  // runtime depends on — controllers write `.value` on the shared
+  // LayerUniforms records each tick and the GPU must read those same
+  // records. Constructor adoption is three.js core behavior and is
+  // outside applyProps' reach.
+  const materialArgs = useMemo<[ShaderMaterialParameters]>(
+    () => createFieldStageMaterialArgs(uniforms),
+    [uniforms],
+  );
+  const setWrapperRef = useCallback(
+    (node: Group | null) => attachHiddenStageWrapper(handles, node),
+    [handles],
+  );
+
   return (
-    <group ref={handles.wrapper} position={[0, 0, 0]} scale={[1, 1, 1]}>
+    // The callback ref is the first-paint gate: hide once when the wrapper
+    // first attaches, then let controller ticks own wrapper.visible from
+    // itemState visibility. Frames rendered before the stage is ready would
+    // otherwise paint the raw, unscaled full-alpha point cloud.
+    <group
+      ref={setWrapperRef}
+      position={[0, 0, 0]}
+      scale={[1, 1, 1]}
+    >
       <group ref={handles.mouseWrapper}>
         <group ref={handles.model}>
           <points ref={handles.points} frustumCulled={false}>
@@ -69,16 +119,7 @@ export function FieldStageLayer({
               <bufferAttribute attach="attributes-aBucket" args={[buffers.aBucket, 1]} />
               <bufferAttribute attach="attributes-aClickPack" args={[buffers.aClickPack, 4]} />
             </bufferGeometry>
-            <shaderMaterial
-              ref={handles.material}
-              transparent
-              depthTest={false}
-              depthWrite={false}
-              blending={resolveFieldBlending()}
-              uniforms={uniforms}
-              vertexShader={FIELD_VERTEX_SHADER}
-              fragmentShader={FIELD_FRAGMENT_SHADER}
-            />
+            <shaderMaterial ref={handles.material} args={materialArgs} />
           </points>
         </group>
       </group>

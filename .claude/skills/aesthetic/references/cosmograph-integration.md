@@ -48,9 +48,13 @@ Mantine's `cssVariablesResolver` could theoretically inject `--cosmograph-*` var
 
 ---
 
-## The 9 Base Variables
+## The 7 Base Variables (+ 2 derived size tokens)
 
-Cosmograph defines ~76 CSS variables total. But almost all derive from these 9 base vars. Override the bases, and 67 widget-specific vars update automatically.
+Cosmograph defines ~76 CSS variables total. Almost all derive from these
+**7 ui base vars**. Override the 7 bases, and 67+ widget-specific vars
+update automatically. Two additional density-scaled font-size tokens
+extend the base set, for a practical "9 things to override at the top of
+`html:root`."
 
 | Base Variable | Cosmograph Default | Our Override | Purpose |
 |---|---|---|---|
@@ -62,7 +66,7 @@ Cosmograph defines ~76 CSS variables total. But almost all derive from these 9 b
 | `--cosmograph-ui-font-family` | `inherit` | `var(--font-sans)` | All widget fonts |
 | `--cosmograph-ui-font-size` | `12px` | `calc(11px * var(--app-density))` | Base font size (density-scaled) |
 | `--cosmograph-ui-tick-font-size` | `11px` | `calc(10px * var(--app-density))` | Axis tick labels (density-scaled) |
-| `--cosmograph-scrollbar-background` | `rgba(255,255,255,0.1)` | `rgba(0,0,0,0.08)` | Custom scrollbar thumb |
+| `--cosmograph-scrollbar-background` | `rgba(255,255,255,0.1)` | `rgba(0,0,0,0.08)` (light) / `rgba(255,255,255,0.10)` (dark) | Custom scrollbar thumb |
 
 **Key insight**: Cosmograph defaults to dark mode. There is NO built-in light/dark toggle. Our overrides point at semantic tokens (`--surface`, `--text-primary`) that auto-swap via `.dark`, giving us automatic light/dark Cosmograph theming.
 
@@ -103,13 +107,15 @@ These are widget-specific vars we override because the base derivation doesn't p
 
 ### Histogram
 ```css
---cosmograph-histogram-bar-color: var(--color-soft-blue);  /* brand color */
---cosmograph-histogram-axis-color: rgba(0, 0, 0, 0.15);   /* subtle axis */
+--cosmograph-histogram-bar-color: var(--mode-accent);       /* follows active mode */
+--cosmograph-histogram-axis-color: rgba(0, 0, 0, 0.15);    /* subtle axis */
 ```
 
 ### Size Legend
 ```css
---cosmograph-size-legend-form-color: rgba(0, 0, 0, 0.25); /* subtle shape fill */
+--cosmograph-size-legend-form-color: var(--mode-accent);   /* mode-colored circles */
+--cosmograph-size-legend-font-color: var(--text-secondary);
+--cosmograph-size-legend-hover-color: var(--mode-accent);
 ```
 
 ### Popup (Pre-defined for upcoming CosmographPopup widget)
@@ -129,17 +135,21 @@ These are widget-specific vars we override because the base derivation doesn't p
 
 ## Dark Mode Overrides (`html.dark`)
 
-Only override widget-specific vars that use literal values (not `var()` references to foundation tokens):
+Only override widget-specific vars that don't already auto-swap via the
+foundation tokens. The Cosmograph dark block is intentionally short:
 
 ```css
 html.dark {
   --cosmograph-timeline-axis-color: rgba(255, 255, 255, 0.12);
   --cosmograph-histogram-axis-color: rgba(255, 255, 255, 0.12);
-  --cosmograph-histogram-bar-color: #527292;
-  --cosmograph-size-legend-form-color: rgba(255, 255, 255, 0.25);
+  --cosmograph-histogram-bar-color: var(--mode-accent);
   --cosmograph-scrollbar-background: rgba(255, 255, 255, 0.10);
 }
 ```
+
+`--cosmograph-size-legend-form-color` does **not** appear here because the
+light value (`var(--mode-accent)` in `html:root`) already swaps to the dark
+mode-accent through the `.dark` token override.
 
 Vars that reference foundation tokens (e.g., `var(--surface)`, `var(--brand-accent)`) auto-swap via the `.dark` block — no additional Cosmograph dark override needed.
 
@@ -280,7 +290,7 @@ When adding a new Cosmograph sub-component (e.g., `CosmographPopup`):
 
 | Don't | Do Instead |
 |---|---|
-| Override every Cosmograph CSS var | Override 9 base vars + divergences only |
+| Override every Cosmograph CSS var | Override the 7 ui base vars (+ 2 size tokens) plus widget divergences only |
 | Use inline styles for theming | Use `html:root` in tokens.css |
 | Wrap Cosmograph in a Mantine theme div | Cosmograph reads `:root` vars, not scoped elements |
 | Use `isDark` ternaries for Cosmograph | Foundation tokens auto-swap via `.dark` class |

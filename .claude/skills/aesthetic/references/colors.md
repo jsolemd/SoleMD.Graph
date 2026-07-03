@@ -19,7 +19,7 @@ All colors live in `app/styles/tokens.css`. This document enumerates them by cat
 On the live site, dark mode keeps these pastels lively against a pure-black
 canvas instead of pre-desaturating them into charcoal.
 
-## Extended Pastels (DotToc rainbow cycle, 12)
+## Extended Pastels (PanelEdgeToc rainbow cycle, 12)
 
 | CSS Variable | Hex |
 |--------------|-----|
@@ -36,7 +36,10 @@ canvas instead of pre-desaturating them into charcoal.
 | `--color-plum` | `#d4a0c8` |
 | `--color-pear` | `#c8d8a0` |
 
-Consumed via `lib/pastel-tokens.ts` → `dotTocPastelColorSequence` (20-color cycle). The DotToc component rotates through this sequence.
+Consumed via `apps/web/lib/pastel-tokens.ts` → `dotTocPastelColorSequence`
+(20-color cycle, name retained). The rendered component is `PanelEdgeToc`
+(`apps/web/features/wiki/components/PanelEdgeToc.tsx`); it rotates through
+the sequence per chapter.
 
 ## Feedback Colors
 
@@ -83,7 +86,7 @@ tokens derive via `color-mix()` so they auto-update.
 | `--mode-accent-subtle` | dynamic `color-mix()` | Background fills |
 | `--mode-accent-hover` | dynamic `color-mix()` | Hover states |
 
-Mode colors: Ask → `--color-soft-blue`, Explore → `--color-golden-yellow`, Learn → `--color-fresh-green`, Write → `--color-warm-coral`.
+Mode colors: Ask → `--color-soft-blue`, Explore → `--color-golden-yellow`, Learn → `--color-fresh-green`, Create → `--color-warm-coral`. See `references/mode-system.md` for the full mode contract.
 
 ## Graph Panel Tokens
 
@@ -190,6 +193,41 @@ Wired by `.graph-icon-btn` / `.panel-icon-btn` rules in `graph-ui.css`.
 ## Density
 
 `--app-density: 0.8` — global scale multiplier on `<html>`. Multiplies spacing, shadow offsets, icon sizes. Composed with `--graph-panel-scale` to produce `--graph-panel-reading-scale` for panel-scoped sizing.
+
+## Surface Radius Ramp (`@theme`)
+
+| Variable | Value | Generated Tailwind utility |
+|----------|-------|----------------------------|
+| `--radius-surface-sm` | `1rem` | `rounded-surface-sm` |
+| `--radius-surface` | `1.25rem` | `rounded-surface` |
+| `--radius-surface-lg` | `1.5rem` | `rounded-surface-lg` |
+
+Single source of truth for panel-family corners. When you author a new
+panel/card/overlay, prefer `rounded-surface*` over hand-tuned `rounded-[…]`
+literals — the ramp keeps the family of surfaces consistent.
+
+## Tint Ramp + Accent Adjuncts (`:root`)
+
+| Variable | Value (light default) | Used by |
+|----------|----------------------|---------|
+| `--tint-accent-bg` | `20%` | `color-mix()` ratio for accent card backgrounds |
+| `--tint-accent-border` | `32%` | Accent card borders |
+| `--tint-accent-pill` | `40%` | Pill background fill |
+| `--tint-accent-strong` | `65%` | Pill border / strong emphasis |
+| `--rim-light` | `none` light, `inset 0 1px 0 rgba(255,255,255,0.035)` dark | Top-edge highlight on stacked surfaces; gives "lit from above" depth in dark mode |
+| `--on-accent` | `#ffffff` | Glyph color on the mode-accent affordance (e.g. send-circle arrow) |
+
+These ramps centralize palette warmth/chroma decisions. To shift the entire
+accent system (e.g. softer pills across the app), edit one number in
+`tokens.css` rather than chasing every consumer.
+
+## Module Accent Fallback
+
+`--module-accent-default` (set to `var(--color-soft-blue)` in both light and
+dark) is the fallback for module-scoped components that haven't been wired
+to a mode. It is distinct from `--mode-accent` (active dashboard mode). Use
+`--mode-accent` for mode-driven UI; reach for `--module-accent-default` only
+when authoring a module shell that needs a stable accent regardless of mode.
 
 ## Mantine Brand Tuple
 

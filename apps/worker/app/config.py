@@ -252,7 +252,7 @@ class Settings(BaseSettings):
         alias="NCBI_API_TOOL",
     )
     ncbi_api_email: str = Field(
-        default="noreply@example.com",
+        default="",
         alias="NCBI_API_EMAIL",
     )
     ncbi_api_timeout_seconds: float = Field(
@@ -262,6 +262,16 @@ class Settings(BaseSettings):
     ncbi_api_key: str = Field(
         default="",
         alias="NCBI_API_KEY",
+    )
+    pmc_fulltext_requests_per_second: float = Field(
+        default=1.0,
+        alias="PMC_FULLTEXT_REQUESTS_PER_SECOND",
+        gt=0.0,
+    )
+    pmc_fulltext_max_attempts: int = Field(
+        default=3,
+        alias="PMC_FULLTEXT_MAX_ATTEMPTS",
+        ge=1,
     )
     pubmed_metadata_batch_size: int = Field(
         default=200,
@@ -274,6 +284,11 @@ class Settings(BaseSettings):
         alias="PUBMED_METADATA_REQUESTS_PER_SECOND",
         gt=0.0,
     )
+    pubmed_metadata_peak_requests_per_second: float = Field(
+        default=1.0,
+        alias="PUBMED_METADATA_PEAK_REQUESTS_PER_SECOND",
+        gt=0.0,
+    )
     pubmed_metadata_max_attempts: int = Field(
         default=3,
         alias="PUBMED_METADATA_MAX_ATTEMPTS",
@@ -283,6 +298,11 @@ class Settings(BaseSettings):
         default=900.0,
         alias="PUBMED_METADATA_STALE_AFTER_SECONDS",
         gt=0.0,
+    )
+    pubmed_metadata_large_job_threshold: int = Field(
+        default=10_000,
+        alias="PUBMED_METADATA_LARGE_JOB_THRESHOLD",
+        ge=1,
     )
     s2_graph_api_base_url: str = Field(
         default="https://api.semanticscholar.org/graph/v1",

@@ -1,25 +1,33 @@
 # CSS Token Architecture
 
-CSS is split across three purpose-built files in `app/styles/`. `app/globals.css` is the entry point — it imports the three files in order and contains no rules of its own.
+CSS is split across nine purpose-built files in `apps/web/app/styles/`. `apps/web/app/globals.css` is the entry point — it declares cascade layers, pulls Tailwind 4 layers, and imports the styles files in order. It contains no rules of its own beyond layer ordering and the dark `@custom-variant`.
 
 ## File Layout
 
 ```
-app/
-├── globals.css                  ← imports only; not a source of truth
+apps/web/app/
+├── globals.css                  ← layer order + imports + @custom-variant
 ├── layout.tsx                   ← mounts MantineProvider, ColorSchemeScript
 └── styles/
     ├── tokens.css               ← all CSS custom properties
     ├── base.css                 ← reset, density, scrollbar, view transitions
-    └── graph-ui.css             ← component CSS (icon-btns, Mantine overrides,
-                                    Cosmograph widget fixes, keyframes)
+    ├── entity-highlights.css    ← editor entity highlight pills
+    ├── editor.css               ← rich-text editor surface
+    ├── vendor-overrides.css     ← third-party widget patches
+    ├── graph-ui.css             ← graph chrome (icon-btns, Cosmograph fixes, keyframes)
+    ├── chrome-surface.css       ← shell chrome surfaces
+    ├── wiki-content.css         ← wiki page typography
+    ├── wiki-module-content.css  ← wiki module section typography
+    └── viewport-toc-rail.css    ← viewport edge ToC rail
 
-lib/
+apps/web/lib/
 ├── mantine-theme.ts             ← createTheme() bridge
 ├── pastel-tokens.ts             ← CSS var ↔ Mantine tuple bridge, entity maps
-└── features/graph/lib/
-    ├── modes.ts                 ← Ask/Explore/Learn/Write mode registry
-    └── brand-colors.ts          ← WebGL hex constants (mirror of tokens.css)
+└── density.ts                   ← --app-density helpers
+
+apps/web/features/graph/lib/
+├── modes.ts                     ← Ask/Explore/Learn/Create mode registry
+└── brand-colors.ts              ← WebGL hex constants (mirror of tokens.css)
 ```
 
 ## Layer 1 — `tokens.css` (Source of Truth for Tokens)
@@ -31,8 +39,10 @@ Four scopes inside this file:
 Defines `--color-*` and `--font-*` that Tailwind v4 reads at build time. These become available as `text-soft-blue`, `bg-soft-blue`, etc., AND as CSS custom properties consumers can reference with `var(--color-soft-blue)`.
 
 - **Core brand pastels (9)**: `--color-soft-blue`, `--color-muted-indigo`, `--color-golden-yellow`, `--color-fresh-green`, `--color-warm-coral`, `--color-soft-pink`, `--color-soft-lavender`, `--color-paper`, `--color-teal`
-- **Extended pastels (12)** for DotToc rainbow cycle: `--color-seafoam`, `--color-amber`, `--color-sky`, `--color-rose`, `--color-mint`, `--color-orchid`, `--color-maize`, `--color-powder`, `--color-peach`, `--color-sage`, `--color-plum`, `--color-pear`
+- **Semantic category pastels (9)**: `--color-semantic-disorder`, `--color-semantic-chemical`, `--color-semantic-gene`, `--color-semantic-anatomy`, `--color-semantic-physiology`, `--color-semantic-procedure`, `--color-semantic-section`, `--color-semantic-paper`, `--color-semantic-module`
+- **Extended pastels (12)** for the `PanelEdgeToc` rainbow cycle: `--color-seafoam`, `--color-amber`, `--color-sky`, `--color-rose`, `--color-mint`, `--color-orchid`, `--color-maize`, `--color-powder`, `--color-peach`, `--color-sage`, `--color-plum`, `--color-pear`
 - **Feedback**: `--color-feedback-warning`, `--color-feedback-danger`
+- **Surface radius ramp**: `--radius-surface-sm`, `--radius-surface`, `--radius-surface-lg` → generates Tailwind `rounded-surface-sm/-/--lg`
 - **Fonts**: `--font-sans`, `--font-mono`
 
 ### `:root` block (semantic light tokens)
@@ -121,29 +131,34 @@ The canonical CSS-var ↔ Mantine-tuple bridge. Exports:
 - `brandPastelVarNameByKey` — 9 keys → `--color-*` names
 - `mantineBrandColorsTuple` — 10-shade blue for Mantine's primary
 - `mantineNeutralColorsTuple` — 10-shade gray for Mantine's `gray`
-- `extendedPastelVarNameByKey` — 12 keys for DotToc palette
+- `extendedPastelVarNameByKey` — 12 keys for the PanelEdgeToc palette
 - `dotTocPastelColorSequence` — 20-color cycle
 - `semanticColorVarNameByKey` — 9 entity-type → wiki-graph color mappings
 - `entityTypeCssColorByType` — runtime hex per entity type (used by entity profile pill tints)
 
-When adding a new brand color: add to `@theme` in `tokens.css`, then add to `brandPastelVarNameByKey` + tuple if it's a Mantine primary, or to `extendedPastelVarNameByKey` if it's for the DotToc cycle.
+When adding a new brand color: add to `@theme` in `tokens.css`, then add to `brandPastelVarNameByKey` + tuple if it's a Mantine primary, or to `extendedPastelVarNameByKey` if it's for the PanelEdgeToc cycle.
 
-## Layer 5 — `lib/graph/brand-colors.ts` (WebGL Hex Mirror)
+## Layer 5 — `apps/web/features/graph/lib/brand-colors.ts` (WebGL Hex Mirror)
 
 WebGL/Cosmograph React props cannot read CSS vars. This file centralizes the hex literals:
 
 ```ts
 export const BRAND = {
-  light: { bg: "#f8f9fa", ring: "#747caa", label: "#1a1b1e", greyout: 0.25 },
-  dark:  { bg: "#111113", ring: "#a8c5e9", label: "#e4e4e9", greyout: 0.15 },
+  light: { bg: "#faf9f7", ring: brandPastelFallbackHexByKey["muted-indigo"], greyout: 0.25 },
+  dark:  { bg: "#000000", ring: brandPastelFallbackHexByKey["soft-blue"],   greyout: 0.12 },
 } as const;
 
-export const DARK_ON_COLOR = "#1a1b1e";
+export const DARK_ON_COLOR = "#1a1817";   // mirror of tokens.css --text-primary (light)
 export const NOISE_COLOR = "#555555";
-export const DEFAULT_POINT_COLOR = "#a8c5e9";
+export const NOISE_COLOR_LIGHT = "#999999";
+export const DEFAULT_POINT_COLOR = brandPastelFallbackHexByKey["soft-blue"];
 ```
 
-Both `tokens.css` and `brand-colors.ts` carry breadcrumb comments referencing each other.
+Both `tokens.css` and `brand-colors.ts` carry breadcrumb comments
+referencing each other. `BRAND.light.bg` matches `tokens.css` `--background`
+(`#faf9f7`). Do not confuse it with `themeViewportColorByScheme.light`
+(`#f8f9fa`) in `apps/web/lib/pastel-tokens.ts`, which is the Next viewport
+`themeColor` and a different concern.
 
 ## Surface-Lab Verification
 
@@ -162,17 +177,79 @@ authority.
 
 ## Import Order
 
-`app/globals.css`:
+`apps/web/app/globals.css` is exactly:
 
 ```css
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+/* Preflight omitted — Mantine provides base styles via postcss-preset-mantine */
+@import "tailwindcss/utilities.css" layer(utilities);
+
 @import "./styles/tokens.css";
 @import "./styles/base.css";
+@import "./styles/entity-highlights.css";
+@import "./styles/editor.css";
+@import "./styles/vendor-overrides.css";
 @import "./styles/graph-ui.css";
+@import "./styles/chrome-surface.css";
+@import "./styles/wiki-content.css";
+@import "./styles/wiki-module-content.css";
+@import "./styles/viewport-toc-rail.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
 ```
 
-Tokens before base (base.css reads `--app-density`, etc.) and before component rules (graph-ui.css reads `--graph-panel-*`).
+Layer order is declared up front (`theme, base, components, utilities`), and
+Tailwind's preflight (`tailwindcss/preflight.css`) is intentionally omitted
+because Mantine ships its own reset via `postcss-preset-mantine`. Tokens load
+before any component-level CSS, so every downstream file can safely read
+`--app-density`, `--graph-panel-*`, etc.
 
-`app/layout.tsx` imports `@mantine/core/styles.css` before `./globals.css`, so Mantine's own preflight lands first and our overrides win.
+`apps/web/app/layout.tsx` imports `@mantine/core/styles.css` before
+`./globals.css`, so Mantine's own preflight lands first and our overrides win.
+
+### Cascade Layers — Tailwind vs. Mantine
+
+`@layer utilities` (Tailwind 4) is a layered rule. Mantine's `@mantine/core/styles.css`
+ships unlayered. Per CSS cascade rules, **any unlayered rule beats any layered
+rule at equal specificity**. Practical consequence:
+
+- Tailwind utility on the wrapper element — works.
+- Tailwind utility hoping to override Mantine's internal CSS at the
+  same specificity — loses.
+
+When you author a Mantine component you therefore reach for `styles`,
+`classNames`, or `vars` to drive Mantine internals; Tailwind classes go on
+the surrounding wrapper. The `cssVariablesResolver` in
+`apps/web/app/providers.tsx` exists precisely to retarget
+`--mantine-color-body` at our `--background` token, because Mantine's own
+`body { background: var(--mantine-color-body) }` is unlayered and would beat
+our layered `@layer base { body { ... } }` in `styles/base.css`.
+
+## Tailwind 4 Migration Audit (v3 → v4)
+
+When you copy patterns from older code or external snippets, the canonical
+Tailwind 4 form is:
+
+| v3 syntax | v4 replacement |
+|-----------|----------------|
+| `@tailwind base/components/utilities;` | `@import "tailwindcss";` (or split per-layer as above) |
+| `bg-opacity-50`, `text-opacity-*`, `placeholder-opacity-*` | Slash syntax: `bg-black/50`, `text-white/70` |
+| `flex-shrink-0`, `flex-grow-1` | `shrink-0`, `grow` |
+| `outline-none` | `outline-hidden` (still invisible, preserves a11y outline ring) |
+| `ring` (3px default) | `ring` is now 1px; use `ring-3` for the v3 look or set `--default-ring-width: 3px` in `@theme` |
+| Default border = `gray-200` | Default border = `currentColor`; set explicit color or `--default-border-color` |
+| `theme(spacing.4)` | `var(--spacing-4)` or `--spacing(4)` |
+| `bg-[--brand]` | `bg-(--brand)` (parens, not square brackets, for arbitrary CSS vars) |
+| `space-y-4`, `divide-y` | Selector model changed; prefer `gap-4` with flex/grid |
+| `first:*:pt-0` (variant on parent) | Variants stack left-to-right: `*:first:pt-0` |
+| `hover:` always applies | `hover:` is now wrapped in `@media (hover: hover)`; touch devices skip. To restore: `@custom-variant hover (&:hover);` |
+| `tailwind.config.js` with theme keys | `@theme` block in `tokens.css` (already done here) |
+
+The project ships a single `@import "tailwindcss/theme.css"` plus a separate
+`@import "tailwindcss/utilities.css"` (preflight intentionally omitted), so
+do not introduce a fresh `@import "tailwindcss"` line in this codebase.
 
 ## Dark Mode Strategy
 
@@ -201,8 +278,19 @@ Tokens before base (base.css reads `--app-density`, etc.) and before component r
 | Add a new panel style object | `features/graph/components/panels/PanelShell/panel-styles.ts` + export from `index.ts` |
 | Add a CSS-only component rule (animation, icon sizing) | `graph-ui.css` |
 | Add a reset/global rule | `base.css` |
-| Add a WebGL hex constant | `lib/graph/brand-colors.ts` (mirror the value in `tokens.css`) |
+| Add a WebGL hex constant | `apps/web/features/graph/lib/brand-colors.ts` (mirror the value in `tokens.css`) |
 | Bridge a token to Mantine's theme | `lib/mantine-theme.ts` |
 | Map an entity type to a graph color | `lib/pastel-tokens.ts` + matching `[data-entity-type]` rule in `tokens.css` |
 
-**Never** add tokens directly to `app/globals.css` — it's pure import ordering.
+**Never** add tokens directly to `apps/web/app/globals.css` — it's pure cascade-layer ordering plus imports plus the dark `@custom-variant` declaration.
+
+## Decision Tree — Tailwind vs. Mantine `styles`/`classNames`/`vars`
+
+| Surface | Use |
+|---------|-----|
+| Wrapper layout, spacing, position | `className` with Tailwind utilities |
+| Mantine internal sub-element CSS | `styles` prop (object keyed by sub-element) |
+| Mantine internal class names | `classNames` prop |
+| Plumb a runtime CSS var into Mantine internals | `vars` prop (Mantine 8 canonical) — see `references/mantine-patterns.md` |
+| Global Mantine component defaults | `components` in `lib/mantine-theme.ts` |
+| Override `--mantine-color-body` and other body-level Mantine vars | `cssVariablesResolver` on `MantineProvider` (already wired in `app/providers.tsx`) |

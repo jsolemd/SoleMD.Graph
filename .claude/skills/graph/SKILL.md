@@ -1,48 +1,60 @@
 ---
 name: graph
 description: |
-  SoleMD.Graph architecture, bundle publication, checksum asset-serving, local networking,
-  and failure ownership. Use for project structure, run/build flow, graph bundles,
-  graph_runs, parquet publish, 127.0.0.1 or localhost issues, tailscale, and runtime
-  ownership questions.
+  SoleMD.Graph backend architecture: bundle publication, checksum-addressed
+  asset serving, local networking, runtime infrastructure, and failure ownership.
 
-  Triggers: graph architecture, graph bundle, graph_runs, publish current, parquet publish,
-  checksum asset serving, graph startup, local networking, localhost, 127.0.0.1,
-  bundle serving, runtime ownership, who owns this failure.
+  Triggers: graph architecture, graph bundle, graph_runs, publish current,
+  parquet publish, bundle_checksum, bundle_uri, manifest.json,
+  base_points.parquet, base_clusters.parquet, current bundle, alias missing,
+  404 graph-bundles, dramatiq, redis, postgres ports, warehouse,
+  /mnt/solemd-graph, vhd detach, FastAPI 8010, apps/api, apps/worker,
+  localhost, 127.0.0.1, who owns this failure.
 
-  Do NOT use for: browser DuckDB or Cosmograph runtime internals, UI styling,
-  or database schema tuning.
-version: 6.3.0
+  Do NOT use for: browser graph runtime or DuckDB-WASM (use /cosmograph),
+  LLM evaluation or RAG benchmarking (use /langfuse), UI styling
+  (use /aesthetic), three.js or shaders (use /threejs), raw WebGPU
+  (use /webgpu).
+version: 6.4.0
 allowed-tools:
   - Read
+  - Glob
+  - Grep
   - Bash
 metadata:
-  short-description: SoleMD.Graph architecture, bundle contract, and runtime ownership boundaries
+  short-description: SoleMD.Graph backend architecture and runtime contract
 ---
 
-# SoleMD.Graph - Project Architecture
+# SoleMD.Graph — Backend Architecture
 
 ## What /graph owns
 
-Use `/graph` for the system-level contract:
+Use `/graph` for the system-level backend contract:
 
 - repo-shape boundaries across `apps/` and `packages/`
-- bundle publication contract and the rebuild surfaces that will own it
-- PostgreSQL release metadata and `solemd.graph_runs`
+- bundle publication contract and the rebuild surfaces that own it
+  (`apps/api` request-time, `apps/worker` build/publish/queue plane)
+- PostgreSQL release metadata and the warehouse-vs-serve `graph_runs`
+  divergence
 - bundle artifact layout and checksum-addressed browser URLs
-- current Next.js asset serving plus future backend ownership
+- current Next.js asset serving plus the migration into `apps/api`
+- runtime infrastructure: Docker, GPU, storage, secrets, boot, ports
 - operational triage for "which layer owns this failure?"
 
-Use `/cosmograph` when the problem is inside the browser runtime after the bundle
-contract is already valid: DuckDB-WASM bootstrap, active views, native Cosmograph
-props, camera, overlay, or panel/query behavior.
+Use `/cosmograph` when the problem is inside the browser runtime after the
+bundle contract is already valid: DuckDB-WASM bootstrap, active views, native
+Cosmograph props, camera, overlay, or panel/query behavior.
 
 Use `/langfuse` when the problem is evaluation, benchmark workflow, prompt
 management, score interpretation, or traced backend quality feedback.
 
+Use `/module` when the problem is the field/orb/particle WebGL runtime or any
+module shell that consumes the shared stage. This skill does not own field
+performance rules.
+
 Use `/clean` after meaningful implementation changes. If the durable graph
-contract changes, update this skill or its references in the same batch and run
-`solemd skill-sync`.
+contract changes, update this skill or its references in the same batch and
+run `solemd skill-sync`.
 
 ## Companion Skill Chain
 
@@ -50,11 +62,13 @@ contract changes, update this skill or its references in the same batch and run
 |-----------|-------|
 | Cross-project/runtime orientation first | `/solemd` |
 | System ownership, bundle publication, asset-serving, startup failure ownership | `/graph` |
-| Browser runtime after asset URLs resolve | `/cosmograph` |
+| Browser graph runtime after asset URLs resolve | `/cosmograph` |
+| Field/orb/particle WebGL substrate and module shells | `/module` |
 | Evaluation, benchmarks, prompts, score workflows | `/langfuse` |
+| Visual styling and Mantine/Tailwind tokens | `/aesthetic` |
 | New files, exports, or directory splits | `/naming` |
 | Post-change cleanup, deduplication, modularization, contract close-out | `/clean` |
-| Skill or prompt contract changed | `/config-sync` |
+| Skill or prompt contract changed | `/config-sync` (which calls `solemd skill-sync`) |
 
 ## Read First
 
@@ -63,10 +77,12 @@ contract changes, update this skill or its references in the same batch and run
 | Repo shape + cutover boundaries | `docs/rag/15-repo-structure.md` |
 | Reader journey / system map | `docs/map/map.md` |
 | Hard boundaries and adapters | `docs/map/architecture.md` |
+| Bundle publication contract | `references/bundle-publication.md` |
+| Database schema universe | `references/database-schema.md` |
 | Frontend/runtime performance rules | `references/frontend-performance.md` |
 | Browser graph runtime contract | `docs/map/graph-runtime.md` |
 | Legacy graph build and publish inventory | `docs/map/graph-build.md` |
-| Database ownership / release tables | `docs/map/database.md` |
+| Database ownership / release tables (human-facing) | `docs/map/database.md` |
 | Local host / WSL / tailnet rules | `references/local-networking.md` |
 | Runtime substrate, Docker, GPU, ports | `references/runtime-infrastructure.md` |
 | Product vision | `docs/map/vision.md` |
@@ -79,10 +95,11 @@ are mandatory.
 
 | Need | Source |
 |------|--------|
-| Browser query/runtime details | `references/browser.md` |
-| Schema notes and query examples | `references/schema.md` |
-| Cypher examples | `references/cypher-examples.md` |
-| GDS algorithm reference | `references/gds-algorithms.md` |
+| Bundle publication contract, manifest shape, `graph_runs` divergence | `references/bundle-publication.md` |
+| Warehouse + serve schema universe, deferred extensions, partition layout | `references/database-schema.md` |
+| Loopback policy, env DSNs, remote forwarding | `references/local-networking.md` |
+| Docker, GPU, storage, secrets, boot, pinned ports | `references/runtime-infrastructure.md` |
+| Frontend latency rules and runtime perf contract | `references/frontend-performance.md` |
 
 ## System Map
 
@@ -91,9 +108,9 @@ PostgreSQL (`solemd.graph_runs`, graph tables, paper metadata)
           |
           +--> published bundle directory / checksum alias
           |
-          +--> reserved backend rebuild surfaces
-          |      - `apps/api`    request-time HTTP + asset boundaries
-          |      - `apps/worker` ingest/build/publish + queue plane
+          +--> backend rebuild surfaces
+          |      - `apps/api`    FastAPI 8010 (health/ready today, more landing)
+          |      - `apps/worker` Dramatiq + Redis (ingest/build/publish plane)
           |
           v
   Next.js app (`apps/web`, port 3000)
@@ -119,22 +136,26 @@ fallbacks in the wrong layer.
 
 ### Backend / publish ownership
 
-- `apps/api` and `apps/worker` are the only sanctioned homes for the rebuilt
-  backend publish flow.
-- `main` is intentionally frontend-first today; do not resurrect backend logic
-  under random roots or reintroduce `engine/` as a canonical surface.
-- Publish metadata lives in PostgreSQL, primarily `solemd.graph_runs`.
-- The backend publish step owns the checksum alias on disk.
-- Run directories are an implementation detail. The browser does not know or care
-  about graph-run ids or `bundle_uri` paths.
+- `apps/api` (FastAPI on port 8010) and `apps/worker` (Dramatiq + Redis) are
+  the only sanctioned homes for the rebuilt backend publish flow.
+- Do not resurrect backend logic under random roots or reintroduce `engine/`
+  as a canonical surface.
+- Publish metadata lives in PostgreSQL: warehouse-side ledger in
+  `solemd.graph_runs` (status SMALLINT 1..5) and runtime-side row in the
+  serve-cluster `graph_runs` (text status, `bundle_uri`, `bundle_checksum`).
+  See `references/bundle-publication.md` for the divergence.
+- The backend publish step owns the checksum alias on disk
+  (`/mnt/solemd-graph/bundles/by-checksum/<checksum>`).
+- Run directories are an implementation detail. The browser does not know or
+  care about graph-run ids or `bundle_uri` paths.
 
 ### Backend / asset-serving ownership
 
 - The current browser-visible asset route lives at
   `apps/web/app/graph-bundles/[checksum]/[asset]/route.ts` and resolves through
   `apps/web/features/graph/lib/bundle-assets.ts`.
-- When the request-time Python API lands, move the resolver behind `apps/api`
-  without changing the browser URL contract.
+- When the resolver migrates behind `apps/api`, keep the browser URL contract
+  identical: `/graph-bundles/<checksum>/<asset>`.
 - Browser-visible assets are immutable checksum-addressed URLs:
   - `/graph-bundles/<checksum>/manifest.json`
   - `/graph-bundles/<checksum>/base_points.parquet`
@@ -175,6 +196,9 @@ Non-negotiable rules:
 - The browser path stays checksum-addressed even if the backend repairs a broken
   alias or serves from a recovered run directory.
 - `manifest.json` is part of the same immutable contract as the parquet assets.
+  The frontend boots from the `bundle_manifest` JSONB column on the
+  serve-cluster `graph_runs` row, not from the on-disk file; keep the two
+  byte-equivalent at publish time. See `references/bundle-publication.md`.
 - Do not paper over publication bugs by adding frontend fallback logic.
 
 ## Failure Ownership And Triage
@@ -199,16 +223,24 @@ Interpretation:
 
 Check:
 
-- `solemd.graph_runs` current completed row for `bundle_checksum`, `id`, `bundle_uri`
-- on-disk published checksum alias versus real run directory
-- `apps/web/features/graph/lib/bundle-assets.ts`
+- the **serve-cluster** Drizzle `graph_runs` row for the failing checksum
+  (status `'completed'`, latest `createdAt`, `bundleUri`) — this is what the
+  resolver queries, not the warehouse `solemd.graph_runs` row
+- on-disk published checksum alias under
+  `/mnt/solemd-graph/bundles/by-checksum/<checksum>` versus the real run
+  directory referenced by `bundleUri`
+- `apps/web/features/graph/lib/bundle-assets.ts` resolver and recovery path
 
 Typical failure classes:
 
 - checksum alias missing on disk
-- backend resolver tied too tightly to the published alias and not recovering from
-  `graph_runs`
-- published root exists logically but is not writable in the current environment
+- resolver tied too tightly to the published alias and not recovering from the
+  serve-cluster `graph_runs` row
+- run directory itself missing because publish only wrote the warehouse row
+  and never projected into the serve cluster (the divergence — see
+  `references/bundle-publication.md`)
+- published root exists logically but is not writable in the current
+  environment
 - wrong host or stale local tab hiding a now-fixed backend route
 
 ### Step 3: Distinguish host problems from app problems
@@ -270,10 +302,23 @@ Signs of a bad implementation:
 
 ### Backend Rebuild
 
-`main` intentionally does not define canonical backend commands yet. Use
-`apps/api/README.md`, `apps/worker/README.md`, and `docs/rag/15-repo-structure.md`
-as the current cutover contract for backend work, and do not reintroduce
-`engine/` command paths.
+`apps/api` ships a minimal FastAPI surface today — the lifespan in
+`apps/api/app/main.py` opens serve-cluster pools and the
+`apps/api/app/routes/health.py` router exposes `/healthz` and `/readyz`.
+The readiness probe walks `serve_dsn_read` and `serve_dsn_admin` through
+asyncpg pools and returns 503 if any dependency is unreachable.
+
+```bash
+solemd op-run graph -- uv run --project apps/api python -m app.main
+curl -s http://127.0.0.1:8010/healthz | jq
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8010/readyz
+```
+
+`apps/worker` is the build/publish/queue plane (Dramatiq + Redis).
+`apps/api/README.md`, `apps/worker/README.md`, and
+`docs/rag/15-repo-structure.md` are the cutover contract for adding new
+backend surfaces. Do not reintroduce a top-level `engine/` directory or
+re-home backend logic outside `apps/api` and `apps/worker`.
 
 ## Key Paths
 
@@ -288,8 +333,8 @@ as the current cutover contract for backend work, and do not reintroduce
 | Web Cosmograph adapter boundary | `apps/web/features/graph/cosmograph/` |
 | Shared Cosmograph package boundary | `packages/graph/src/cosmograph/` |
 | Shared transport package | `packages/api-client/src/` |
-| Reserved request-time backend | `apps/api/README.md` |
-| Reserved background worker | `apps/worker/README.md` |
+| Request-time FastAPI surface | `apps/api/app/main.py`, `apps/api/app/routes/health.py` |
+| Background worker plane | `apps/worker/README.md` |
 
 ## Update This Skill When
 

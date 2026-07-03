@@ -32,7 +32,7 @@ from app.corpus.rollups import (
     ensure_relation_rollup,
     ensure_selection_rollups,
 )
-from app.corpus.runtime_support import emit_event
+from app.corpus.runtime_support import corpus_selection_run_label, emit_event
 from app.corpus.selection_run_store import (
     acquire_selection_lock as _acquire_selection_lock,
     build_selection_plan as _build_selection_plan,
@@ -108,9 +108,10 @@ async def run_corpus_selection(
                 async with track_active_worker_run(
                     worker_scope="corpus",
                     run_kind="corpus_selection",
-                    run_label=(
-                        f"{request.selector_version}:"
-                        f"{request.s2_release_tag}:{request.pt3_release_tag}"
+                    run_label=corpus_selection_run_label(
+                        selector_version=request.selector_version,
+                        s2_release_tag=request.s2_release_tag,
+                        pt3_release_tag=request.pt3_release_tag,
                     ),
                     selector_version=request.selector_version,
                     s2_release_tag=request.s2_release_tag,

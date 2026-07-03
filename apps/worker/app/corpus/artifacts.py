@@ -77,7 +77,7 @@ async def load_required_artifact_refs(
 ) -> dict[str, ScratchTableRef]:
     rows = await connection.fetch(
         """
-        SELECT artifact_kind, storage_schema, storage_table, status
+        SELECT artifact_kind, storage_schema, storage_table, status, row_count
         FROM solemd.corpus_selection_artifacts
         WHERE corpus_selection_run_id = $1
           AND artifact_kind = ANY($2::TEXT[])
@@ -97,7 +97,11 @@ async def load_required_artifact_refs(
     for kind in artifact_kinds:
         row = by_kind[kind]
         ref = ScratchTableRef(str(row["storage_schema"]), str(row["storage_table"]))
-        if row["status"] != "complete" or not await artifact_table_exists(connection, ref):
+        if row["status"] != "complete" or not await artifact_table_materialized(
+            connection,
+            ref,
+            expected_row_count=_optional_int(row["row_count"]),
+        ):
             stale.append(kind)
         refs[kind] = ref
     if stale:
@@ -118,7 +122,7 @@ async def artifact_complete(
     ref = artifact_ref(corpus_selection_run_id, artifact_kind)
     row = await connection.fetchrow(
         """
-        SELECT status, storage_schema, storage_table
+        SELECT status, storage_schema, storage_table, row_count
         FROM solemd.corpus_selection_artifacts
         WHERE corpus_selection_run_id = $1
           AND artifact_kind = $2
@@ -131,7 +135,11 @@ async def artifact_complete(
     if row is None or row["status"] != "complete":
         return False
     ledger_ref = ScratchTableRef(str(row["storage_schema"]), str(row["storage_table"]))
-    return ledger_ref == ref and await artifact_table_exists(connection, ref)
+    return ledger_ref == ref and await artifact_table_materialized(
+        connection,
+        ref,
+        expected_row_count=_optional_int(row["row_count"]),
+    )
 
 
 async def artifact_table_exists(
@@ -140,6 +148,29 @@ async def artifact_table_exists(
 ) -> bool:
     exists = await connection.fetchval("SELECT to_regclass($1) IS NOT NULL", ref.regclass_name)
     return bool(exists)
+
+
+async def artifact_table_materialized(
+    connection: asyncpg.Connection,
+    ref: ScratchTableRef,
+    *,
+    expected_row_count: int | None,
+) -> bool:
+    if not await artifact_table_exists(connection, ref):
+        return False
+    if expected_row_count is None or expected_row_count <= 0:
+        return True
+    relation_size = await connection.fetchval(
+        "SELECT pg_relation_size(to_regclass($1))",
+        ref.regclass_name,
+    )
+    return int(relation_size or 0) > 0
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
 async def mark_artifact_building(

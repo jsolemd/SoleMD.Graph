@@ -50,6 +50,16 @@ def test_scoped_prometheus_uses_scope_specific_fork_runner() -> None:
 
     assert middleware.forks[0].__name__ == "_run_ingest_metrics_server"
 
+    pubmed_middleware = ScopedPrometheus(
+        scope="enrichment_pubmed",
+        runtime_settings=settings,
+    )
+
+    assert (
+        pubmed_middleware.forks[0].__name__
+        == "_run_pubmed_enrichment_metrics_server"
+    )
+
 
 def test_scoped_prometheus_delegates_dramatiq_hooks() -> None:
     settings = Settings(
@@ -116,6 +126,47 @@ def test_prepare_worker_metrics_environment_restores_runtime_env(tmp_path: Path)
         assert os.environ["dramatiq_prom_db"] == str(metrics_dir)
         assert os.environ["dramatiq_prom_host"] == "127.0.0.1"
         assert os.environ["dramatiq_prom_port"] == "9464"
+        """
+    )
+    env = os.environ.copy()
+    env["TEST_METRICS_ROOT"] = str(tmp_path)
+    subprocess.run([sys.executable, "-c", script], check=True, env=env)
+
+
+def test_prepare_worker_metrics_environment_assigns_pubmed_enrichment_port(
+    tmp_path: Path,
+) -> None:
+    script = textwrap.dedent(
+        """
+        import os
+        from pathlib import Path
+
+        from app.config import Settings
+        from app.telemetry.bootstrap import prepare_worker_metrics_environment
+
+        settings = Settings(
+            REDIS_URL="redis://127.0.0.1:57379/0",
+            WORKER_METRICS_PORT="",
+            WORKER_METRICS_MULTIPROC_DIR=os.environ["TEST_METRICS_ROOT"],
+        )
+        for name in (
+            "PROMETHEUS_MULTIPROC_DIR",
+            "prometheus_multiproc_dir",
+            "dramatiq_prom_db",
+            "dramatiq_prom_host",
+            "dramatiq_prom_port",
+            "SOLEMD_GRAPH_METRICS_PREPARED",
+        ):
+            os.environ.pop(name, None)
+
+        metrics_dir = prepare_worker_metrics_environment(
+            settings,
+            scope="enrichment_pubmed",
+            clean_on_boot=False,
+        )
+
+        assert metrics_dir == Path(os.environ["TEST_METRICS_ROOT"]) / "enrichment_pubmed"
+        assert os.environ["dramatiq_prom_port"] == "9469"
         """
     )
     env = os.environ.copy()

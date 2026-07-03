@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+from dataclasses import replace
 from datetime import date
 import hashlib
 import json
@@ -11,9 +12,16 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from app.config import Settings
-from app.enrichment.http import AsyncRateLimiter, retry_after_seconds
+from app.enrichment.http import (
+    AsyncRateLimiter,
+    is_retryable_http_error,
+    retry_after_seconds,
+)
+from app.telemetry.metrics import observe_enrichment_api_request
 
 
+S2_GRAPH_PROVIDER_NAME = "semantic_scholar_graph"
+S2_GRAPH_API_KEY_REQUESTS_PER_SECOND_LIMIT = 1.0
 S2_GRAPH_FIELDS = (
     "paperId",
     "externalIds",
@@ -55,9 +63,8 @@ class S2PaperEnrichmentRecord:
 class SemanticScholarGraphClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._rate_limiter = AsyncRateLimiter(
-            min(settings.s2_graph_requests_per_second, 1.0)
-        )
+        validate_s2_graph_api_settings(settings)
+        self._rate_limiter = AsyncRateLimiter(effective_s2_graph_request_rate(settings))
 
     async def fetch_papers(
         self,
@@ -67,9 +74,13 @@ class SemanticScholarGraphClient:
             return ()
         query = urlencode({"fields": ",".join(S2_GRAPH_FIELDS)})
         url = f"{self._settings.s2_graph_api_base_url.rstrip('/')}/paper/batch?{query}"
-        body = json.dumps({"ids": list(paper_ids)}, separators=(",", ":")).encode("utf-8")
+        body = json.dumps(
+            {"ids": [semantic_scholar_lookup_id(paper_id) for paper_id in paper_ids]},
+            separators=(",", ":"),
+        ).encode("utf-8")
         for attempt in range(1, self._settings.s2_graph_max_attempts + 1):
             await self._rate_limiter.wait()
+            started_at = asyncio.get_running_loop().time()
             try:
                 payload = await asyncio.to_thread(
                     _post_json,
@@ -79,30 +90,80 @@ class SemanticScholarGraphClient:
                     self._settings.semantic_scholar_api_user_agent,
                     self._settings.semantic_scholar_api_key,
                 )
-                return parse_s2_graph_batch(payload)
+                observe_enrichment_api_request(
+                    provider=S2_GRAPH_PROVIDER_NAME,
+                    outcome="success",
+                    status_code="200",
+                    duration_seconds=asyncio.get_running_loop().time() - started_at,
+                    requested_records=len(paper_ids),
+                )
+                return parse_s2_graph_batch(payload, paper_ids=paper_ids)
             except HTTPError as exc:
-                if exc.code not in {429, 500, 502, 503, 504}:
+                observe_enrichment_api_request(
+                    provider=S2_GRAPH_PROVIDER_NAME,
+                    outcome="http_error",
+                    status_code=str(exc.code),
+                    duration_seconds=asyncio.get_running_loop().time() - started_at,
+                    requested_records=len(paper_ids),
+                )
+                if not is_retryable_http_error(exc):
                     raise
                 if attempt >= self._settings.s2_graph_max_attempts:
                     raise
                 await asyncio.sleep(retry_after_seconds(exc) or min(120.0, 2.0**attempt))
-            except (OSError, TimeoutError):
+            except (OSError, TimeoutError) as exc:
+                observe_enrichment_api_request(
+                    provider=S2_GRAPH_PROVIDER_NAME,
+                    outcome=type(exc).__name__,
+                    status_code="none",
+                    duration_seconds=asyncio.get_running_loop().time() - started_at,
+                    requested_records=len(paper_ids),
+                )
                 if attempt >= self._settings.s2_graph_max_attempts:
                     raise
                 await asyncio.sleep(min(120.0, 2.0**attempt))
         return ()
 
 
-def parse_s2_graph_batch(payload: bytes) -> tuple[S2PaperEnrichmentRecord, ...]:
+def effective_s2_graph_request_rate(settings: Settings) -> float:
+    return min(
+        settings.s2_graph_requests_per_second,
+        S2_GRAPH_API_KEY_REQUESTS_PER_SECOND_LIMIT,
+    )
+
+
+def validate_s2_graph_api_settings(settings: Settings) -> None:
+    if not settings.semantic_scholar_api_key:
+        raise RuntimeError(
+            "S2_API_KEY must be configured before Semantic Scholar Graph "
+            "enrichment can run."
+        )
+
+
+def semantic_scholar_lookup_id(paper_id: str) -> str:
+    value = paper_id.strip()
+    if value.isdecimal():
+        return f"CorpusId:{value}"
+    return value
+
+
+def parse_s2_graph_batch(
+    payload: bytes,
+    *,
+    paper_ids: Sequence[str] | None = None,
+) -> tuple[S2PaperEnrichmentRecord, ...]:
     decoded = json.loads(payload.decode("utf-8"))
     rows = decoded.get("data") if isinstance(decoded, dict) else decoded
     if not isinstance(rows, list):
         return ()
-    records = [
-        _parse_s2_row(row)
-        for row in rows
-        if isinstance(row, dict) and row.get("paperId")
-    ]
+    records = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict) or not row.get("paperId"):
+            continue
+        record = _parse_s2_row(row)
+        if record is not None and paper_ids is not None and index < len(paper_ids):
+            record = replace(record, paper_id=paper_ids[index])
+        records.append(record)
     return tuple(record for record in records if record is not None)
 
 

@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
   "asyncpg==0.31.0",
+  "bioc==2.1",
   "duckdb==1.4.1",
   "dramatiq[redis]==2.1.0",
   "lxml==6.0.2",

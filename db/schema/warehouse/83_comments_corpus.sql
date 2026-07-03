@@ -33,6 +33,8 @@ COMMENT ON TABLE solemd.s2_graph_enrichment_tasks IS
     'Per-paper Semantic Scholar Graph API work queue using mapped-only batch fetches and bounded retry attempts.';
 COMMENT ON TABLE solemd.s2_paper_enrichment IS
     'Durable mapped-paper Semantic Scholar Graph API metadata, including incoming citations, fields of study, publication venue type, and open-access PDF status.';
+COMMENT ON TABLE solemd.corpus_selection_summary_refresh_runs IS
+    'Logged operator/audit ledger for rerunning only selection_summary after S2 Graph and PubMed enrichment complete for a published corpus-selection run.';
 COMMENT ON TABLE solemd.corpus_wave_runs IS
     'One row per mapped-paper evidence child-wave dispatch run feeding downstream document acquisition.';
 COMMENT ON TABLE solemd.corpus_wave_members IS
@@ -109,12 +111,32 @@ COMMENT ON COLUMN solemd.paper_selection_summary.mapped_priority_score IS
 COMMENT ON COLUMN solemd.paper_selection_summary.evidence_priority_score IS
     'Deterministic evidence-wave ranking score for downstream full-text acquisition and chunk/evidence work.';
 
+COMMENT ON COLUMN solemd.corpus_selection_summary_refresh_runs.pre_refresh_detail IS
+    'Small pre-refresh summary counts used to audit which enrichment-derived summary fields changed.';
+COMMENT ON COLUMN solemd.corpus_selection_summary_refresh_runs.post_refresh_detail IS
+    'Small post-refresh summary counts after the selection_summary chunk drain completed.';
+COMMENT ON COLUMN solemd.corpus_selection_summary_refresh_runs.plan_checksum IS
+    'CorpusPlan checksum from the published selection run whose summary was refreshed.';
+
 COMMENT ON COLUMN solemd.corpus_wave_runs.status IS
     'Mapped-wave lifecycle code from db/schema/enum-codes.yaml.corpus_wave_run_status.';
 COMMENT ON COLUMN solemd.corpus_wave_runs.phase_started_at IS
     'Phase start timestamps keyed by phase name for resumable child-wave dispatch runs.';
 COMMENT ON COLUMN solemd.corpus_wave_runs.plan_checksum IS
     'Stable SHA-256 digest of the validated child-wave plan manifest for resume/drift checks.';
+
+COMMENT ON TABLE solemd.corpus_quality_audit_runs IS
+    'Logged run-level QA snapshots over paper_selection_summary for mapped/evidence calibration.';
+COMMENT ON COLUMN solemd.corpus_quality_audit_runs.distributions IS
+    'Aggregated status, content, relevance, warning, and evidence-publication-type distributions.';
+COMMENT ON COLUMN solemd.corpus_quality_audit_runs.relation_diagnostic IS
+    'Relation-rollup, relation-signal, and summary projection diagnostics for the audited run.';
+COMMENT ON COLUMN solemd.corpus_quality_audit_runs.top_signals IS
+    'Top venues, MeSH, publication types, fields of study, topic tracks, and organ tracks.';
+COMMENT ON COLUMN solemd.corpus_quality_audit_runs.samples IS
+    'Deterministic top-ranked paper samples by quality bucket for human review.';
+COMMENT ON COLUMN solemd.corpus_quality_audit_runs.findings IS
+    'Machine-readable audit findings that should drive the next selector calibration loop.';
 
 COMMENT ON COLUMN solemd.corpus_wave_members.actor_name IS
     'Downstream actor target for the wave member; initial slice dispatches to evidence.acquire_for_paper.';
@@ -129,6 +151,55 @@ COMMENT ON COLUMN solemd.vocab_term_aliases.normalized_alias IS
     'Normalized lookup key derived from alias text for fast warehouse-local PubTator joins.';
 COMMENT ON COLUMN solemd.vocab_term_aliases.source_asset_sha256 IS
     'SHA-256 of the source vocab_aliases.tsv asset used for the current table refresh.';
+
+COMMENT ON TABLE solemd.pmc_fulltext_fetch_runs IS
+    'Run-level ledger for PMC full-text enrichment over mapped PMCID papers.';
+COMMENT ON TABLE solemd.pmc_fulltext_documents IS
+    'One row per PMCID, source provider, source checksum, and parser version for licensed PMC full-text availability, fetch, parse, and materialization state.';
+COMMENT ON TABLE solemd.pmc_fulltext_sections IS
+    'Hierarchy-preserving normalized section rows produced from licensed PMC full-text parser adapters.';
+COMMENT ON TABLE solemd.pmc_fulltext_passages IS
+    'Retrievable PMC passage candidates with parser and checksum provenance.';
+COMMENT ON COLUMN solemd.pmc_fulltext_fetch_runs.selector_version IS
+    'Candidate selector key such as metadata-only-pmcid or mapped-pmcid.';
+COMMENT ON COLUMN solemd.pmc_fulltext_fetch_runs.source_order IS
+    'Ordered availability/fetch providers used by this run.';
+COMMENT ON COLUMN solemd.pmc_fulltext_fetch_runs.status IS
+    'PMC full-text run status from db/schema/enum-codes.yaml.pmc_fulltext_fetch_run_status.';
+COMMENT ON COLUMN solemd.pmc_fulltext_documents.source_provider IS
+    'PMC full-text source provider from db/schema/enum-codes.yaml.pmc_fulltext_source_provider.';
+COMMENT ON COLUMN solemd.pmc_fulltext_documents.status IS
+    'PMC full-text document lifecycle status from db/schema/enum-codes.yaml.pmc_fulltext_document_status.';
+COMMENT ON COLUMN solemd.pmc_fulltext_documents.license_source_provider IS
+    'PMC availability source that supplied license provenance before text parsing.';
+COMMENT ON COLUMN solemd.pmc_fulltext_documents.source_checksum IS
+    'SHA-256 checksum of the fetched text payload or deterministic negative availability payload.';
+COMMENT ON COLUMN solemd.pmc_fulltext_documents.is_current IS
+    'True for the latest parsed or negative document state for one PMCID/provider/parser path.';
+COMMENT ON COLUMN solemd.pmc_fulltext_sections.section_ordinal_path IS
+    'Stable dot-delimited hierarchy path such as 0001.0002.';
+COMMENT ON COLUMN solemd.pmc_fulltext_sections.section_role IS
+    'Normalized PMC section role from db/schema/enum-codes.yaml.pmc_fulltext_section_role; unknown preserves unmapped source variation.';
+COMMENT ON COLUMN solemd.pmc_fulltext_sections.section_type IS
+    'Raw BioC/JATS section type label, when available; stored before SoleMD role normalization.';
+COMMENT ON COLUMN solemd.pmc_fulltext_sections.section_role_codes IS
+    'All normalized role candidates assigned to this section; compound sections preserve multiple roles.';
+COMMENT ON COLUMN solemd.pmc_fulltext_sections.section_role_confidence IS
+    'Deterministic section-role confidence from 0.000 to 1.000 based on exact section type, title, or parent propagation.';
+COMMENT ON COLUMN solemd.pmc_fulltext_sections.section_role_source IS
+    'Mapper evidence source such as section_type_exact, title_exact, title_phrase, section_type_and_title, parent_propagation, or unknown.';
+COMMENT ON COLUMN solemd.pmc_fulltext_sections.source_type IS
+    'Raw BioC passage type that introduced the section, such as title_1 or abstract_title_1.';
+COMMENT ON COLUMN solemd.pmc_fulltext_passages.passage_role IS
+    'Normalized retrievable PMC passage role from db/schema/enum-codes.yaml.pmc_fulltext_passage_role.';
+COMMENT ON COLUMN solemd.pmc_fulltext_passages.text_checksum IS
+    'SHA-256 checksum over parser version, PMCID, passage role, section path, ordinal, and normalized passage text.';
+COMMENT ON COLUMN solemd.paper_selection_summary.pmc_fulltext_document_id IS
+    'Current PMC full-text document that promoted this summary row to fulltext_ready.';
+COMMENT ON COLUMN solemd.paper_selection_summary.pmc_fulltext_passage_count IS
+    'Retrievable passage count present when PMC full-text promotion was applied.';
+COMMENT ON COLUMN solemd.paper_selection_summary.pmc_fulltext_promoted_at IS
+    'Timestamp when the guarded PMC full-text lane promoted this summary row.';
 
 COMMENT ON FUNCTION solemd.clean_venue(TEXT) IS
     'Normalize venue names for corpus journal matching by lowercasing, stripping trailing dots, subtitles, leading \"the\", and trailing parentheticals.';

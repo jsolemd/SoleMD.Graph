@@ -3,18 +3,34 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import hashlib
 import json
 import xml.etree.ElementTree as ET
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 from app.config import Settings
-from app.enrichment.http import AsyncRateLimiter, retry_after_seconds
+from app.enrichment.http import (
+    AsyncRateLimiter,
+    is_retryable_http_error,
+    retry_after_seconds,
+)
+from app.telemetry.metrics import observe_enrichment_api_request
 
 
 PUBMED_EFETCH_ROOT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+PUBMED_PROVIDER_NAME = "pubmed_efetch"
+NCBI_UNKEYED_REQUESTS_PER_SECOND_LIMIT = 3.0
+NCBI_KEYED_REQUESTS_PER_SECOND_LIMIT = 10.0
+_NCBI_UNKEYED_SAFE_REQUESTS_PER_SECOND = 2.5
+_NCBI_KEYED_SAFE_REQUESTS_PER_SECOND = 9.0
+_NCBI_PLACEHOLDER_EMAILS = frozenset({"", "noreply@example.com"})
+_NCBI_EASTERN_TIME = ZoneInfo("America/New_York")
+_NCBI_OFF_PEAK_START_HOUR = 21
+_NCBI_OFF_PEAK_END_HOUR = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,12 +60,8 @@ class PubMedMetadataRecord:
 class PubMedEfetchClient:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        allowed_rate = settings.pubmed_metadata_requests_per_second
-        if settings.ncbi_api_key:
-            allowed_rate = min(allowed_rate, 9.0)
-        else:
-            allowed_rate = min(allowed_rate, 2.5)
-        self._rate_limiter = AsyncRateLimiter(allowed_rate)
+        validate_pubmed_api_settings(settings)
+        self._rate_limiter = AsyncRateLimiter(effective_pubmed_request_rate(settings))
 
     async def fetch(self, pmids: Sequence[int]) -> tuple[PubMedMetadataRecord, ...]:
         if not pmids:
@@ -65,7 +77,8 @@ class PubMedEfetchClient:
             payload["api_key"] = self._settings.ncbi_api_key
         body = urlencode(payload).encode("utf-8")
         for attempt in range(1, self._settings.pubmed_metadata_max_attempts + 1):
-            await self._rate_limiter.wait()
+            await self._rate_limiter.wait(effective_pubmed_request_rate(self._settings))
+            started_at = asyncio.get_running_loop().time()
             try:
                 xml_payload = await asyncio.to_thread(
                     _post_bytes,
@@ -75,18 +88,102 @@ class PubMedEfetchClient:
                     self._settings.ncbi_api_tool,
                     self._settings.ncbi_api_email,
                 )
+                observe_enrichment_api_request(
+                    provider=PUBMED_PROVIDER_NAME,
+                    outcome="success",
+                    status_code="200",
+                    duration_seconds=asyncio.get_running_loop().time() - started_at,
+                    requested_records=len(pmids),
+                )
                 return parse_pubmed_efetch_xml(xml_payload)
             except HTTPError as exc:
-                if exc.code not in {429, 500, 502, 503, 504}:
+                observe_enrichment_api_request(
+                    provider=PUBMED_PROVIDER_NAME,
+                    outcome="http_error",
+                    status_code=str(exc.code),
+                    duration_seconds=asyncio.get_running_loop().time() - started_at,
+                    requested_records=len(pmids),
+                )
+                if not is_retryable_http_error(exc):
                     raise
                 if attempt >= self._settings.pubmed_metadata_max_attempts:
                     raise
                 await asyncio.sleep(retry_after_seconds(exc) or min(60.0, 2.0**attempt))
-            except (OSError, TimeoutError):
+            except (OSError, TimeoutError) as exc:
+                observe_enrichment_api_request(
+                    provider=PUBMED_PROVIDER_NAME,
+                    outcome=type(exc).__name__,
+                    status_code="none",
+                    duration_seconds=asyncio.get_running_loop().time() - started_at,
+                    requested_records=len(pmids),
+                )
                 if attempt >= self._settings.pubmed_metadata_max_attempts:
                     raise
                 await asyncio.sleep(min(60.0, 2.0**attempt))
         return ()
+
+
+def effective_pubmed_request_rate(
+    settings: Settings,
+    *,
+    now: datetime | None = None,
+) -> float:
+    safe_limit = (
+        _NCBI_KEYED_SAFE_REQUESTS_PER_SECOND
+        if settings.ncbi_api_key
+        else _NCBI_UNKEYED_SAFE_REQUESTS_PER_SECOND
+    )
+    configured_limit = min(settings.pubmed_metadata_requests_per_second, safe_limit)
+    if pubmed_is_ncbi_off_peak(now=now):
+        return configured_limit
+    return min(configured_limit, settings.pubmed_metadata_peak_requests_per_second)
+
+
+def pubmed_provider_limit(settings: Settings) -> float:
+    return (
+        NCBI_KEYED_REQUESTS_PER_SECOND_LIMIT
+        if settings.ncbi_api_key
+        else NCBI_UNKEYED_REQUESTS_PER_SECOND_LIMIT
+    )
+
+
+def pubmed_contact_email_configured(settings: Settings) -> bool:
+    return settings.ncbi_api_email.strip().lower() not in _NCBI_PLACEHOLDER_EMAILS
+
+
+def validate_pubmed_api_settings(settings: Settings) -> None:
+    if not pubmed_contact_email_configured(settings):
+        raise RuntimeError(
+            "NCBI_API_EMAIL must be configured with a real contact email before "
+            "PubMed EFetch enrichment can run."
+        )
+    if not settings.ncbi_api_tool.strip():
+        raise RuntimeError("NCBI_API_TOOL must be configured for PubMed EFetch enrichment.")
+
+
+def pubmed_is_large_job(*, max_papers: int | None, settings: Settings) -> bool:
+    return (
+        max_papers is None
+        or max_papers > settings.pubmed_metadata_large_job_threshold
+    )
+
+
+def pubmed_rate_window(now: datetime | None = None) -> str:
+    if pubmed_is_ncbi_off_peak(now=now):
+        return "off_peak"
+    return "weekday_peak"
+
+
+def pubmed_is_ncbi_off_peak(now: datetime | None = None) -> bool:
+    current = now or datetime.now(UTC)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    eastern = current.astimezone(_NCBI_EASTERN_TIME)
+    return (
+        eastern.weekday() >= 5
+        or eastern.hour >= _NCBI_OFF_PEAK_START_HOUR
+        or eastern.hour < _NCBI_OFF_PEAK_END_HOUR
+    )
 
 
 def parse_pubmed_efetch_xml(payload: bytes) -> tuple[PubMedMetadataRecord, ...]:

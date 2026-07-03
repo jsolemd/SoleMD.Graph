@@ -7,20 +7,32 @@ from time import monotonic
 from urllib.error import HTTPError
 
 
+RETRYABLE_HTTP_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
+
 class AsyncRateLimiter:
     def __init__(self, requests_per_second: float) -> None:
-        self._interval_seconds = 1.0 / max(requests_per_second, 0.01)
+        self._interval_seconds = self._interval_for_rate(requests_per_second)
         self._next_allowed_at = 0.0
         self._lock = asyncio.Lock()
 
-    async def wait(self) -> None:
+    async def wait(self, requests_per_second: float | None = None) -> None:
         async with self._lock:
+            interval_seconds = (
+                self._interval_seconds
+                if requests_per_second is None
+                else self._interval_for_rate(requests_per_second)
+            )
             now = monotonic()
             sleep_seconds = self._next_allowed_at - now
             if sleep_seconds > 0:
                 await asyncio.sleep(sleep_seconds)
                 now = monotonic()
-            self._next_allowed_at = now + self._interval_seconds
+            self._next_allowed_at = now + interval_seconds
+
+    @staticmethod
+    def _interval_for_rate(requests_per_second: float) -> float:
+        return 1.0 / max(requests_per_second, 0.01)
 
 
 def retry_after_seconds(exc: HTTPError) -> float | None:
@@ -38,3 +50,7 @@ def retry_after_seconds(exc: HTTPError) -> float | None:
     if retry_at.tzinfo is None:
         retry_at = retry_at.replace(tzinfo=UTC)
     return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
+
+
+def is_retryable_http_error(exc: HTTPError) -> bool:
+    return exc.code in RETRYABLE_HTTP_STATUS_CODES

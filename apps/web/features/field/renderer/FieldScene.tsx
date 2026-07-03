@@ -62,10 +62,30 @@ function syncLayerUniforms(
       isMobile,
       pointTexture,
       lightMode,
-      { scopeDimEnabled },
+      {
+        initialAlpha: uniformsRef.current.uAlpha.value,
+        scopeDimEnabled,
+      },
     );
   }
   return uniformsRef.current;
+}
+
+function resolveInitialLayerAlpha(
+  controller: FieldController,
+  id: FieldStageItemId,
+  isMobile: boolean,
+  sceneState: FieldSceneState,
+) {
+  const shader = controller.params.shader;
+  const shaderAlpha = isMobile
+    ? shader.alphaMobile ?? shader.alpha
+    : shader.alpha;
+  const visibility =
+    sceneState.items[id]?.visibility ??
+    DEFAULT_FIELD_SCENE.items[id]?.visibility ??
+    0;
+  return shaderAlpha * visibility;
 }
 
 function attachController(
@@ -77,7 +97,14 @@ function attachController(
   const model = handles.model.current;
   const material = handles.material.current;
   if (!wrapper || !mouseWrapper || !model || !material) return;
-  wrapper.visible = false;
+  if (
+    controller.wrapper === wrapper &&
+    controller.mouseWrapper === mouseWrapper &&
+    controller.model === model &&
+    controller.material === material
+  ) {
+    return;
+  }
   controller.attach({
     material,
     model,
@@ -85,6 +112,40 @@ function attachController(
     view: null,
     wrapper,
   });
+}
+
+function ensureControllerReady({
+  activeIdSet,
+  controller,
+  handles,
+  id,
+  onControllerReady,
+  readyIds,
+}: {
+  activeIdSet: ReadonlySet<FieldStageItemId>;
+  controller: FieldController;
+  handles: StageLayerHandle;
+  id: FieldStageItemId;
+  onControllerReady?: (
+    id: FieldStageItemId,
+    controller: FieldController,
+  ) => void;
+  readyIds: Set<FieldStageItemId>;
+}) {
+  if (!activeIdSet.has(id)) return;
+  if (
+    !handles.wrapper.current ||
+    !handles.mouseWrapper.current ||
+    !handles.model.current ||
+    !handles.material.current
+  ) {
+    return;
+  }
+
+  attachController(controller, handles);
+  if (readyIds.has(id)) return;
+  readyIds.add(id);
+  onControllerReady?.(id, controller);
 }
 
 // Shared landing FieldScene: blob, stream, and object-formation layers all
@@ -138,14 +199,39 @@ export function FieldScene({
     // are ambient layers — they reference the same particle-state
     // texture (singleton) but skip the sampler read via uScopeDimEnabled=0.
     blobController.createLayerUniforms(isMobile, pointTexture, lightModeValue, {
+      initialAlpha: resolveInitialLayerAlpha(
+        blobController,
+        "blob",
+        isMobile,
+        sceneStateRef.current,
+      ),
       scopeDimEnabled: true,
     }),
   );
   const streamUniformsRef = useRef<LayerUniforms>(
-    streamController.createLayerUniforms(isMobile, pointTexture, lightModeValue),
+    streamController.createLayerUniforms(isMobile, pointTexture, lightModeValue, {
+      initialAlpha: resolveInitialLayerAlpha(
+        streamController,
+        "stream",
+        isMobile,
+        sceneStateRef.current,
+      ),
+    }),
   );
   const objectFormationUniformsRef = useRef<LayerUniforms>(
-    objectFormationController.createLayerUniforms(isMobile, pointTexture, lightModeValue),
+    objectFormationController.createLayerUniforms(
+      isMobile,
+      pointTexture,
+      lightModeValue,
+      {
+        initialAlpha: resolveInitialLayerAlpha(
+          objectFormationController,
+          "objectFormation",
+          isMobile,
+          sceneStateRef.current,
+        ),
+      },
+    ),
   );
 
   const blobUniforms = syncLayerUniforms(
@@ -225,6 +311,32 @@ export function FieldScene({
     [],
   );
 
+  const controllerRegistrations = useMemo<
+    Array<{
+      controller: FieldController;
+      handles: StageLayerHandle;
+      id: FieldStageItemId;
+    }>
+  >(
+    () => [
+      { controller: blobController, handles: blobHandles, id: "blob" },
+      { controller: streamController, handles: streamHandles, id: "stream" },
+      {
+        controller: objectFormationController,
+        handles: objectFormationHandles,
+        id: "objectFormation",
+      },
+    ],
+    [
+      blobController,
+      blobHandles,
+      objectFormationController,
+      objectFormationHandles,
+      streamController,
+      streamHandles,
+    ],
+  );
+
   useEffect(() => {
     if (activeIdSet.has("blob") && pointSources.blob) {
       blobController.setPointSource(pointSources.blob);
@@ -259,7 +371,10 @@ export function FieldScene({
       streamController.destroy();
       objectFormationController.destroy();
       for (const ref of materialRefs) {
-        ref.current?.dispose();
+        const material = ref.current;
+        if (material && typeof material.dispose === "function") {
+          material.dispose();
+        }
         ref.current = null;
       }
     };
@@ -272,83 +387,60 @@ export function FieldScene({
     streamHandles,
   ]);
 
-  // Attach controllers whenever their layer becomes visible. The attach
-  // call is idempotent in practice (it writes handle refs into the
-  // controller), but gating on activeIdSet avoids running during renders
-  // where the refs aren't populated yet because the JSX is unmounted.
+  // Reconcile the R3F refs after commit. The frame-loop below repeats the
+  // same idempotent check so controller ownership recovers if a layer ref
+  // appears after React effects have already run.
   useEffect(() => {
-    if (activeIdSet.has("blob")) {
-      attachController(blobController, blobHandles);
-    }
-    if (activeIdSet.has("stream")) {
-      attachController(streamController, streamHandles);
-    }
-    if (activeIdSet.has("objectFormation")) {
-      attachController(objectFormationController, objectFormationHandles);
+    for (const registration of controllerRegistrations) {
+      ensureControllerReady({
+        activeIdSet,
+        controller: registration.controller,
+        handles: registration.handles,
+        id: registration.id,
+        onControllerReady,
+        readyIds: readyIdsRef.current,
+      });
     }
   }, [
     activeIdSet,
-    blobController,
-    blobHandles,
-    objectFormationController,
-    objectFormationHandles,
-    streamController,
-    streamHandles,
-  ]);
-
-  useEffect(() => {
-    const registrations: Array<[FieldStageItemId, FieldController, StageLayerHandle]> = [
-      ["blob", blobController, blobHandles],
-      ["stream", streamController, streamHandles],
-      [
-        "objectFormation",
-        objectFormationController,
-        objectFormationHandles,
-      ],
-    ];
-
-    registrations.forEach(([id, controller, handles]) => {
-      if (!activeIdSet.has(id)) return;
-      if (readyIdsRef.current.has(id)) return;
-      if (
-        !handles.wrapper.current ||
-        !handles.mouseWrapper.current ||
-        !handles.model.current ||
-        !handles.material.current
-      ) {
-        return;
-      }
-      readyIdsRef.current.add(id);
-      onControllerReady?.(id, controller);
-    });
-  }, [
-    activeIdSet,
-    blobController,
-    blobHandles,
-    objectFormationController,
-    objectFormationHandles,
+    controllerRegistrations,
     onControllerReady,
-    streamController,
-    streamHandles,
   ]);
 
   useFrame((state, delta) => {
-    const sceneState = sceneStateRef.current ?? DEFAULT_FIELD_SCENE;
-    const elapsedSec = getFieldElapsedSeconds();
-    const pixelRatio = Math.min(state.gl.getPixelRatio(), 2);
+    for (const registration of controllerRegistrations) {
+      ensureControllerReady({
+        activeIdSet,
+        controller: registration.controller,
+        handles: registration.handles,
+        id: registration.id,
+        onControllerReady,
+        readyIds: readyIdsRef.current,
+      });
+    }
+
     const camera = state.camera;
-    const viewportW = state.gl.domElement.width;
-    const viewportH = state.gl.domElement.height;
 
     // Publish the live R3F camera to the optional cameraRef so stage-level
     // DOM overlays can call projectPointSourceVertex without owning the
     // camera themselves.
     if (cameraRef) cameraRef.current = camera;
 
-    if (!stageReady) {
-      fieldLoopClock.tick(delta);
-      return;
-    }
+    // Pre-ready frames must not advance or START the field clock: the
+    // module epoch is set by the first getFieldElapsedSeconds() call, so
+    // deferring that call until stageReady makes elapsedSec begin at 0 on
+    // the first ticked frame. BlobController's sphere-formation intro and
+    // the absolute wrapper rotation read this clock — starting it during
+    // the loading window silently consumes the intro (INTRO_DURATION is
+    // shorter than a cold chunk load). Layers cannot paint in this window
+    // either: wrappers mount visible={false} until their controller ticks.
+    if (!stageReady) return;
+
+    const sceneState = sceneStateRef.current ?? DEFAULT_FIELD_SCENE;
+    const elapsedSec = getFieldElapsedSeconds();
+    const pixelRatio = Math.min(state.gl.getPixelRatio(), 2);
+    const viewportW = state.gl.domElement.width;
+    const viewportH = state.gl.domElement.height;
 
     const layers = [
       activeIdSet.has("blob") && pointSources.blob

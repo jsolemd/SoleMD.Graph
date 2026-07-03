@@ -4,7 +4,7 @@
     "context7": {
       "type": "http",
       "url": "https://mcp.context7.com/mcp",
-      "instructions": "Fallback external library documentation lookups. Use when CodeAtlas docs tools do not have the library indexed."
+      "instructions": "Fallback external library documentation lookups only. For SoleMD work, always try CodeAtlas docs first: resolve_library_id -> search_docs/search_docs_multi -> read_doc/expand_doc_chunk. Use Context7 only when CodeAtlas lacks the library, the indexed docs are stale/unavailable, or the local result quality is clearly insufficient; state that fallback reason explicitly."
     },
     "chrome-devtools": {
       "type": "http",
@@ -14,17 +14,7 @@
     "codeatlas": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.graph",
-      "instructions": "Primary MCP surface for CodeAtlas navigation in the active project context. It exposes both project code tools and external documentation tools on the same server. Code navigation surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, find_clones, find_patterns, index_status. Docs surface: resolve_library_id, search_docs, search_docs_multi, expand_doc_chunk, list_doc_libraries, read_doc, update_doc_library, add_doc_library, delete_doc_library, export_doc_bundle, import_doc_bundle. Default code exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref and symbol_uid -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) or trace_flow(from_uid=..., to_uid=...) when a path question appears. For external library docs: resolve_library_id(library_name=...) -> search_docs(library_id=..., query=...) -> read_doc(...) when full context is needed. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Narrow UI traversal with library_tag (for example mantine, framer-motion, tailwind, cosmograph) and ui_primitive (for example ActionIcon, Stack, motion.div). Read matched_on, rank_explain, unresolved call-site telemetry, and CSS-aware metadata such as css_selector_targets, css_var_defs, css_at_rules, and has_css_important before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope. Cross-project access stays project-scoped via explicit aliases: codeatlas-graph, codeatlas-make, and codeatlas-infra."
-    },
-    "mantine": {
-      "command": "node",
-      "args": [
-        "/workspaces/SoleMD.Graph/node_modules/@mantine/mcp-server/bin/mantine-mcp-server.cjs"
-      ],
-      "env": {
-        "MANTINE_MCP_DATA_URL": "https://mantine.dev/mcp"
-      },
-      "instructions": "Official Mantine MCP server (first-party, 145 components). Tools: list_items, get_item_doc (full markdown docs), get_item_props (normalized props), search_docs (keyword search). Prefer this for Mantine-specific queries."
+      "instructions": "Primary MCP surface for CodeAtlas navigation in the active project context. It exposes both project code tools and external documentation tools on the same server. Code navigation surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, find_clones, find_patterns, index_status. Docs surface: resolve_library_id, search_docs, search_docs_multi, expand_doc_chunk, list_doc_libraries, read_doc, update_doc_library, add_doc_library, delete_doc_library, export_doc_bundle, import_doc_bundle. Default code exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref and symbol_uid -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) or trace_flow(from_uid=..., to_uid=...) when a path question appears. For external library docs, CodeAtlas docs are primary: resolve_library_id(library_name=...) -> search_docs(library_id=..., query=...) -> read_doc(...) or expand_doc_chunk(...) when full context is needed. Context7/web are fallback-only when CodeAtlas lacks the library, is stale/unavailable, or gives clearly low-quality results. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Narrow UI traversal with library_tag (for example mantine, framer-motion, tailwind, cosmograph) and ui_primitive (for example ActionIcon, Stack, motion.div). Read matched_on, rank_explain, unresolved call-site telemetry, and CSS-aware metadata such as css_selector_targets, css_var_defs, css_at_rules, and has_css_important before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope. Cross-project access stays project-scoped via explicit aliases: codeatlas-graph, codeatlas-make, and codeatlas-infra."
     },
     "neo4j": {
       "command": "/workspaces/SoleMD.Infra/scripts/neo4j-mcp-server.sh",

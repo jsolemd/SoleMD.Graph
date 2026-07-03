@@ -65,7 +65,9 @@ export function FieldCanvas({
       ref={containerRef}
       aria-hidden="true"
       className={[
-        "pointer-events-none absolute inset-0 z-0 [&_canvas]:h-full [&_canvas]:w-full",
+        // Fixed full-viewport stage: the module contract mounts one field
+        // canvas behind the scrolling page, never per-section canvases.
+        "pointer-events-none fixed inset-0 z-0 [&_canvas]:h-full [&_canvas]:w-full",
         className,
       ]
         .filter(Boolean)

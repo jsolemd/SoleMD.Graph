@@ -1,53 +1,105 @@
-# Langfuse Benchmarking Reference
+# Langfuse Benchmarking Reference (v4)
 
-## Canonical Files
+> Status: pending backend rebuild. No Langfuse code lives in `apps/` today. Paths
+> below track `docs/rag/15-repo-structure.md §7.3` (intended `apps/worker/app/...`).
+> CLI examples will not execute on `main` until the worker-plane Langfuse adapter
+> lands; treat the patterns here as the contract the rebuild must satisfy.
 
-- `engine/scripts/rag_benchmark.py` - benchmark runner, run review, gating, and comparison CLI
-- `engine/scripts/prepare_rag_curated_benchmarks.py` - dataset builder and Langfuse dataset sync
-- `engine/app/rag_ingest/experiment.py` - structural evaluators, diagnosis helpers, annotation queue support, default benchmark list
-- `engine/app/rag_ingest/benchmark_catalog.py` - acceptance suites, gate modes, default thresholds, warehouse-depth gates
-- `engine/app/rag_ingest/eval_langfuse.py` - score config registration and dataset upload helpers
-- `engine/app/rag_ingest/langfuse_run_review.py` - historical run review and comparison helpers
+## Intended File Layout (Post-Rebuild)
+
+| Path | Purpose |
+|---|---|
+| `apps/worker/app/eval/langfuse_config.py` | env loading, prompt access, score constants, safe SDK imports |
+| `apps/worker/app/eval/score_configs.py` | score-config registration + idempotent migration |
+| `apps/worker/app/eval/experiment.py` | task, evaluators, diagnosis helpers, annotation queue, default benchmark list |
+| `apps/worker/app/eval/benchmark_catalog.py` | acceptance suites, gate modes, default thresholds, warehouse-depth gates |
+| `apps/worker/app/eval/run_review.py` | historical run review + comparison helpers |
+| `apps/worker/scripts/rag_benchmark.py` | benchmark runner CLI |
+| `apps/worker/scripts/prepare_rag_curated_benchmarks.py` | dataset builder + Langfuse dataset sync |
+
+These paths are forward-looking. Do not attempt to import them today; consult
+`docs/rag/15-repo-structure.md` before adding any of these files.
 
 ## Source Of Truth
 
-- Langfuse datasets are the **live** benchmark source of truth.
-- When using Langfuse Cloud Hobby, JSON under
-  `engine/data/runtime_eval_benchmarks/` is also the **archive mirror**
-  created by `prepare_rag_curated_benchmarks.py --snapshot`, because
-  cloud data access is limited to 30 days on that plan.
-- `rag_benchmark.py --all-benchmarks` runs the live dataset list from
-  `engine/app/rag_ingest/experiment.py::ALL_BENCHMARK_DATASETS`.
+- Langfuse datasets are the **live** benchmark source of truth. The intended
+  worker-plane runtime fetches them via `langfuse.get_dataset(name=...)`.
+- When using Langfuse Cloud Hobby, JSON snapshots remain the **archive mirror**
+  because cloud data access is limited to 30 days on that plan. The intended
+  builder script writes them under the worker's data directory when invoked
+  with `--snapshot`.
+- `--all-benchmarks` runs the live dataset list constant
+  (`ALL_BENCHMARK_DATASETS`) declared in `apps/worker/app/eval/experiment.py`.
 - `--use-suite-gates` applies default acceptance thresholds only for suites
-  registered in `benchmark_catalog.py`.
-
-## Downstream Consumers
-
-- `docs/rag/10a-rag-quality-analyzer.md` is the offline batch consumer of
-  cascade traces emitted by benchmark experiments and run reviews.
-- If a benchmark change adds or removes cascade trace fields, update
-  `08-retrieval-cascade.md` and `10a-rag-quality-analyzer.md` in the same
-  PR so the trace producer and the batch analyzer stay aligned.
-- If a benchmark change adds a new persisted score family, add it to
-  `10a §3` in the same batch if the offline analyzer should retain it
-  beyond Langfuse Cloud's live surface.
+  registered in `apps/worker/app/eval/benchmark_catalog.py`.
 
 ## Benchmark Lifecycle
 
 ```text
 prepare_rag_curated_benchmarks.py
-  -> ensure_score_configs()
-  -> create or update Langfuse datasets
+  -> ensure_score_configs()                         # see references/score-configs.md
+  -> langfuse.create_dataset(name=, description=, metadata=)
+  -> langfuse.create_dataset_item(dataset_name=, input=, expected_output=, metadata=)
   -> optionally write JSON snapshots
 
 rag_benchmark.py
-  -> select one dataset or ALL_BENCHMARK_DATASETS
-  -> run dataset.run_experiment() or review an existing run
-  -> attach structural scores + run-level evaluators
+  -> dataset = langfuse.get_dataset(name=...)
+  -> dataset.run_experiment(
+         name=run_name,
+         description="...",
+         task=task,
+         evaluators=[...],
+         run_evaluators=[...],
+         max_concurrency=4,
+         metadata={"git_sha": ..., "model": ...},
+     )
+  -> attach observation-level structural scores
   -> optionally diagnose failures
   -> optionally compare against a baseline run
   -> optionally enqueue hit@1=0 traces to rag-failure-review
 ```
+
+`dataset.run_experiment(...)` returns a result with `.format()` and
+`.dataset_run_url`. Always print both at the end of a run so the operator can
+click through to the UI.
+
+## Run-Name Convention
+
+Reusing a run name silently appends to the existing run. Always include a
+timestamp and git SHA so reruns are distinguishable:
+
+```python
+from datetime import datetime, timezone
+import subprocess
+
+git_sha = subprocess.check_output(
+    ["git", "rev-parse", "--short=7", "HEAD"], text=True
+).strip()
+run_name = f"{git_sha}-gemini-2.5-flash-{datetime.now(timezone.utc).isoformat(timespec='seconds')}"
+```
+
+The pattern is `<git_sha>-<model>-<iso8601_utc>`. Drop in stable suffixes
+(`-baseline`, `-routing-fix`) only when you need the run name to communicate
+intent in the UI.
+
+## Environment Filtering
+
+`LANGFUSE_TRACING_ENVIRONMENT` is the v4 UI filter axis. Use:
+
+- `dev` for local exploratory runs.
+- `eval` for benchmark experiments.
+- `staging` for pre-release validation.
+- `production` for live API traces.
+
+Set it before client construction (it is read at SDK init):
+
+```bash
+export LANGFUSE_TRACING_ENVIRONMENT=eval
+```
+
+Filter by environment in the Langfuse UI to separate experiment noise from
+production traffic. Mixing `eval` and `production` in the same dashboard
+defeats the entire point of having an environment field.
 
 ## Acceptance Surfaces
 
@@ -76,8 +128,8 @@ Notes:
 
 ## Focused Diagnostic Suites
 
-These remain part of the default live benchmark run, but they are better treated
-as lane-specific debugging surfaces than release-policy docs:
+These remain part of the default live benchmark run, but they are better
+treated as lane-specific debugging surfaces than release-policy docs:
 
 - `benchmark-title_retrieval_v2` - exact and fuzzy title routing
 - `benchmark-clinical_evidence_v2` - mixed clinical evidence retrieval
@@ -89,50 +141,51 @@ as lane-specific debugging surfaces than release-policy docs:
 - `benchmark-semantic_recall_v2` - paraphrase and semantic recall robustness
 - `benchmark-entity_relation_v2` - entity-heavy and relation-heavy retrieval
 
-## Commands
+## Commands (Forward-Looking)
 
 ```bash
-cd engine
+# Rebuild datasets in Langfuse (post-rebuild path)
+solemd op-run graph -- uv run python -m apps.worker.scripts.prepare_rag_curated_benchmarks
 
-# Rebuild datasets in Langfuse
-uv run python -m scripts.prepare_rag_curated_benchmarks
-
-# Also write git-tracked JSON snapshots
-uv run python -m scripts.prepare_rag_curated_benchmarks --snapshot
+# Also write archive snapshots
+solemd op-run graph -- uv run python -m apps.worker.scripts.prepare_rag_curated_benchmarks --snapshot
 
 # Run all live datasets with catalog defaults where available
-uv run python scripts/rag_benchmark.py \
+solemd op-run graph -- uv run python apps/worker/scripts/rag_benchmark.py \
   --all-benchmarks \
-  --run baseline-2026-04-16 \
+  --run "$(git rev-parse --short=7 HEAD)-flash-baseline-$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --use-suite-gates \
   --diagnose
 
 # Run one focused diagnostic suite
-uv run python scripts/rag_benchmark.py \
+solemd op-run graph -- uv run python apps/worker/scripts/rag_benchmark.py \
   --dataset benchmark-adversarial_routing_v2 \
-  --run routing-debug-2026-04-16 \
+  --run "$(git rev-parse --short=7 HEAD)-routing-debug-$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --diagnose
 
 # Review an existing Langfuse run without re-executing retrieval
-uv run python scripts/rag_benchmark.py \
+solemd op-run graph -- uv run python apps/worker/scripts/rag_benchmark.py \
   --dataset benchmark-biomedical_optimization_v3 \
   --run baseline-2026-04-16 \
   --review-existing-run \
   --compare-run accepted-2026-04-12
 
 # Add explicit gates on top of suite defaults or for one-off experiments
-uv run python scripts/rag_benchmark.py \
+solemd op-run graph -- uv run python apps/worker/scripts/rag_benchmark.py \
   --dataset benchmark-passage_retrieval_v2 \
-  --run passage-fix-2026-04-16 \
+  --run "$(git rev-parse --short=7 HEAD)-passage-fix-$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --quality-gate avg_hit_at_1=0.9,error_rate=0
 
 # Escalate misses for human/domain review
-uv run python scripts/rag_benchmark.py \
+solemd op-run graph -- uv run python apps/worker/scripts/rag_benchmark.py \
   --all-benchmarks \
-  --run triage-2026-04-16 \
+  --run "$(git rev-parse --short=7 HEAD)-triage-$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --diagnose \
   --enqueue-failures
 ```
+
+`solemd op-run graph -- ...` is mandatory — the runtime needs `LANGFUSE_*`,
+`GEMINI_API_KEY`, and database DSNs injected from 1Password (see `/op`).
 
 Useful review flags:
 
@@ -158,7 +211,8 @@ Useful review flags:
   `duration_ms`, `evidence_bundle_count`
 - Grounding and answer quality: `grounded_answer_rate`,
   `target_in_grounded_answer`, `target_in_answer_corpus`,
-  `grounded_answer_present`
+  `grounded_answer_present`, `faithfulness`, `answer_relevance`,
+  `context_relevance`, `hallucination`, `citation_valid`
 - Decomposition: `target_*` signal scores and `channel_*` contribution scores
 - Metadata and routing: `retrieval_profile`, `warehouse_depth`,
   `route_signature`, `source_system`, `source_availability`
@@ -167,20 +221,23 @@ Useful review flags:
 
 Managed LLM evaluators can exist in Langfuse, but they are not the default
 acceptance surface. Structural scores are the baseline. Any managed-evaluator
-activation is a deliberate, cost-bearing choice.
+activation is a deliberate, cost-bearing choice. See [`evaluators.md`](evaluators.md)
+for the managed-vs-custom-vs-structural decision tree and
+[`rag-metrics.md`](rag-metrics.md) for canonical Python implementations of the
+quality scores.
 
 ## Score To Action Mapping
 
 | Pattern | Likely next move |
 |---|---|
-| `hit_at_1=0` with `route=title_lookup` | Check title-like query thresholds in `query_enrichment.py` |
-| `hit_at_1=0` with `route=question_lookup` | Inspect MedCPT reranker and question-route logic in `retrieval_policy.py` |
+| `hit_at_1=0` with `route=title_lookup` | Check title-like query thresholds in query enrichment |
+| `hit_at_1=0` with `route=question_lookup` | Inspect MedCPT reranker and question-route logic in retrieval policy |
 | `depth=none` | Treat as ingest gap first; do not disguise it as a ranking fix |
 | `depth=abstract` with weak dense signal | Check dense-query enablement and embedding availability |
-| `bundles=0` or weak context relevance | Inspect routing and evidence-lane selection |
+| `bundles=0` or weak `context_relevance` | Inspect routing and evidence-lane selection |
 | `hit_at_k=1` but `hit_at_1=0` | Inspect fusion and rerank ordering rather than recall |
 | `error_rate>0` | Debug runtime, dependency, or connection failures before interpreting retrieval metrics |
-| Faithfulness or hallucination issues | Tighten generation prompts or grounded-answer logic, then rerun |
+| Low `faithfulness` or `hallucination=1` | Tighten generation prompts or grounded-answer logic, then rerun |
 
 ## Agentic Loop
 
@@ -198,3 +255,14 @@ activation is a deliberate, cost-bearing choice.
 - Structural evaluators are the default and should run on routine benchmark work.
 - Managed evaluators are optional, cost money, and should only be enabled for
   targeted diagnosis where structural scores are insufficient.
+- `gemini-2.5-flash` is the default judge. Escalate to `gemini-2.5-pro` only
+  for gold-set rescoring on high-disagreement items.
+
+## Cross-References
+
+- Score-config schema and registration: [`score-configs.md`](score-configs.md)
+- Evaluator surfaces and Gemini judge integration: [`evaluators.md`](evaluators.md)
+- Canonical RAG quality metric implementations: [`rag-metrics.md`](rag-metrics.md)
+- Prompt management lifecycle: [`prompts.md`](prompts.md)
+- Experiment runner API surface and async patterns:
+  [`experiment-runner.md`](experiment-runner.md)

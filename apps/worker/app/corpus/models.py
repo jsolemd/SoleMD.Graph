@@ -56,6 +56,19 @@ class StartCorpusSelectionRequest(BaseModel):
         return self
 
 
+class StartSelectionSummaryRefreshRequest(BaseModel):
+    corpus_selection_run_id: UUID
+    requested_by: str | None = None
+    s2_graph_enrichment_run_id: UUID | None = None
+    pubmed_metadata_fetch_run_id: UUID | None = None
+
+
+class StartCorpusQualityAuditRequest(BaseModel):
+    corpus_selection_run_id: UUID
+    requested_by: str | None = None
+    sample_size: int = Field(default=12, ge=1, le=50)
+
+
 class DispatchEvidenceWaveRequest(BaseModel):
     s2_release_tag: str = Field(min_length=1)
     pt3_release_tag: str = Field(min_length=1)

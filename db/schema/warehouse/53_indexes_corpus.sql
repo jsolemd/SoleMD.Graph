@@ -210,6 +210,22 @@ CREATE INDEX IF NOT EXISTS idx_s2_paper_enrichment_corpus
 CREATE INDEX IF NOT EXISTS idx_s2_paper_enrichment_fields_of_study
     ON solemd.s2_paper_enrichment USING gin (fields_of_study);
 
+CREATE INDEX IF NOT EXISTS idx_summary_refresh_runs_selection_started
+    ON solemd.corpus_selection_summary_refresh_runs (
+        corpus_selection_run_id,
+        started_at DESC
+    );
+CREATE INDEX IF NOT EXISTS idx_summary_refresh_runs_status_started
+    ON solemd.corpus_selection_summary_refresh_runs (status, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_corpus_quality_audit_runs_selection_started
+    ON solemd.corpus_quality_audit_runs (
+        corpus_selection_run_id,
+        started_at DESC
+    );
+CREATE INDEX IF NOT EXISTS idx_corpus_quality_audit_runs_status_started
+    ON solemd.corpus_quality_audit_runs (status, started_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_corpus_wave_runs_selection_started
     ON solemd.corpus_wave_runs (
         corpus_selection_run_id,
@@ -245,5 +261,57 @@ CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_release_corpus
     ON pubtator.entity_annotations (source_release_id, corpus_id);
 CREATE INDEX IF NOT EXISTS idx_pubtator_relations_release_corpus
     ON pubtator.relations (source_release_id, corpus_id);
+
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_fetch_runs_status_started
+    ON solemd.pmc_fulltext_fetch_runs (status, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_documents_pmcid_status
+    ON solemd.pmc_fulltext_documents (pmcid, status, source_provider, parser_version);
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_documents_corpus_status
+    ON solemd.pmc_fulltext_documents (corpus_id, status, parsed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_documents_provider_checksum
+    ON solemd.pmc_fulltext_documents (source_provider, source_checksum, parser_version);
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_documents_current
+    ON solemd.pmc_fulltext_documents (pmcid, source_provider, parser_version, parsed_at DESC)
+    WHERE is_current;
+
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_sections_document_path
+    ON solemd.pmc_fulltext_sections (pmc_fulltext_document_id, section_ordinal_path);
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_sections_pmcid_role
+    ON solemd.pmc_fulltext_sections (pmcid, section_role, section_ordinal_path);
+
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_passages_retrieval
+    ON solemd.pmc_fulltext_passages (
+        corpus_id,
+        pmcid,
+        passage_role,
+        section_ordinal_path,
+        passage_ordinal
+    )
+    WHERE is_retrievable;
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_passages_document_role
+    ON solemd.pmc_fulltext_passages (
+        pmc_fulltext_document_id,
+        passage_role,
+        section_ordinal_path
+    );
+CREATE INDEX IF NOT EXISTS idx_pmc_fulltext_passages_checksum
+    ON solemd.pmc_fulltext_passages (
+        pmc_fulltext_document_id,
+        text_checksum
+    );
+
+CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_pmc_fulltext_document
+    ON solemd.paper_selection_summary (pmc_fulltext_document_id)
+    WHERE pmc_fulltext_document_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_paper_selection_summary_pmcid_rescue
+    ON solemd.paper_selection_summary (
+        current_status,
+        content_status,
+        has_pmc_id,
+        evidence_priority_score DESC,
+        corpus_id
+    )
+    WHERE has_pmc_id;
 
 RESET ROLE;

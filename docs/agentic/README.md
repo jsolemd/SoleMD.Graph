@@ -75,6 +75,10 @@ evidence policy line:
   Current mapped-quality and RAG-readiness plan: relation normalization,
   summary semantics, PubMed metadata, S2 mapped enrichment, CL bridge / organ
   tracks, and downstream Grafana/RAG control surfaces.
+- [2026-05-22-solemd-graph-corpus-mapped-evidence-quality-ledger.md](/home/workbench/SoleMD/SoleMD.Graph/docs/agentic/2026-05-22-solemd-graph-corpus-mapped-evidence-quality-ledger.md)
+  Current corpus / mapped / evidence quality-calibration ledger: live
+  warehouse counts, RAG-readiness semantics, metadata-only and PMCID findings,
+  PMC full-text parser boundary, and next policy-selector work.
 
 ## When To Open A New Ledger
 

@@ -3,10 +3,15 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.actors.enrichment import enrich_pubmed_metadata, enrich_s2_graph
+from app.config import Settings, settings
 from app.enrichment.models import (
     StartPubMedMetadataEnrichmentRequest,
     StartS2GraphEnrichmentRequest,
 )
+from app.enrichment.pubmed import (
+    validate_pubmed_api_settings,
+)
+from app.enrichment.s2_graph import validate_s2_graph_api_settings
 
 
 def parse_pubmed_metadata_enrichment_request(
@@ -45,11 +50,15 @@ def parse_s2_graph_enrichment_request(
 
 def enqueue_pubmed_metadata_enrichment_request(
     request: StartPubMedMetadataEnrichmentRequest,
+    runtime_settings: Settings = settings,
 ) -> None:
+    validate_pubmed_api_settings(runtime_settings)
     enrich_pubmed_metadata.send(**request.model_dump(mode="json"))
 
 
 def enqueue_s2_graph_enrichment_request(
     request: StartS2GraphEnrichmentRequest,
+    runtime_settings: Settings = settings,
 ) -> None:
+    validate_s2_graph_api_settings(runtime_settings)
     enrich_s2_graph.send(**request.model_dump(mode="json"))

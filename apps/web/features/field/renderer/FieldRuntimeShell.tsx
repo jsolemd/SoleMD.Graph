@@ -84,7 +84,6 @@ export function FieldRuntimeShell({
             <FieldCanvas
               activeIds={FIELD_STAGE_ITEM_IDS}
               cameraRef={cameraRef}
-              className="fixed inset-0"
               onControllerReady={handleControllerReady}
               sceneStateRef={sceneStateRef}
               stageReady={stageReady}

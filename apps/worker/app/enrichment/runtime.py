@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from urllib.error import HTTPError
 from uuid import UUID
 
 import asyncpg
 
 from app.config import Settings, settings
+from app.enrichment.http import is_retryable_http_error
 from app.enrichment.models import (
     StartPubMedMetadataEnrichmentRequest,
     StartS2GraphEnrichmentRequest,
 )
 from app.enrichment.pubmed import PubMedEfetchClient, PubMedMetadataRecord
+from app.enrichment.pubmed import validate_pubmed_api_settings
+from app.enrichment.run_details import pubmed_run_detail, s2_graph_run_detail
 from app.enrichment.s2_graph import S2PaperEnrichmentRecord, SemanticScholarGraphClient
+from app.enrichment.s2_graph import validate_s2_graph_api_settings
 
 
 LOGGER = logging.getLogger(__name__)
@@ -24,8 +30,9 @@ async def run_pubmed_metadata_enrichment(
     ingest_pool: asyncpg.Pool,
     runtime_settings: Settings = settings,
 ) -> str:
+    validate_pubmed_api_settings(runtime_settings)
     async with ingest_pool.acquire() as connection:
-        run_id = await _open_pubmed_run(connection, request)
+        run_id = await _open_pubmed_run(connection, request, runtime_settings)
         await _reset_stale_pubmed_tasks(connection, run_id, runtime_settings)
         await _seed_pubmed_tasks(connection, request, run_id)
 
@@ -51,16 +58,14 @@ async def run_pubmed_metadata_enrichment(
                                 sorted(returned_pmids),
                             )
                         if missing_pmids:
-                            await _mark_pubmed_tasks_failed(
+                            await _mark_pubmed_tasks_not_found(
                                 connection,
                                 run_id,
                                 missing_pmids,
-                                "PubMed EFetch returned no record for PMID",
-                                runtime_settings.pubmed_metadata_max_attempts,
-                                terminal=True,
                             )
             except Exception as exc:
                 LOGGER.warning("PubMed metadata batch failed", exc_info=exc)
+                terminal = _terminal_provider_error(exc)
                 async with ingest_pool.acquire() as connection:
                     await _mark_pubmed_tasks_failed(
                         connection,
@@ -68,7 +73,10 @@ async def run_pubmed_metadata_enrichment(
                         pmids,
                         str(exc),
                         runtime_settings.pubmed_metadata_max_attempts,
+                        terminal=terminal,
                     )
+                if terminal:
+                    break
 
         async with ingest_pool.acquire() as connection:
             await _finalize_pubmed_run(connection, run_id)
@@ -85,8 +93,13 @@ async def run_s2_graph_enrichment(
     ingest_pool: asyncpg.Pool,
     runtime_settings: Settings = settings,
 ) -> str:
+    validate_s2_graph_api_settings(runtime_settings)
     async with ingest_pool.acquire() as connection:
-        run_id, source_release_id = await _open_s2_graph_run(connection, request)
+        run_id, source_release_id = await _open_s2_graph_run(
+            connection,
+            request,
+            runtime_settings,
+        )
         await _reset_stale_s2_tasks(connection, run_id, runtime_settings)
         await _seed_s2_graph_tasks(connection, request, run_id, source_release_id)
 
@@ -121,16 +134,14 @@ async def run_s2_graph_enrichment(
                                 sorted(returned_paper_ids),
                             )
                         if missing_paper_ids:
-                            await _mark_s2_tasks_failed(
+                            await _mark_s2_tasks_not_found(
                                 connection,
                                 run_id,
                                 missing_paper_ids,
-                                "Semantic Scholar Graph API returned no paper record",
-                                runtime_settings.s2_graph_max_attempts,
-                                terminal=True,
                             )
             except Exception as exc:
                 LOGGER.warning("S2 Graph enrichment batch failed", exc_info=exc)
+                terminal = _terminal_provider_error(exc)
                 async with ingest_pool.acquire() as connection:
                     await _mark_s2_tasks_failed(
                         connection,
@@ -138,7 +149,10 @@ async def run_s2_graph_enrichment(
                         paper_ids,
                         str(exc),
                         runtime_settings.s2_graph_max_attempts,
+                        terminal=terminal,
                     )
+                if terminal:
+                    break
 
         async with ingest_pool.acquire() as connection:
             await _finalize_s2_graph_run(connection, run_id)
@@ -152,6 +166,7 @@ async def run_s2_graph_enrichment(
 async def _open_pubmed_run(
     connection: asyncpg.Connection,
     request: StartPubMedMetadataEnrichmentRequest,
+    runtime_settings: Settings,
 ) -> UUID:
     return await connection.fetchval(
         """
@@ -161,13 +176,13 @@ async def _open_pubmed_run(
             max_papers,
             detail
         )
-        VALUES ($1, $2, $3, jsonb_build_object('force_refresh', $4::BOOLEAN))
+        VALUES ($1, $2, $3, ($4::TEXT)::JSONB)
         RETURNING pubmed_metadata_fetch_run_id
         """,
         request.corpus_selection_run_id,
         request.requested_by,
         request.max_papers,
-        request.force_refresh,
+        json.dumps(pubmed_run_detail(request, runtime_settings), sort_keys=True),
     )
 
 
@@ -275,8 +290,58 @@ async def _upsert_pubmed_metadata(
 ) -> None:
     if not records:
         return
-    await connection.executemany(
+    payload = [
+        {
+            "pmid": record.pmid,
+            "response_checksum": record.response_checksum,
+            "article_title": record.article_title,
+            "abstract_text": record.abstract_text,
+            "abstract_hash": record.abstract_hash,
+            "language_codes": list(record.language_codes),
+            "publication_types": list(record.publication_types),
+            "citation_subsets": list(record.citation_subsets),
+            "mesh_headings": list(record.mesh_headings),
+            "mesh_major_terms": list(record.mesh_major_terms),
+            "keywords": list(record.keywords),
+            "grant_count": record.grant_count,
+            "has_grant": record.has_grant,
+            "chemicals": list(record.chemicals),
+            "comments_corrections": list(record.comments_corrections),
+            "has_retraction": record.has_retraction,
+            "has_erratum": record.has_erratum,
+            "publication_status": record.publication_status,
+            "structured_abstract": list(record.structured_abstract),
+            "raw_detail": record.raw_detail,
+        }
+        for record in records
+    ]
+    await connection.execute(
         """
+        WITH records AS (
+            SELECT *
+            FROM jsonb_to_recordset(($1::TEXT)::JSONB) AS record (
+                pmid INTEGER,
+                response_checksum TEXT,
+                article_title TEXT,
+                abstract_text TEXT,
+                abstract_hash TEXT,
+                language_codes TEXT[],
+                publication_types TEXT[],
+                citation_subsets TEXT[],
+                mesh_headings JSONB,
+                mesh_major_terms TEXT[],
+                keywords TEXT[],
+                grant_count INTEGER,
+                has_grant BOOLEAN,
+                chemicals JSONB,
+                comments_corrections JSONB,
+                has_retraction BOOLEAN,
+                has_erratum BOOLEAN,
+                publication_status TEXT,
+                structured_abstract JSONB,
+                raw_detail JSONB
+            )
+        )
         INSERT INTO solemd.pubmed_metadata (
             pmid,
             fetched_at,
@@ -300,29 +365,29 @@ async def _upsert_pubmed_metadata(
             structured_abstract,
             raw_detail
         )
-        VALUES (
-            $1,
+        SELECT
+            pmid,
             now(),
-            $2,
-            $3,
-            $4,
-            $5,
-            $6,
-            $7,
-            $8,
-            $9,
-            $10,
-            $11,
-            $12,
-            $13,
-            $14,
-            $15,
-            $16,
-            $17,
-            $18,
-            $19,
-            $20
-        )
+            response_checksum,
+            article_title,
+            abstract_text,
+            abstract_hash,
+            coalesce(language_codes, ARRAY[]::TEXT[]),
+            coalesce(publication_types, ARRAY[]::TEXT[]),
+            coalesce(citation_subsets, ARRAY[]::TEXT[]),
+            coalesce(mesh_headings, '[]'::JSONB),
+            coalesce(mesh_major_terms, ARRAY[]::TEXT[]),
+            coalesce(keywords, ARRAY[]::TEXT[]),
+            coalesce(grant_count, 0),
+            coalesce(has_grant, false),
+            coalesce(chemicals, '[]'::JSONB),
+            coalesce(comments_corrections, '[]'::JSONB),
+            coalesce(has_retraction, false),
+            coalesce(has_erratum, false),
+            publication_status,
+            coalesce(structured_abstract, '[]'::JSONB),
+            coalesce(raw_detail, '{}'::JSONB)
+        FROM records
         ON CONFLICT (pmid) DO UPDATE
         SET fetched_at = EXCLUDED.fetched_at,
             response_checksum = EXCLUDED.response_checksum,
@@ -345,31 +410,7 @@ async def _upsert_pubmed_metadata(
             structured_abstract = EXCLUDED.structured_abstract,
             raw_detail = EXCLUDED.raw_detail
         """,
-        [
-            (
-                record.pmid,
-                record.response_checksum,
-                record.article_title,
-                record.abstract_text,
-                record.abstract_hash,
-                list(record.language_codes),
-                list(record.publication_types),
-                list(record.citation_subsets),
-                list(record.mesh_headings),
-                list(record.mesh_major_terms),
-                list(record.keywords),
-                record.grant_count,
-                record.has_grant,
-                list(record.chemicals),
-                list(record.comments_corrections),
-                record.has_retraction,
-                record.has_erratum,
-                record.publication_status,
-                list(record.structured_abstract),
-                record.raw_detail,
-            )
-            for record in records
-        ],
+        json.dumps(payload),
     )
 
 
@@ -426,11 +467,32 @@ async def _mark_pubmed_tasks_failed(
     )
 
 
+async def _mark_pubmed_tasks_not_found(
+    connection: asyncpg.Connection,
+    run_id: UUID,
+    pmids: list[int],
+) -> None:
+    await connection.execute(
+        """
+        UPDATE solemd.pubmed_metadata_fetch_tasks
+        SET status = 'not_found',
+            completed_at = now(),
+            error_message = 'PubMed EFetch returned no record for PMID',
+            updated_at = now()
+        WHERE pubmed_metadata_fetch_run_id = $1
+          AND pmid = ANY($2::INTEGER[])
+        """,
+        run_id,
+        pmids,
+    )
+
+
 async def _finalize_pubmed_run(connection: asyncpg.Connection, run_id: UUID) -> None:
     row = await connection.fetchrow(
         """
         SELECT
             count(*) FILTER (WHERE status = 'complete')::INTEGER AS complete_count,
+            count(*) FILTER (WHERE status = 'not_found')::INTEGER AS not_found_count,
             count(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
             count(*) FILTER (WHERE status IN ('pending', 'running'))::INTEGER AS pending_count
         FROM solemd.pubmed_metadata_fetch_tasks
@@ -449,7 +511,8 @@ async def _finalize_pubmed_run(connection: asyncpg.Connection, run_id: UUID) -> 
             detail = detail || jsonb_build_object(
                 'complete_count', $3::INTEGER,
                 'failed_count', $4::INTEGER,
-                'pending_count', $5::INTEGER
+                'pending_count', $5::INTEGER,
+                'not_found_count', $6::INTEGER
             ),
             error_message = CASE
                 WHEN $2 = 'failed' THEN 'one or more PubMed metadata tasks failed'
@@ -462,6 +525,7 @@ async def _finalize_pubmed_run(connection: asyncpg.Connection, run_id: UUID) -> 
         int(row["complete_count"]),
         failed_count,
         pending_count,
+        int(row["not_found_count"]),
     )
 
 
@@ -482,6 +546,7 @@ async def _abort_pubmed_run(connection: asyncpg.Connection, run_id: UUID) -> Non
 async def _open_s2_graph_run(
     connection: asyncpg.Connection,
     request: StartS2GraphEnrichmentRequest,
+    runtime_settings: Settings,
 ) -> tuple[UUID, int]:
     source_release_id = await connection.fetchval(
         """
@@ -504,14 +569,14 @@ async def _open_s2_graph_run(
             max_papers,
             detail
         )
-        VALUES ($1, $2, $3, $4, jsonb_build_object('force_refresh', $5::BOOLEAN))
+        VALUES ($1, $2, $3, $4, ($5::TEXT)::JSONB)
         RETURNING s2_graph_enrichment_run_id
         """,
         request.corpus_selection_run_id,
         int(source_release_id),
         request.requested_by,
         request.max_papers,
-        request.force_refresh,
+        json.dumps(s2_graph_run_detail(request, runtime_settings), sort_keys=True),
     )
     return run_id, int(source_release_id)
 
@@ -628,8 +693,63 @@ async def _upsert_s2_paper_enrichment(
 ) -> None:
     if not records:
         return
-    await connection.executemany(
+    payload = [
+        {
+            "source_release_id": source_release_id,
+            "paper_id": record.paper_id,
+            "corpus_id": corpus_by_paper_id[record.paper_id],
+            "response_checksum": record.response_checksum,
+            "citation_count": record.citation_count,
+            "influential_citation_count": record.influential_citation_count,
+            "publication_types": list(record.publication_types),
+            "fields_of_study": list(record.fields_of_study),
+            "s2_fields_of_study": list(record.s2_fields_of_study),
+            "open_access_pdf": record.open_access_pdf,
+            "open_access_pdf_status": record.open_access_pdf_status,
+            "publication_venue": record.publication_venue,
+            "publication_venue_type": record.publication_venue_type,
+            "external_ids": record.external_ids,
+            "journal": record.journal,
+            "is_open_access": record.is_open_access,
+            "year": record.year,
+            "publication_date": (
+                record.publication_date.isoformat()
+                if record.publication_date is not None
+                else None
+            ),
+            "raw_detail": record.raw_detail,
+        }
+        for record in records
+        if record.paper_id in corpus_by_paper_id
+    ]
+    if not payload:
+        return
+    await connection.execute(
         """
+        WITH records AS (
+            SELECT *
+            FROM jsonb_to_recordset(($1::TEXT)::JSONB) AS record (
+                source_release_id INTEGER,
+                paper_id TEXT,
+                corpus_id BIGINT,
+                response_checksum TEXT,
+                citation_count INTEGER,
+                influential_citation_count INTEGER,
+                publication_types TEXT[],
+                fields_of_study TEXT[],
+                s2_fields_of_study JSONB,
+                open_access_pdf JSONB,
+                open_access_pdf_status TEXT,
+                publication_venue JSONB,
+                publication_venue_type TEXT,
+                external_ids JSONB,
+                journal JSONB,
+                is_open_access BOOLEAN,
+                year INTEGER,
+                publication_date DATE,
+                raw_detail JSONB
+            )
+        )
         INSERT INTO solemd.s2_paper_enrichment (
             source_release_id,
             paper_id,
@@ -652,28 +772,28 @@ async def _upsert_s2_paper_enrichment(
             publication_date,
             raw_detail
         )
-        VALUES (
-            $1,
-            $2,
-            $3,
+        SELECT
+            source_release_id,
+            paper_id,
+            corpus_id,
             now(),
-            $4,
-            $5,
-            $6,
-            $7,
-            $8,
-            $9,
-            $10,
-            $11,
-            $12,
-            $13,
-            $14,
-            $15,
-            $16,
-            $17,
-            $18,
-            $19
-        )
+            response_checksum,
+            coalesce(citation_count, 0),
+            coalesce(influential_citation_count, 0),
+            coalesce(publication_types, ARRAY[]::TEXT[]),
+            coalesce(fields_of_study, ARRAY[]::TEXT[]),
+            coalesce(s2_fields_of_study, '[]'::JSONB),
+            coalesce(open_access_pdf, '{}'::JSONB),
+            open_access_pdf_status,
+            coalesce(publication_venue, '{}'::JSONB),
+            publication_venue_type,
+            coalesce(external_ids, '{}'::JSONB),
+            coalesce(journal, '{}'::JSONB),
+            is_open_access,
+            year,
+            publication_date,
+            coalesce(raw_detail, '{}'::JSONB)
+        FROM records
         ON CONFLICT (source_release_id, paper_id) DO UPDATE
         SET corpus_id = EXCLUDED.corpus_id,
             fetched_at = EXCLUDED.fetched_at,
@@ -694,31 +814,7 @@ async def _upsert_s2_paper_enrichment(
             publication_date = EXCLUDED.publication_date,
             raw_detail = EXCLUDED.raw_detail
         """,
-        [
-            (
-                source_release_id,
-                record.paper_id,
-                corpus_by_paper_id[record.paper_id],
-                record.response_checksum,
-                record.citation_count,
-                record.influential_citation_count,
-                list(record.publication_types),
-                list(record.fields_of_study),
-                list(record.s2_fields_of_study),
-                record.open_access_pdf,
-                record.open_access_pdf_status,
-                record.publication_venue,
-                record.publication_venue_type,
-                record.external_ids,
-                record.journal,
-                record.is_open_access,
-                record.year,
-                record.publication_date,
-                record.raw_detail,
-            )
-            for record in records
-            if record.paper_id in corpus_by_paper_id
-        ],
+        json.dumps(payload),
     )
 
 
@@ -775,11 +871,32 @@ async def _mark_s2_tasks_failed(
     )
 
 
+async def _mark_s2_tasks_not_found(
+    connection: asyncpg.Connection,
+    run_id: UUID,
+    paper_ids: list[str],
+) -> None:
+    await connection.execute(
+        """
+        UPDATE solemd.s2_graph_enrichment_tasks
+        SET status = 'not_found',
+            completed_at = now(),
+            error_message = 'Semantic Scholar Graph API returned no paper record',
+            updated_at = now()
+        WHERE s2_graph_enrichment_run_id = $1
+          AND paper_id = ANY($2::TEXT[])
+        """,
+        run_id,
+        paper_ids,
+    )
+
+
 async def _finalize_s2_graph_run(connection: asyncpg.Connection, run_id: UUID) -> None:
     row = await connection.fetchrow(
         """
         SELECT
             count(*) FILTER (WHERE status = 'complete')::INTEGER AS complete_count,
+            count(*) FILTER (WHERE status = 'not_found')::INTEGER AS not_found_count,
             count(*) FILTER (WHERE status = 'failed')::INTEGER AS failed_count,
             count(*) FILTER (WHERE status IN ('pending', 'running'))::INTEGER AS pending_count
         FROM solemd.s2_graph_enrichment_tasks
@@ -798,7 +915,8 @@ async def _finalize_s2_graph_run(connection: asyncpg.Connection, run_id: UUID) -
             detail = detail || jsonb_build_object(
                 'complete_count', $3::INTEGER,
                 'failed_count', $4::INTEGER,
-                'pending_count', $5::INTEGER
+                'pending_count', $5::INTEGER,
+                'not_found_count', $6::INTEGER
             ),
             error_message = CASE
                 WHEN $2 = 'failed' THEN 'one or more S2 Graph enrichment tasks failed'
@@ -811,6 +929,7 @@ async def _finalize_s2_graph_run(connection: asyncpg.Connection, run_id: UUID) -
         int(row["complete_count"]),
         failed_count,
         pending_count,
+        int(row["not_found_count"]),
     )
 
 
@@ -833,3 +952,7 @@ def _row_count(command_tag: str) -> int:
         return int(command_tag.rsplit(" ", 1)[-1])
     except ValueError:
         return 0
+
+
+def _terminal_provider_error(exc: Exception) -> bool:
+    return isinstance(exc, HTTPError) and not is_retryable_http_error(exc)
