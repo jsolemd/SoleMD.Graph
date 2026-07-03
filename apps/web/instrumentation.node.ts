@@ -14,6 +14,9 @@ import { loadEnvConfig } from '@next/env'
 // Root discovery: walk up from `process.cwd()` until we find the
 // `package.json` that declares npm workspaces. That is the monorepo root by
 // definition, without layout assumptions, `__dirname`, or a fixed step count.
+// Production serverless bundles may contain only `apps/web`; in that shape
+// instrumentation is a no-op and feature-owned data loaders validate their
+// own required environment variables when used.
 //
 // This file is imported only when `NEXT_RUNTIME === 'nodejs'` from
 // `instrumentation.ts`, keeping Node-only imports out of the Edge-analyzed
@@ -22,6 +25,7 @@ import { loadEnvConfig } from '@next/env'
 // See docs/rag/05b-graph-bundles.md section 11.7 for the dev-fixture context.
 export function registerNodeInstrumentation(): void {
   const monorepoRoot = findWorkspacesRoot(process.cwd())
+  if (!monorepoRoot) return
 
   loadEnvConfig(
     monorepoRoot,
@@ -29,16 +33,9 @@ export function registerNodeInstrumentation(): void {
     undefined,
     true,
   )
-
-  if (!process.env.DATABASE_URL) {
-    throw new Error(
-      `[instrumentation] DATABASE_URL is unset after loading env from ${monorepoRoot}/.env.local. ` +
-        'Confirm the file exists and declares DATABASE_URL.',
-    )
-  }
 }
 
-function findWorkspacesRoot(start: string): string {
+function findWorkspacesRoot(start: string): string | null {
   let dir = path.resolve(start)
 
   while (true) {
@@ -59,10 +56,7 @@ function findWorkspacesRoot(start: string): string {
     const parent = path.dirname(dir)
 
     if (parent === dir) {
-      throw new Error(
-        `[instrumentation] no workspaces-declaring package.json found walking up from ${start}. ` +
-          'Launch the dev server from inside the monorepo.',
-      )
+      return null
     }
 
     dir = parent

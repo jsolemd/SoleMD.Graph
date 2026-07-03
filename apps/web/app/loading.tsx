@@ -1,8 +1,5 @@
+import { FieldLandingLoadingShell } from "@/features/field/routes/FieldLandingLoadingShell";
+
 export default function GraphLoading() {
-  return (
-    <div
-      className="min-h-screen"
-      style={{ backgroundColor: "var(--background)" }}
-    />
-  );
+  return <FieldLandingLoadingShell />;
 }

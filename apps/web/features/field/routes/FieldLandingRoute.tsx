@@ -5,6 +5,7 @@ import type { GraphBundle } from "@solemd/graph";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import { useShellVariant } from "@/features/graph/components/shell/use-shell-variant";
 import { FieldRuntimeShell } from "../renderer/FieldRuntimeShell";
+import { FieldLandingLoadingShell } from "./FieldLandingLoadingShell";
 
 const FieldLandingPage = dynamic(
   () =>
@@ -13,12 +14,7 @@ const FieldLandingPage = dynamic(
     })),
   {
     ssr: false,
-    loading: () => (
-      <div
-        className="min-h-screen"
-        style={{ backgroundColor: "var(--background)" }}
-      />
-    ),
+    loading: FieldLandingLoadingShell,
   },
 );
 
