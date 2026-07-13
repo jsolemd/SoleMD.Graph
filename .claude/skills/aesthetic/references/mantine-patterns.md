@@ -319,7 +319,7 @@ For concrete panel styling code examples: see /aesthetic → [references/panel-p
 
 ## React 19 + React Compiler Patterns
 
-This project ships React 19 (`^19.2.4`) and `babel-plugin-react-compiler`
+This project ships React 19 (`^19.2.7`) and `babel-plugin-react-compiler`
 (`^19.1.0-rc.3`). Authoring rules:
 
 - **Don't add `useMemo`/`useCallback`/`React.memo` defensively.** The
@@ -459,14 +459,11 @@ import '@mantine/dates/styles.css'; // example for dates
 
 ### Priority order
 
-1. **Mantine MCP server** (first-party, fastest)
-   - `mcp__mantine__list_items`, `mcp__mantine__get_item_doc`,
-     `mcp__mantine__get_item_props`, `mcp__mantine__search_docs`
-   - 145 components, props normalized, official source
-   - Best first stop for any Mantine question
-2. **context7 MCP** (fallback for adjacent libs / latest snippets)
-   - `mcp__context7__resolve-library-id` → `mcp__context7__query-docs`
-   - Use when the answer needs cross-library context (Tailwind, Next, React 19)
+1. **CodeAtlas indexed Mantine documentation** (preferred)
+   - Search/read the indexed library docs through the repository-specific
+     CodeAtlas profile before editing.
+   - Use indexed Next, React, and Tailwind docs when the answer crosses libraries.
+2. **Official Mantine documentation** (fallback when the index has a gap)
 3. **Local reference** (offline, complete)
    - `docs/mantine-llms.txt` (full Mantine docs in markdown) when you need
      to grep without an active MCP

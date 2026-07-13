@@ -25,6 +25,10 @@ import {
   getParticleStateTexture,
   PARTICLE_STATE_TEXTURE_SIZE,
 } from "../renderer/field-particle-state-texture";
+import {
+  getMorphTargetTexture,
+  MORPH_TARGET_TEXTURE_SIZE,
+} from "../renderer/field-morph-target-texture";
 import type {
   FieldSceneState,
   FieldStageItemId,
@@ -105,6 +109,15 @@ export interface LayerUniforms {
   // BlobController blends it toward ~0.2 in orb mode so dollying
   // through the field reads as parallax, not sprite zoom.
   uPointDepthAttenuation: { value: number };
+  // Orb->brain morph amount (delirium lecture). 0 for every non-lecture
+  // layer, so the shader mix collapses to `position`. BlobController blends
+  // it toward the lecture scroll target when the delirium surface is active.
+  uMorph: { value: number };
+  // Per-particle brain morph target (sidecar float texture keyed by aIndex)
+  // and its square side length. Shared module singleton; sampled only when
+  // uMorph > 0, so non-lecture layers bind it harmlessly.
+  uMorphTex: { value: Texture };
+  uMorphTexSize: { value: number };
 }
 
 export interface FieldControllerAttachment {
@@ -292,6 +305,9 @@ export abstract class FieldController {
       uScopeDimFloor: { value: 0.18 },
       uOrbFocusActive: { value: 0 },
       uPointDepthAttenuation: { value: 1 },
+      uMorph: { value: 0 },
+      uMorphTex: { value: getMorphTargetTexture() },
+      uMorphTexSize: { value: MORPH_TARGET_TEXTURE_SIZE },
     };
   }
 

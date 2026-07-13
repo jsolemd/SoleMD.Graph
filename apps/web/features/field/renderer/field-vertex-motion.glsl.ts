@@ -65,6 +65,16 @@ uniform float uFunnelDistortion;
 //   ~0.2 = orb fly-through target -- particles parallax through the
 //          volume instead of inflating as the camera dollies in.
 uniform float uPointDepthAttenuation;
+
+// Orb->brain morph amount (delirium lecture). 0 = orb (each particle sits at
+// its position attribute), 1 = brain (each particle sits at its morph target).
+// Default 0 keeps landing and graph bit-exact — the mix collapses to position.
+uniform float uMorph;
+// Per-particle brain target, keyed by aIndex. RGB = xyz. Sampled only when
+// uMorph > 0 (see computeFieldDisplacement); a sidecar float texture instead
+// of a 15th vertex attribute, which would exceed MAX_VERTEX_ATTRIBS.
+uniform sampler2D uMorphTex;
+uniform float uMorphTexSize;
 `;
 
 export const FIELD_NOISE_HELPERS = /* glsl */ `
@@ -231,11 +241,49 @@ float fbm(vec3 x) {
 // `aSpeed`, `aRandomness`, `aClickPack`, `aIndex`, `aFunnel*` from
 // FIELD_ATTRIBUTE_DECLS, plus every uniform in FIELD_UNIFORM_DECLS.
 export const FIELD_DISPLACEMENT_FN = /* glsl */ `
+// Great-circle interpolation of two unit directions. Used by the orb->brain
+// morph so particles travel ALONG the shell rather than straight through the
+// interior — the cloud stays a coherent surface mid-transit instead of
+// collapsing into a diffuse ball. Falls back to linear near colinear/antipodal
+// pairs where the sin(omega) denominator degenerates.
+vec3 fieldSlerpDir(vec3 a, vec3 b, float t) {
+  float d = clamp(dot(a, b), -1.0, 1.0);
+  float omega = acos(d);
+  float so = sin(omega);
+  if (so < 1e-3) return normalize(mix(a, b, t));
+  return (sin((1.0 - t) * omega) / so) * a + (sin(t * omega) / so) * b;
+}
+
 vec3 computeFieldDisplacement(out float outNoise) {
-  float noise = fbm(position * (uFrequency + aStreamFreq * uStream));
+  // Orb->brain morph. uMorph 0 -> orb (basePos == position, bit-exact for
+  // landing/graph — the texture is never sampled), 1 -> brain (basePos == the
+  // per-particle brain target). A per-particle stagger, hashed from aIndex,
+  // offsets each particle's crossover so the cloud flows and reforms
+  // organically instead of snapping in lockstep. Crucially the path is a
+  // spherical interpolation (slerp the direction, lerp the radius), so every
+  // particle glides across the shell to its brain position and the surface
+  // stays coherent throughout — no mushy interior-filled midpoint. All
+  // subsequent motion (fbm turbulence, depth drift) rides basePos, so the
+  // brain breathes at its own coordinates once formed.
+  vec3 basePos = position;
+  if (uMorph > 0.0) {
+    float morphSeed = fract(sin(aIndex * 12.9898) * 43758.5453);
+    float morphK = smoothstep(0.0, 1.0, uMorph * 1.28 - morphSeed * 0.28);
+    float sx = mod(aIndex, uMorphTexSize);
+    float sy = floor(aIndex / uMorphTexSize);
+    vec2 morphUv = (vec2(sx, sy) + 0.5) / uMorphTexSize;
+    vec3 morphPos = texture2D(uMorphTex, morphUv).xyz;
+    float ra = length(position);
+    float rb = length(morphPos);
+    vec3 da = ra > 1e-4 ? position / ra : vec3(0.0, 1.0, 0.0);
+    vec3 db = rb > 1e-4 ? morphPos / rb : vec3(0.0, 1.0, 0.0);
+    basePos = fieldSlerpDir(da, db, morphK) * mix(ra, rb, morphK);
+  }
+
+  float noise = fbm(basePos * (uFrequency + aStreamFreq * uStream));
   outNoise = noise;
 
-  vec3 displaced = position;
+  vec3 displaced = basePos;
   displaced *= (1.0 + (uAmplitude * noise));
   displaced += vec3(
     uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uTimeFactor * uSpeed))

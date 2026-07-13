@@ -1,187 +1,98 @@
-# SoleMD Brand & Aesthetic
+# SoleMD.Graph Brand and Aesthetic
 
-> Elegant, Precise, Calm. Refined medical authority with soft confidence.
-> Think Apple Health meets the New England Journal of Medicine.
+> Elegant, precise, calm. Refined medical authority with soft confidence.
 
-## Personality
+Date: 2026-07-10
+Scope: Graph field/orb/Cosmograph/wiki product surfaces
 
-Premium quality that never shouts. The word "elegant" is intentionally woven throughout the codebase and copy. The graph feels like a **glowing landscape** -- inviting, ambient, alive with knowledge. Not a clinical data dashboard. Not enterprise SaaS.
+The public personal/lecture site has a related but distinct composition. Its
+contract lives in `/workspaces/SoleMD.Web/docs/brand.md`. The shared
+`aesthetic` skill routes by repository; do not apply Graph panel rules to the
+public site.
 
-**Anti-references**: Dense medical dashboards, clinical-grey institutional sites, aggressive dark themes.
+## Canonical sources
 
----
+When prose and code disagree, code wins:
 
-## Design Principles
+- `apps/web/app/styles/tokens.css`
+- `apps/web/app/styles/base.css`
+- `apps/web/lib/pastel-tokens.ts`
+- `apps/web/lib/mantine-theme.ts`
+- `apps/web/features/graph/components/panels/PanelShell/`
+- `/surface-lab`
 
-1. **White space is a feature, not waste.** Generous spacing creates the calm, premium feel. Never compress layouts to "fit more in."
-2. **Color communicates meaning.** Each section has a dedicated color that tints the UI. Color is semantic, not decorative.
-3. **Motion earns attention.** Animations are soft, purposeful, scroll/interaction-triggered. Float, fade, lift -- never bounce, shake, flash.
-4. **Depth through layering.** Matte floating cards with deep multi-layer shadows create distinct planes. Cards hover above the canvas.
-5. **Accessibility is non-negotiable.** WCAG AA (4.5:1 text, 3:1 large text). Keyboard-navigable. Respect `prefers-reduced-motion`.
-6. **Zero chrome.** No sidebar, no nav bar, no hamburger menu. The graph IS the page. The prompt box is the only control.
+`apps/web/app/globals.css` owns cascade order and imports, not token values.
 
----
+## Shared palette
 
-## Aesthetic Principles
+| Token | Value |
+|---|---:|
+| Soft blue | `#a8c5e9` |
+| Muted indigo | `#747caa` |
+| Golden yellow | `#e5c799` |
+| Fresh green | `#aedc93` |
+| Warm coral | `#ffada4` |
+| Soft pink | `#e0aed8` |
+| Soft lavender | `#d8bee9` |
+| Paper | `#d4c5a0` |
+| Teal | `#7ecfb0` |
 
-- **Matte floating cards** -- solid opaque surfaces, NOT glass/frosted/backdrop-blur
-- **Deep multi-layer shadows** create the "hovering" depth feel
-- **Generous rounding** -- `rounded-3xl` on prompt box, `rounded-2xl` on controls, `rounded-xl` on widgets
-- **Spring physics everywhere** -- shared presets in `lib/motion.ts` (`crisp`, `smooth`, `responsive`, `bouncy`)
-- **Mode-colored submit** -- pastel bg + dark `#1a1b1e` icon
-- **Gradient dividers** -- brand-accent gradient separators between grouped actions
-- **Muted icons at rest** -- `--graph-prompt-inactive`, colored accent when active at 15% bg tint
-- **Minimalism preferred** -- no decorative chrome, no labels where icons suffice
+Pastels retain their light-mode chroma on the dark canvas. Do not maintain a
+second desaturated dark palette.
 
----
+## Semantic foundations
 
-## Typography
+Light mode:
 
-| Role | Font | Weight Range |
-|------|------|-------------|
-| All text | System font stack | 300-700 |
-| Code | JetBrains Mono | 400 |
+| Token | Value |
+|---|---:|
+| `--background` | `#faf9f7` |
+| `--surface` | `#fffffe` |
+| `--surface-alt` | `#f5f4f1` |
+| `--surface-raised` | `#ffffff` |
+| `--text-primary` | `#1a1817` |
+| `--text-secondary` | `#5e5c58` |
+| `--border-default` | `#eae8e4` |
 
-```css
---font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
---font-mono: "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-```
+Dark mode uses the AMOLED/inky ladder:
 
-> **Note**: No web fonts are downloaded. The system font stack ensures fastest possible load with native platform typography (SF Pro on macOS/iOS, Segoe UI on Windows, Roboto on Android/ChromeOS).
+| Token | Value |
+|---|---:|
+| `--background` | `#000000` |
+| `--surface` | `#0f1012` |
+| `--surface-alt` | `#1a1b1e` |
+| `--surface-raised` | `#2a2c30` |
+| `--text-primary` | `#e4e6eb` |
+| `--text-secondary` | `#aeb1b7` |
+| `--border-default` | `#26272b` |
 
-Headings: `font-weight: 500`, `line-height: 1.25`. Body: `font-weight: 400`, `line-height: 1.5`.
+## Graph product grammar
 
----
+- Matte, opaque panels; no glass panels.
+- AMOLED field/canvas with inky elevated surfaces.
+- Mostly borderless chrome. Tone, rim light, and shadow establish depth.
+- `PanelShell` owns reusable panel surfaces, cards, text, pills, header actions,
+  and scale helpers.
+- `--app-density` and `--graph-panel-scale` compose through
+  `panelScaledPx(...)`; do not hardcode panel dimensions.
+- Mode and entity accents are semantic. Components consume tokens instead of
+  branching on dark mode or copying hex values.
+- Cosmograph CSS widgets derive from the base `--cosmograph-ui-*` variables;
+  WebGL props use the mirror constants in `brand-colors.ts`.
+- Inter is the primary typeface; JetBrains Mono is reserved for code/data.
+- Motion is purposeful float/fade/lift. No bounce, shake, flash, or mandatory
+  animation. Reduced motion is first-class.
 
-## Color System
+## Accessibility
 
-### Brand Palette (7 semantic colors)
+- WCAG AA: 4.5:1 for normal text, 3:1 for large text and meaningful UI marks.
+- Pastel surfaces generally require dark text in light mode.
+- Keyboard navigation and visible focus are required.
+- Color never carries meaning alone.
 
-| Token | Light | Dark | Semantic Role |
-|-------|-------|------|---------------|
-| `--color-soft-blue` | `#a8c5e9` | `#89a3bf` | Brand primary |
-| `--color-muted-indigo` | `#747caa` | `#8b8fbf` | Brand accent |
-| `--color-golden-yellow` | `#e5c799` | `#b69d77` | Innovation / explore |
-| `--color-fresh-green` | `#aedc93` | `#8aad7a` | Education / learn |
-| `--color-warm-coral` | `#ffada4` | `#c48e88` | Action / write |
-| `--color-soft-pink` | `#e0aed8` | `#b085a8` | Contact |
-| `--color-soft-lavender` | `#d8bee9` | `#a899b3` | Extended accent |
+## Stack boundary
 
-### Extended Accent Colors
-
-| Hex | Name | Notes |
-|-----|------|-------|
-| `#fbb44e` | Vivid Gold | Original golden-yellow at full saturation. Reserved for high-emphasis accents, data-viz highlights, or promotional contexts where a louder pop is intentional. |
-
-### Brand Accent
-
-| Context | Light | Dark |
-|---------|-------|------|
-| `--brand-accent` | `#747caa` (muted indigo) | `#a8c5e9` (soft blue) |
-| `--brand-accent-alt` | `#a8c5e9` (soft blue) | `#89a3bf` (muted blue) |
-
-Note: brand-accent **swaps** between light and dark -- indigo in light, blue in dark.
-
-### Semantic Foundations
-
-| Token | Light | Dark |
-|-------|-------|------|
-| `--background` | `#fafafa` | `#18181b` |
-| `--foreground` | `#1a1b1e` | `#e4e4e9` |
-| `--surface` | `#ffffff` | `#1c1d21` |
-| `--surface-alt` | `#f5f6f8` | `#232427` |
-| `--text-primary` | `#1a1b1e` | `#e4e4e9` |
-| `--text-secondary` | `#5c5f66` | `#a1a1aa` |
-| `--text-tertiary` | `#9ca3af` | `#6b6b73` |
-| `--border-default` | `#eaedf0` | `#2a2c31` |
-
-### Shadows
-
-Light mode uses subtle rgba shadows. Dark mode uses deep black shadows.
-
-| Token | Light | Dark |
-|-------|-------|------|
-| `--shadow-sm` | `0 1px 3px rgba(0,0,0,0.04)` | `0 1px 3px rgba(0,0,0,0.3)` |
-| `--shadow-md` | `0 4px 12px rgba(0,0,0,0.06)` | `0 4px 12px rgba(0,0,0,0.4)` |
-| `--shadow-lg` | `0 8px 24px rgba(0,0,0,0.08)` | `0 8px 24px rgba(0,0,0,0.5)` |
-
-### Graph Canvas
-
-| Token | Light | Dark |
-|-------|-------|------|
-| `--graph-bg` | `#f8f9fa` | `#111113` |
-| `--graph-prompt-bg` | `var(--surface)` | `var(--surface)` |
-| `--graph-greyout-opacity` | `0.25` | `0.15` |
-
----
-
-## Motion
-
-- **Framework**: Framer Motion for layout animations, spring physics for panels
-- **Spring presets**: `lib/motion.ts` -- `crisp` (panels, chrome, icons, edge reveals; short-travel default), `smooth` (mode shifts, large layout, drag-release snap), `responsive` (drag safe-bounds tracking), `bouncy` (micro-interactions)
-- **Mode transitions**: `layout` animations via framer-motion. Nothing snaps or jumps.
-- **Graph transitions**: The canvas component never unmounts -- it transforms fluidly
-- **Scroll triggers**: Soft reveal on scroll, not auto-playing
-- **Reduced motion**: Respect `prefers-reduced-motion` -- skip animations, show content immediately
-
----
-
-## Visual Language (Graph)
-
-Every visual property on the graph encodes information. Nothing is decorative.
-
-| Property | Nodes | Edges |
-|----------|-------|-------|
-| Size | Importance (citations, mentions) | Evidence weight |
-| Color | Type + category | Relationship type |
-| Opacity | Relevance to context | Confidence |
-| Glow | Semantic similarity | -- |
-| Position | Embedding proximity | -- |
-| Style | -- | Scientific certainty |
-
-### Edge Semantics
-
-```
---->    affirmed (solid arrow = direction)
-. . .>  speculative ("may", "could")
--X-+    negated (explicitly denied, flat bar = stop)
-=!=     conflict (papers disagree)
-
-THICK = many papers support
-THIN  = single paper
-FAINT = low confidence
-```
-
-### Position = Semantic Proximity
-
-SPECTER2 positions papers. SapBERT positions entities. MedCPT positions chunks. Clusters form naturally from embedding proximity. Gaps between clusters = unexplored territory.
-
----
-
-## Design Tone (Summary)
-
-| Quality | Expression |
-|---------|-----------|
-| Warm | Dense clusters glow, ambient luminosity, pastel palette |
-| Organic | Clusters form naturally, positions from embeddings not grids |
-| Minimal | Zero chrome, one control (prompt box), panels emerge from interaction |
-| Floating | Matte cards hover above canvas, deep shadows, generous rounding |
-| Breathing | Smooth spring transitions, no snaps, no jumps |
-| Alive | Graph reacts to conversation, typing, hover -- it responds to you |
-
----
-
-## Key Files
-
-| File | Role |
-|------|------|
-| `app/globals.css` | All design tokens (semantic + graph + Cosmograph, ~280 lines) |
-| `lib/mantine-theme.ts` | Mantine <-> CSS variable bridge |
-| `components/mantine-theme-provider.tsx` | `defaultColorScheme="auto"`, DarkClassSync |
-| `components/graph/PanelShell.tsx` | Shared panel chrome, style exports, `ICON_BTN_STYLES` |
-| `lib/motion.ts` | Spring presets (`crisp`, `smooth`, `responsive`, `bouncy`) |
-| `cosmograph/GraphRenderer.tsx` | `BRAND.light` / `BRAND.dark` WebGL constants |
-
----
-
-_Last verified against code: 2026-04-08_
+Graph currently uses Next 16, React 19.2, Mantine 8, Tailwind 4, and the
+`framer-motion` package. The public site uses Mantine 9 and the `motion`
+package. Do not copy version-specific provider or component patterns between
+the two repositories.

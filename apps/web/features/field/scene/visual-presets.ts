@@ -167,6 +167,14 @@ export interface FieldSceneState {
    * so two rotations don't compound into a sliding-plane feel.
    */
   orbInteracting: boolean;
+  /**
+   * Delirium lecture: when true, BlobController drives the blob from the
+   * lecture scroll timeline (`resolveDeliriumFieldState`) instead of the
+   * landing chapter state — the orb morphs into the brain (`uMorph`) and the
+   * clinical beats drive alpha / amplitude / frequency / selection / depth.
+   * Default false, so the landing and graph surfaces read bit-exactly.
+   */
+  lectureActive: boolean;
 }
 
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
@@ -382,6 +390,7 @@ export function createFieldSceneState(): FieldSceneState {
     orbCameraActive: false,
     orbFocusActive: false,
     orbInteracting: false,
+    lectureActive: false,
     items: {
       blob: createStageItemState(1, 0, 1),
       stream: createStageItemState(),

@@ -1,19 +1,55 @@
 ---
 name: aesthetic
-description: SoleMD.Web design system for Mantine 8, Tailwind CSS 4, brand colors, dark mode, CSS tokens, and UI styling. Use when authoring or reviewing visual, layout, spacing, typography, theme, or component styling. Make sure to use this skill whenever the user mentions ui, mantine, tailwind, css, color, brand, aesthetic, style, theme, font, dark mode, palette, typography, spacing, globals.css, CSS variables, panel surface, prompt overlay, shell tone, rounded-surface, surface tokens, tint-accent, panelScaledPx, PanelShell, surface-lab, mode-accent, color-mix, cssVariablesResolver, mantineHtmlProps, useActionState, vars prop, container query, or autoContrast. Do NOT use for motion craft (use /animation-authoring), Cosmograph data props or WebGL (use /cosmograph), graph data fetching (use /cosmograph), three.js or shader visuals (use /threejs), raw WebGPU (use /webgpu), Neo4j code graph (use /graph), file or export naming conventions (use /naming), or field-substrate UI runtime (use /module).
-allowed-tools: Read Glob Grep Bash mcp__mantine__list_items mcp__mantine__get_item_doc mcp__mantine__get_item_props mcp__mantine__search_docs mcp__context7__resolve-library-id mcp__context7__query-docs
-paths: "apps/web/**/*.{tsx,ts,css,scss}"
+description: 'SoleMD visual-system router for the Mantine 9 public site and Mantine 8 Graph runtime: Tailwind CSS 4, brand colors, dark mode, CSS tokens, responsive layout, typography, surfaces, and component styling. Use whenever the user mentions UI, Mantine, Tailwind, CSS, color, brand, aesthetic, style, theme, font, dark mode, palette, typography, spacing, globals.css, CSS variables, panel surface, prompt overlay, shell tone, rounded-surface, surface tokens, tint-accent, PanelShell, surface-lab, mode-accent, color-mix, cssVariablesResolver, mantineHtmlProps, vars prop, container query, or autoContrast. Route by repository before applying rules. Do NOT use for motion craft (use /animation-authoring), Cosmograph data props or WebGL (use /cosmograph), graph data fetching (use /cosmograph), three.js or shader visuals (use /threejs), raw WebGPU (use /webgpu), Neo4j code graph (use /graph), file or export naming conventions (use /naming), or field-substrate UI runtime (use /module).'
+allowed-tools: Read Glob Grep Bash
+paths: "{apps/web,src}/**/*.{tsx,ts,css,scss}"
 metadata:
-  short-description: SoleMD design system — Mantine 8 + Tailwind 4 + brand tokens
+  short-description: SoleMD design router — public site + Graph runtime
 ---
 
-# SoleMD.Web — Design System & UI Styling
+# SoleMD — Visual System Router
 
-When you author or review SoleMD.Web visual surfaces, this skill is the
-canonical contract. The five reference files below carry the detailed
-tables; this file is the routing index plus the always-true rules.
+Route by the active repository before applying any component rule. SoleMD.Web
+and SoleMD.Graph share a palette, but they intentionally use different product
+grammar and different Mantine majors.
 
-## Quick Reference
+## Project routing — read first
+
+| Repository | Contract | Stack | Do not import from the other context |
+|---|---|---|---|
+| `/workspaces/SoleMD.Web` | `docs/brand.md`, `docs/architecture.md`, `src/app/styles/tokens.css` | Mantine 9, Tailwind 4, Motion | Graph PanelShell, density, mode, Cosmograph, field, or dark-first rules |
+| `/workspaces/SoleMD.Graph` | The Graph contract below and its five references | Mantine 8, Tailwind 4, Framer Motion | Public-site viewport hero, marketing header, or lecture-card rules |
+
+### SoleMD.Web public-site contract
+
+For the public site, read `/workspaces/SoleMD.Web/docs/brand.md` before visual
+changes. Always preserve these rules:
+
+- The original personal-site composition is canonical: centered `100svh`
+  editorial heroes, BrainCircuit/SoleMD wordmark, inset pill header, route-aware
+  accents, 2rem floating cards, and centered stacked footer.
+- The shared orb palette is canonical, through semantic CSS variables. Home is
+  soft blue, About lavender, and Lectures green. Small light-mode text uses the
+  accessible companion token `--page-accent-text`, never a low-contrast pastel.
+- Light mode is warm paper (`#faf9f7`); dark mode uses the Graph AMOLED/inky
+  ladder. Both are first-class.
+- Mantine 9 uses `@mantine/core/styles.layer.css`, `mantineHtmlProps`,
+  `ColorSchemeScript`, and `MantineProvider`. Tailwind owns layout utilities.
+- Motion comes from `motion`, uses `LazyMotion`, and is progressive enhancement:
+  server HTML must remain visible before hydration or when JavaScript fails.
+- Future interactive lectures keep the site shell and tokens. Do not copy
+  branding into a standalone experience; extract a versioned brand package if
+  a separate deployment is truly required.
+- Use CodeAtlas indexed docs first for Next, React, Mantine, Tailwind, and Motion.
+
+The rest of this file is the **SoleMD.Graph-only contract** unless a rule is
+explicitly described as shared.
+
+---
+
+## SoleMD.Graph contract
+
+### Graph quick reference
 
 | You want to… | Do this |
 |---|---|
@@ -30,7 +66,7 @@ tables; this file is the routing index plus the always-true rules.
 | Style an entity profile | Use `panelAccentCardEntityStyle` + `data-entity-type={…}`. The `[data-entity-type]` selector rewires `--entity-accent` per type |
 | Scale panel sizing | `panelScaledPx(10)` composes `--app-density` × `--graph-panel-scale`. Never hardcode px in panels |
 | Configure a mode color | Edit `MODES[k].color` and `colorVar` in `apps/web/features/graph/lib/modes.ts`. See `references/mode-system.md` |
-| Look up Mantine API | `mcp__mantine__*` (first-party, 145 components) → `mcp__context7__*` → `docs/mantine-llms.txt` |
+| Look up Mantine API | CodeAtlas indexed Mantine docs first → official Mantine docs if the index has a gap → `docs/mantine-llms.txt` |
 | Preview Mantine themes | [MantineHub](https://mantinehub.com/) — interactive theme builder, copy-paste Blocks |
 
 ## Brand Personality
@@ -39,7 +75,7 @@ tables; this file is the routing index plus the always-true rules.
 Apple Health meets New England Journal of Medicine — premium quality that
 never shouts.
 
-## Canonical Truth
+## Graph canonical truth
 
 When this skill needs to choose between older docs and the live
 implementation, the canonical truth is:
@@ -324,7 +360,7 @@ widget taxonomy, and dark-mode patterns → `references/cosmograph-integration.m
 
 ## New Component Checklist
 
-1. Check if a Mantine component exists first (use the `mcp__mantine__*` MCP).
+1. Check if a Mantine component exists first (use CodeAtlas indexed Mantine docs).
 2. Use CSS vars from `tokens.css` for colors — never hardcode hex.
 3. Use `rounded-surface*` (or Mantine `radius="lg"`) for border radius.
 4. Use `shadow-[var(--shadow-sm)]` for default shadows.
@@ -403,6 +439,6 @@ widget taxonomy, and dark-mode patterns → `references/cosmograph-integration.m
 | Panel styling patterns + container queries | `references/panel-patterns.md` |
 | Brand & visual identity | `docs/map/brand.md` |
 | Architecture overview | `docs/map/architecture.md` |
-| Mantine docs (MCP) | `mcp__mantine__*` (first-party, 145 components) |
+| Mantine docs (indexed) | CodeAtlas Mantine library documentation |
 | Mantine docs (offline) | `docs/mantine-llms.txt` |
 | MantineHub theme builder | [mantinehub.com](https://mantinehub.com/) |

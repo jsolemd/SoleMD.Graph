@@ -183,7 +183,7 @@ authority.
 @layer theme, base, components, utilities;
 
 @import "tailwindcss/theme.css" layer(theme);
-/* Preflight omitted — Mantine provides base styles via postcss-preset-mantine */
+/* Preflight omitted — Mantine base styles come from @mantine/core/styles.css */
 @import "tailwindcss/utilities.css" layer(utilities);
 
 @import "./styles/tokens.css";
@@ -202,7 +202,9 @@ authority.
 
 Layer order is declared up front (`theme, base, components, utilities`), and
 Tailwind's preflight (`tailwindcss/preflight.css`) is intentionally omitted
-because Mantine ships its own reset via `postcss-preset-mantine`. Tokens load
+because Mantine's imported core stylesheet provides the base/reset styles.
+`postcss-preset-mantine` supplies PostCSS mixins and functions; it is not a
+reset. Tokens load
 before any component-level CSS, so every downstream file can safely read
 `--app-density`, `--graph-panel-*`, etc.
 

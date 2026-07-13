@@ -2,6 +2,7 @@ import { PerspectiveCamera, Vector3, type Camera } from "three";
 import { DECAY, lerpFactor } from "@/lib/motion3d";
 import type { FieldPointSource } from "../asset/point-source-types";
 import { resolveLandingBlobChapterState } from "../scroll/chapters/landing-blob-chapter";
+import { resolveDeliriumFieldState } from "../scroll/chapters/delirium-field-chapter";
 import {
   INFO_EIGHT_FOCUS_ENTRY,
   type InfoNineStepFocusEntry,
@@ -214,6 +215,21 @@ export class BlobController extends FieldController {
     const visibility = itemState?.visibility ?? 0;
     const chapterState = resolveLandingBlobChapterState(sceneState);
 
+    // Delirium lecture: the blob is the whole show — it morphs into the brain
+    // and the clinical beats drive its uniforms. When inactive (landing /
+    // graph) `lecture` is null and every drive falls back to the landing
+    // chapter state, so those surfaces are untouched.
+    const lecture = sceneState.lectureActive
+      ? resolveDeliriumFieldState(sceneState)
+      : null;
+    const driveAlpha = lecture ? lecture.alpha : chapterState.alpha;
+    const driveAmplitude = lecture ? lecture.amplitude : chapterState.amplitude;
+    const driveFrequency = lecture ? lecture.frequency : chapterState.frequency;
+    const driveSelection = lecture ? lecture.selection : chapterState.selection;
+    const driveDepth = lecture ? lecture.depth : chapterState.depth;
+    const morphTarget = lecture ? lecture.morph : 0;
+    uniforms.uMorph.value += (morphTarget - uniforms.uMorph.value) * driftBlend;
+
     const sceneScale = isMobile
       ? preset.sceneScaleMobile ?? preset.sceneScale
       : preset.sceneScale;
@@ -275,14 +291,14 @@ export class BlobController extends FieldController {
     });
 
     uniforms.uAlpha.value +=
-      (chapterState.alpha - uniforms.uAlpha.value) * driftBlend;
+      (driveAlpha - uniforms.uAlpha.value) * driftBlend;
     const burstAmplitudeTarget = Math.max(
-      chapterState.amplitude,
+      driveAmplitude,
       ORB_INTERACTION_BURST_AMPLITUDE,
     );
     const amplitudeTarget =
-      (chapterState.amplitude +
-        (burstAmplitudeTarget - chapterState.amplitude) * interactionBurst) *
+      (driveAmplitude +
+        (burstAmplitudeTarget - driveAmplitude) * interactionBurst) *
       motionScale *
       entropyMul;
     uniforms.uAmplitude.value +=
@@ -295,16 +311,16 @@ export class BlobController extends FieldController {
     // "how far particles drift" instead of "how chromatically alive
     // the field is."
     const burstFrequencyTarget = Math.max(
-      chapterState.frequency,
+      driveFrequency,
       ORB_INTERACTION_BURST_FREQUENCY,
     );
     const frequencyTarget =
-      chapterState.frequency +
-      (burstFrequencyTarget - chapterState.frequency) * interactionBurst;
+      driveFrequency +
+      (burstFrequencyTarget - driveFrequency) * interactionBurst;
     uniforms.uFrequency.value +=
       (frequencyTarget - uniforms.uFrequency.value) * driftBlend;
     uniforms.uSelection.value +=
-      (chapterState.selection - uniforms.uSelection.value) * driftBlend;
+      (driveSelection - uniforms.uSelection.value) * driftBlend;
 
     // Reduced-motion + Phase A1 per-category targets. When motion is
     // disabled the blob reads as a single uniform substrate: every
@@ -392,7 +408,7 @@ export class BlobController extends FieldController {
       uniforms.uFocusMemberCount.value = 0;
     }
 
-    const targetDepth = chapterState.depth;
+    const targetDepth = driveDepth;
     if (!this.introCompleted) {
       const introProgress = Math.max(
         0,
