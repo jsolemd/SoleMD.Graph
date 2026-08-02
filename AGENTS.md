@@ -3,19 +3,18 @@
 <!-- Edit source instructions, then run: solemd prompt-sync -->
 # SoleMD.Graph — Biomedical Knowledge Graph
 
-> **SCOPE**: You are working in **SoleMD.Graph** only.
-> Do NOT modify files in other SoleMD.* projects unless explicitly requested.
+> **HOME PROJECT**: **SoleMD.Graph**.
+> Other SoleMD.* projects may be edited when the task calls for it — recognize the
+> boundary, follow that project's conventions, and say when you cross it
+> (see `/workspaces/CLAUDE.md` → Cross-Project Rules).
 >
 > - Project: `solemd.graph`
 > - Schemas: `solemd`, `pubtator`
 > - Workspace: `/workspaces/SoleMD.Graph`
 >
-> **TRUSTED RELATIONSHIPS** (read-only):
+> **KEY RELATIONSHIPS**:
 > - Infra: Shared services (database, MCP servers)
 > - Graph-overlay: Parallel graph branch for runtime and product comparisons
->
-> **FORBIDDEN**: Never modify other SoleMD.* project source files.
-> **HAND-OFF**: See `/workspaces/CLAUDE.md` for cross-project protocol.
 
 ## TL;DR
 
