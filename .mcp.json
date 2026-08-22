@@ -34,7 +34,7 @@
         "NEO4J_PASSWORD": "solemd.infra",
         "NEO4J_DATABASE": "neo4j"
       },
-      "instructions": "Neo4j graph database — direct Cypher queries via official Neo4j MCP server. Use for schema inspection (get-schema), read queries (read-cypher), and write operations (write-cypher). Code-search handles LLM-facing structural workflows via inspect_symbol, trace_flow, and analyze_impact. Use this server for direct ad-hoc Cypher."
+      "instructions": "Neo4j graph database \u2014 direct Cypher queries via official Neo4j MCP server. Use for schema inspection (get-schema), read queries (read-cypher), and write operations (write-cypher). Code-search handles LLM-facing structural workflows via inspect_symbol, trace_flow, and analyze_impact. Use this server for direct ad-hoc Cypher."
     },
     "codeatlas-graph": {
       "type": "http",
@@ -55,6 +55,16 @@
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.infra",
       "instructions": "CodeAtlas for SoleMD.Infra (shared infrastructure). Use when you need to find or understand Docker Compose, MCP servers, native WSL2 workspace tooling, monitoring, shared operational scripts, or related external library docs through the unified code+docs MCP surface."
+    },
+    "repowise": {
+      "command": "repowise",
+      "args": [
+        "mcp",
+        "/home/workbench/SoleMD/SoleMD.Graph",
+        "--transport",
+        "stdio"
+      ],
+      "description": "repowise: codebase intelligence \u2014 docs, graph, git signals, dead code, decisions"
     }
   }
 }
