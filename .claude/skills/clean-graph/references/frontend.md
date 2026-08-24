@@ -191,14 +191,17 @@ it("prompt and bottom chrome do not overlap panel action rows on mobile", async 
 });
 ```
 
-## CSS Override Discovery (CodeAtlas)
+## CSS Override Discovery (RepoWise)
 
 When the area touches styling:
-- Use `mcp__codeatlas__file_context(file_path="app/globals.css")` to locate global style chunks
-- Use `mcp__codeatlas__search_code(query="<concept>", detail="skeleton")` for ownership
-- Narrow by UI/library surface: `library_tag="mantine"`, `library_tag="framer-motion"`, `library_tag="tailwind"`
-- Narrow by primitive: `ui_primitive="motion.div"`, `ui_primitive="Stack"`, `ui_primitive="ActionIcon"`
-- Read CSS-aware result metadata: `matched_on`, `css_selector_targets`, `css_var_defs`, `css_var_refs`, `css_at_rules`, `has_css_important`
+- Use `mcp__repowise__get_context(repo="graph", targets=["app/globals.css"])` to get the
+  triage card for the global stylesheet
+- Use `mcp__repowise__search_codebase(query="<concept>", repo="graph")` for ownership,
+  querying the distinctive identifiers (class names, custom-property names, component
+  names) rather than a verbose description — verbose queries dilute coverage and land
+  `caution` even when the `selected_owner` is right
+- Branch on the per-row evidence (`dense_cosine`, `lexical_rank`, `exact_name`, `lane`),
+  and read `selected_owner.{file, reason}` before trusting a hit
 - Use `rg` for exact CSS hunting (selectors, custom properties, at-rules)
 
-**Rule**: use CodeAtlas first for ownership and library narrowing; use `rg` second for exact text lookup.
+**Rule**: use RepoWise first for ownership; use `rg` second for exact text lookup.

@@ -8,16 +8,16 @@ and the canonical local cross-checks.
 
 ## Doc Lookup Workflow
 
-The Cosmograph docs library is indexed under codeatlas as
+The Cosmograph docs library is indexed on the `codeatlas-docs` server as
 `/jsolemd/cosmograph-docs`:
 
 ```text
-mcp__codeatlas__resolve_library_id("cosmograph") -> /jsolemd/cosmograph-docs
-mcp__codeatlas__search_docs(library_id="/jsolemd/cosmograph-docs", query="Cosmograph")
-mcp__codeatlas__read_doc(library_id="/jsolemd/cosmograph-docs", path="docs-lib/api/classes/Cosmograph.md")
+mcp__codeatlas-docs__resolve_library_id("cosmograph") -> /jsolemd/cosmograph-docs
+mcp__codeatlas-docs__search_docs(library_id="/jsolemd/cosmograph-docs", query="Cosmograph")
+mcp__codeatlas-docs__read_doc(library_id="/jsolemd/cosmograph-docs", path="docs-lib/api/classes/Cosmograph.md")
 ```
 
-Fallback when codeatlas's index is stale:
+Fallback when the indexed docs are stale:
 
 ```text
 mcp__context7__resolve-library-id("cosmograph")
@@ -78,5 +78,5 @@ When something looks inconsistent between docs and runtime, check local files:
 ## Practical Rule
 
 If the question is architectural, answer from the local SoleMD files first.
-If the question is API-specific, go to codeatlas (then context7) and local
+If the question is API-specific, go to the indexed `codeatlas-docs` library (then context7) and local
 typings before making assumptions.

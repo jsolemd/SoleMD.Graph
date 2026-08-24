@@ -1,7 +1,7 @@
 ---
 name: cosmograph
 description: SoleMD.Graph browser graph runtime — GraphBundle bootstrap, DuckDB-WASM, OPFS hot-table cache, native Cosmograph 2 rendering, camera, filters, timeline, dispose lifecycle, canvas performance. Make sure to use this skill whenever the user mentions cosmograph, duckdb-wasm, graph runtime, graph bootstrap, read_parquet, graph-bundles, registerFileBuffer, OPFS, useCosmograph, useCosmographInternal, useGraphCamera, useGraphInstance, useGraphExport, Cosmograph React, Cosmograph 2, pointXBy, pointYBy, enableSimulation, pointClusterBy, selection toolbar, fitView, hot-table cache, persistent-cache, bundle-files, sha256 integrity, eh bundle, mvp bundle, or canvas performance. Do NOT use for server-side bundle publication or force-directed layout (use /graph — browser runs enableSimulation=false), CSS variable theming values (use /aesthetic — this skill owns the integration boundary), three.js or shaders (use /threejs), raw WebGPU (use /webgpu), or LLM evaluation (use /langfuse).
-allowed-tools: Read Glob Grep Bash mcp__context7__resolve-library-id mcp__context7__query-docs mcp__codeatlas__resolve_library_id mcp__codeatlas__search_docs mcp__codeatlas__read_doc
+allowed-tools: Read Glob Grep Bash mcp__context7__resolve-library-id mcp__context7__query-docs mcp__codeatlas-docs__resolve_library_id mcp__codeatlas-docs__search_docs mcp__codeatlas-docs__read_doc
 paths: "apps/web/features/graph/**"
 metadata:
   short-description: Browser graph runtime — Cosmograph 2 + DuckDB-WASM + OPFS

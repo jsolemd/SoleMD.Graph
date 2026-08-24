@@ -15,21 +15,28 @@ Before editing, answer all five questions:
 
 ## Default Recon Order
 
-1. `graph_overview()` to orient around communities, hubs, and dead-code signals
-2. `find_patterns(pattern="reuse_candidates")` and `find_clones()` to avoid duplicate work
-3. `search_code()` or `inspect_symbol()` to find the live entry surface
-4. `file_context()`, `dependents()`, `analyze_impact()`, or `slice_build()` to measure blast radius
-5. `search_docs()` or Context7 when native-platform capability or third-party API behavior matters
+All RepoWise calls take `repo="graph"` for this project.
+
+1. `get_overview()` to orient around the architecture and hubs — orientation only,
+   not an authoritative current inventory
+2. `find_patterns()` and `find_clones()` to avoid duplicate work
+3. `search_codebase()` to find the live entry surface, then `get_symbol(id)` for one
+   verified body of an id the search named
+4. `get_context(targets=[...])`, `get_dependents()`, `get_blast_radius()`, or
+   `build_task_slice()` to measure blast radius
+5. `search_docs()` on `codeatlas-docs`, or Context7, when native-platform capability
+   or third-party API behavior matters
 
 ## When To Go Deeper
 
-Use `slice_build()` when work spans multiple modules or the area is unfamiliar.
+Use `build_task_slice()` when work spans multiple modules or the area is unfamiliar.
 
-Use `dependents(max_depth>=2)` or `analyze_impact()` when the touched surface is
-shared, central, or likely to have broad callers.
+Use `get_dependents()` or `get_blast_radius()` when the touched surface is shared,
+central, or likely to have broad callers. `get_dependents` returns complete inbound
+totals with honest pagination — a total is a total, never a sample.
 
-Use `find_patterns(pattern="orphan_exports")` when cleanup should remove dead
-surfaces, not just fix live ones.
+Use `get_dead_code()` when cleanup should remove dead surfaces, not just fix live
+ones, and `get_risk(targets)` for what history says about touching them.
 
 Use docs search before declaring custom code a violation of the
 "native solutions first" rule.

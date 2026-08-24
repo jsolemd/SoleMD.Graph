@@ -28,19 +28,21 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
-  - mcp__codeatlas__graph_overview
-  - mcp__codeatlas__search_code
-  - mcp__codeatlas__inspect_symbol
-  - mcp__codeatlas__dependents
-  - mcp__codeatlas__file_context
-  - mcp__codeatlas__find_clones
-  - mcp__codeatlas__find_patterns
-  - mcp__codeatlas__slice_build
-  - mcp__codeatlas__slice_view
-  - mcp__codeatlas__analyze_impact
-  - mcp__codeatlas-graph__search_code
-  - mcp__codeatlas__search_docs
-  - mcp__codeatlas__resolve_library_id
+  - mcp__repowise__get_overview
+  - mcp__repowise__search_codebase
+  - mcp__repowise__get_symbol
+  - mcp__repowise__get_dependents
+  - mcp__repowise__get_context
+  - mcp__repowise__find_clones
+  - mcp__repowise__find_patterns
+  - mcp__repowise__build_task_slice
+  - mcp__repowise__get_task_slice
+  - mcp__repowise__get_blast_radius
+  - mcp__repowise__get_risk
+  - mcp__repowise__get_health
+  - mcp__repowise__get_index_status
+  - mcp__codeatlas-docs__search_docs
+  - mcp__codeatlas-docs__resolve_library_id
   - mcp__context7__resolve-library-id
   - mcp__context7__query-docs
 metadata:
@@ -51,10 +53,11 @@ You are a senior engineer enforcing SoleMD.Graph's engineering discipline. Revie
 target code for violations of core principles, **fix every issue you find**, and write
 performance regression tests where they are missing.
 
-`/clean-graph` is not a standalone skill. When invoked, also load and use `/codeatlas`
-for live reconnaissance before editing. If the user types only `clean-graph`, interpret
-that as `clean-graph + codeatlas` for code work. Recon is non-optional because reuse,
-native-solution checks, and blast-radius analysis depend on live project context. (For
+`/clean-graph` is not a standalone skill. When invoked, also load and use `/repowise`
+for live reconnaissance before editing (`repo="graph"`). If the user types only
+`clean-graph`, interpret that as `clean-graph + repowise` for code work. Recon is
+non-optional because reuse, native-solution checks, and blast-radius analysis depend
+on live project context. (For
 SoleMD.Make / conceptatlas / doc-gen work, use `/clean` instead.)
 
 `/clean` also owns the skill-context maintenance gate. If the cleanup changes a
@@ -83,7 +86,7 @@ These are non-negotiable. Every line of code must serve them:
    reaching for custom code. Cosmograph has widgets — use them. DuckDB has SQL — use
    it. Mantine has components — use them. Tailwind has utilities — use them. Next.js
    has conventions — follow them. Never reimplement what the stack already provides.
-   **When unsure**, use the CodeAtlas docs tools to verify what the platform provides before
+   **When unsure**, use the indexed docs tools (`codeatlas-docs`) to verify what the platform provides before
    concluding custom code is necessary (see Phase D below).
 
 2. **Adapter pattern over direct coupling** — Build thin adapters on top of native
@@ -198,7 +201,7 @@ with code-search. No stale snapshots, no assumptions.
 
 Minimum expectations:
 
-1. Use CodeAtlas recon to find ownership, reuse candidates, and blast radius.
+1. Use RepoWise recon (`repo="graph"`) to find ownership, reuse candidates, and blast radius.
 2. Identify the owning skill/reference surface up front.
 3. Verify native-platform capabilities with docs search before calling custom
    code a "reimplementation" violation.
@@ -207,17 +210,17 @@ Minimum expectations:
 
 Default recon sequence:
 
-- `graph_overview()`
-- `find_patterns(pattern="reuse_candidates")`
-- `find_clones()` and `find_patterns(pattern="orphan_exports")` when cleanup debt is likely
-- `search_code()` or `inspect_symbol()` for the live entry surface
-- `file_context()`, `dependents()`, `analyze_impact()`, or `slice_build()` when the change is shared or unfamiliar
-- `search_docs()` or Context7 when native API or third-party behavior matters
+- `get_overview(repo="graph")`
+- `find_patterns(repo="graph")`
+- `find_clones()` and `get_dead_code()` when cleanup debt is likely
+- `search_codebase()` for the live entry surface, then `get_symbol(id)` for a verified body
+- `get_context(targets=[...])`, `get_dependents()`, `get_blast_radius()`, or `build_task_slice()` when the change is shared or unfamiliar
+- `search_docs()` on `codeatlas-docs`, or Context7, when native API or third-party behavior matters
 
 Detailed recon mechanics live in:
 
 - [Recon Reference](references/recon.md)
-- [CodeAtlas Skill](../codeatlas/SKILL.md)
+- `/repowise` (shared skill)
 
 Rule: do not create new helpers, hooks, components, queries, or utilities until
 code-search shows no reusable equivalent and docs search shows the platform does

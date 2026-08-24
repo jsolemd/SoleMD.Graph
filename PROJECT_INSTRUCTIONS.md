@@ -53,13 +53,13 @@ not as an optional cleanup pass after the fact.
 - Apply `/clean` principles to every coding task: native solutions first, thin
   adapters, zero duplicate work, centralization, modularization, and performance
   discipline.
-- Use CodeAtlas reconnaissance before non-trivial edits to find existing
-  implementations, reusable modules, native platform capabilities, adapter
+- Use RepoWise reconnaissance (`repo="graph"`) before non-trivial edits to find
+  existing implementations, reusable modules, native platform capabilities, adapter
   boundaries, and blast radius.
-- If the user invokes `/clean`, interpret that as `/clean` + `/codeatlas`.
-  `/clean` without live CodeAtlas recon is incomplete.
+- If the user invokes `/clean`, interpret that as `/clean` + `/repowise`.
+  `/clean` without live RepoWise recon is incomplete.
 - Scale recon depth to risk. Tiny or non-code tasks do not need a full cleanup or
-  architecture pass, but any meaningful code change should start with CodeAtlas.
+  architecture pass, but any meaningful code change should start with RepoWise.
 
 ## Frontend Performance
 

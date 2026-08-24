@@ -287,7 +287,7 @@ Increments when: layout params change, entity-edge-spec hash changes, edge weigh
 
 ## 8. What NOT to do (codebase-specific anti-patterns)
 
-- **Never use `grep` / `rg` / `find` for code exploration.** Use the CodeAtlas MCP (`mcp__codeatlas-graph__*`) instead — `search_code`, `inspect_symbol`, `dependents`, `trace_flow`, `get_flow`.
+- **Never use `grep` / `rg` / `find` for code exploration.** Use the RepoWise MCP (`mcp__repowise__*` with `repo="graph"`) instead — `search_codebase`, `get_symbol`, `get_dependents`, `get_dependency_path`, `get_execution_flows`.
 - **Never import from another SoleMD project's Python modules.** Hand-off via GitHub issue per the top-level CLAUDE.md.
 - **Never use `git add .` or `git add -A`.** Always name files. Secrets live in 1Password, never in `.env`.
 - **Never rename with a loose `sed`.** TypeScript rename = `git mv` + compiler finds importers. Spec-JSON rename = coordinate across R1/R2/R7.

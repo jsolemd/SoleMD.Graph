@@ -84,8 +84,8 @@ security-planner before either side ships.
      `{ hidden: true } | { hidden: false, className: string }`.
   2. Drop `HIDDEN_LABEL_STYLE`; export `HIDDEN_LABEL_CLASS_NAME` if a real
      class is needed; let `apps/web` own the CSS rule.
-  3. Migrate callers. Codeatlas `find_patterns` for
-     `resolveClusterLabelClassName` to locate them. If no callers, delete
+  3. Migrate callers. RepoWise `get_reference_sites(target=
+     "resolveClusterLabelClassName")` to locate them. If no callers, delete
      the function entirely.
   4. Tests: null / undefined / empty / whitespace / non-empty cases.
 - **Open questions**: Caller inventory? Determines whether this is a
@@ -145,12 +145,12 @@ security-planner before either side ships.
      only public functions.
   3. Compile-time test: `@ts-expect-error` on root-imported `Engine*`
      types.
-  4. Codeatlas `dependents` on each `Engine*` symbol to surface web
+  4. RepoWise `get_dependents` on each `Engine*` symbol to surface web
      consumers; migrate to DTO types where needed.
 - **Open questions**: Are there current web consumers of `Engine*`? If
   yes → two-PR migration.
 - **Effort**: Half day (no web consumers) → 1–2 days with migration.
-- **Deps**: Codeatlas recon.
+- **Deps**: RepoWise recon.
 
 #### B2. Subpath exports map; split `src/index.ts`
 

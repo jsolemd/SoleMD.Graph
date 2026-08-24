@@ -459,10 +459,10 @@ import '@mantine/dates/styles.css'; // example for dates
 
 ### Priority order
 
-1. **CodeAtlas indexed Mantine documentation** (preferred)
-   - Search/read the indexed library docs through the repository-specific
-     CodeAtlas profile before editing.
-   - Use indexed Next, React, and Tailwind docs when the answer crosses libraries.
+1. **Indexed Mantine documentation** on the `codeatlas-docs` server (preferred)
+   - `resolve_library_id` → `search_docs` → `read_doc` before editing.
+   - Use indexed Next, React, and Tailwind docs when the answer crosses libraries;
+     `search_docs` takes `library_ids` for a cross-library query.
 2. **Official Mantine documentation** (fallback when the index has a gap)
 3. **Local reference** (offline, complete)
    - `docs/mantine-llms.txt` (full Mantine docs in markdown) when you need

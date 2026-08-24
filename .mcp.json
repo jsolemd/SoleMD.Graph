@@ -4,7 +4,7 @@
     "context7": {
       "type": "http",
       "url": "https://mcp.context7.com/mcp",
-      "instructions": "Fallback external library documentation lookups only. For SoleMD work, always try CodeAtlas docs first: resolve_library_id -> search_docs (use library_ids for cross-library search) -> read_doc/expand_doc_chunk. Use Context7 only when CodeAtlas lacks the library, the indexed docs are stale/unavailable, or the local result quality is clearly insufficient; state that fallback reason explicitly."
+      "instructions": "Fallback external library documentation lookups only. For SoleMD work, always try the codeatlas-docs server first: resolve_library_id -> search_docs (use library_ids for cross-library search) -> read_doc/expand_doc_chunk. Use Context7 only when the local index lacks the library, the indexed docs are stale/unavailable, or the local result quality is clearly insufficient; state that fallback reason explicitly."
     },
     "openaiDeveloperDocs": {
       "type": "http",
@@ -21,50 +21,15 @@
       "url": "http://localhost:8400/mcp",
       "instructions": "Single Chrome DevTools MCP surface. Start each session in visible mode unless you have a specific reason not to. Use tool `solemd_set_mode` to pin the current session to exactly one mode: `visible` for Windows Chrome review, `mobile` for a real phone browser target, or `headless` for isolated automation. Use `solemd_get_mode` to inspect the current session mode. Prepare desktop-visible review with the Windows Chrome debug launcher and `open-responsive-tabs.sh`. Prepare real-phone review with `open-mobile-review.sh`, which auto-selects the active mobile CDP bridge."
     },
-    "codeatlas": {
-      "type": "http",
-      "url": "http://localhost:8100/mcp/solemd.graph",
-      "instructions": "Primary MCP surface for CodeAtlas navigation in the active project context. Canonical code tools: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, analyze_diff, graph_overview, list_flows, get_flow, slice_build, find_clones, find_patterns, index_status, refactor_preview, manage_decision. Canonical docs tools: resolve_library_id, search_docs, expand_doc_chunk, list_doc_libraries, read_doc. The Infra namespace additionally advertises query_log_report and docs administration tools. Folded aliases are not advertised: use find_patterns(pattern=bridge_functions), graph_overview(report=true), slice_build(slice_id=...), and search_docs(library_ids=[...]). Default exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) when a path question appears. For external docs: resolve_library_id -> search_docs -> read_doc or expand_doc_chunk. Context7/web are fallback-only when CodeAtlas lacks the library, is stale/unavailable, or gives clearly low-quality results. Use detail=card to screen and detail=full after selecting the target. A result carrying truncated=true showed only part of its symbol: `lines` is what was returned and `full_lines` is the whole span, so read the rest before concluding what the code does not do. Read matched_on, rank_explain, evidence_card.verifier, graph_context, and unresolved telemetry before broadening. next_action reports weak evidence but never declares a search finished. search_code confidence has three values and no high: low means the query scored where subjects absent from the corpus land, medium means something was measured, unknown means no instrument reached the top row; stats.evidence.basis names the signals used and is empty when it abstained, so branch on basis rather than the label. Rank is relative to the returned set, so an absent subject still ranks first against unrelated code and a thin wrapper ranks first by sharing a name; treat the top hit as a neighbour until inspect_symbol confirms ownership. Use index_status reindex_mode=all|content|graph to target rebuild scope. Cross-project access stays project-scoped via codeatlas-graph, codeatlas-web, codeatlas-make, and codeatlas-infra."
-    },
-    "neo4j": {
-      "command": "/workspaces/SoleMD.Infra/scripts/neo4j-mcp-server.sh",
-      "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USERNAME": "neo4j",
-        "NEO4J_PASSWORD": "solemd.infra",
-        "NEO4J_DATABASE": "neo4j"
-      },
-      "instructions": "Neo4j graph database \u2014 direct Cypher queries via official Neo4j MCP server. Use for schema inspection (get-schema), read queries (read-cypher), and write operations (write-cypher). Code-search handles LLM-facing structural workflows via inspect_symbol, trace_flow, and analyze_impact. Use this server for direct ad-hoc Cypher."
-    },
-    "codeatlas-graph": {
-      "type": "http",
-      "url": "http://localhost:8100/mcp/solemd.graph",
-      "instructions": "CodeAtlas for SoleMD.Graph (biomedical knowledge graph). Use when you need to find or understand Graph components, pages, API routes, hooks, motion/UI patterns, data fetch flows, or related external library docs through the unified code+docs MCP surface."
-    },
-    "codeatlas-web": {
-      "type": "http",
-      "url": "http://localhost:8100/mcp/solemd.web",
-      "instructions": "CodeAtlas for SoleMD.Web (public website and lecture catalog). Use for Next.js routes, Mantine/Tailwind brand primitives, Motion, lecture metadata, components, tests, and related external library documentation."
-    },
-    "codeatlas-make": {
-      "type": "http",
-      "url": "http://localhost:8100/mcp/solemd.make",
-      "instructions": "CodeAtlas for SoleMD.Make (markdown-first document generation). Use when you need to find or understand Pandoc, Typst, Carbone, slides, citation/Zotero workflows, filters, templates, document source conventions, or related external library docs through the unified code+docs MCP surface."
-    },
-    "codeatlas-infra": {
-      "type": "http",
-      "url": "http://localhost:8100/mcp/solemd.infra",
-      "instructions": "CodeAtlas for SoleMD.Infra (shared infrastructure). Use when you need to find or understand Docker Compose, MCP servers, native WSL2 workspace tooling, monitoring, shared operational scripts, or related external library docs through the unified code+docs MCP surface."
-    },
     "repowise": {
-      "command": "repowise",
-      "args": [
-        "mcp",
-        "/home/workbench/SoleMD/SoleMD.Graph",
-        "--transport",
-        "stdio"
-      ],
-      "description": "repowise: codebase intelligence \u2014 docs, graph, git signals, dead code, decisions"
+      "type": "http",
+      "url": "http://localhost:7350/mcp",
+      "instructions": "Primary code-navigation surface for ALL SoleMD projects — one workspace server with a repo= argument (repos: infra [default], graph, make, web; repo=\"all\" fans out federated search; list_repos is discovery). Canonical flow: search_codebase(query, repo=...) -> get_symbol(id a prior response named) -> get_context(targets=[files/symbols]) for triage. get_dependency_path answers call-path questions; get_dependents gives complete inbound totals (honest pagination, never a sample presented as a total). Before a risky edit, pair get_change_risk (defect score for a commit or base..head range) with get_blast_radius (workspace-wide impact); get_risk PR-mode leads with a directive — read will_break / missing_cochanges / tests_to_run first (tests_to_run_basis=measured means proven linkage; inferred is naming-only). get_reference_sites takes target=SYMBOL NAME (not a path); preview_symbol_rename previews a rename's site list. Flows via get_execution_flows; task slices via build_task_slice/get_task_slice/extend_task_slice when one work-package beats serial probes; find_clones/find_patterns for prior art before writing new code. get_why + manage_decision read the git-tracked decision journal (SoleMD.Infra/.codeatlas/decisions.jsonl; propose via CLI `repowise decision add`, Jon ratifies; no per-repo scoping yet — workspace decisions resolve against Infra). Result rows carry evidence (dense_cosine, lexical_rank, exact_name, lane), confidence (confident/caution/no_match), selected_owner {file, reason}, and symbol_path/contains_symbols naming nested definitions. Caution + a right-looking owner is NORMAL for verbose natural-language queries (coverage dilution) — tighten to the distinctive identifiers rather than distrusting the owner. Degradation: with ollama down (the boot default), search silently serves FTS-only — embedder_degraded:false does NOT prove the dense lane ran; recovery is automatic once ollama is up (`solemd infra up`). Server is a systemd --user unit; if unreachable: systemctl --user restart repowise-mcp. This server replaced the per-project CodeAtlas code servers; external library DOCS live on the codeatlas-docs server."
+    },
+    "codeatlas-docs": {
+      "type": "http",
+      "url": "http://localhost:8101/mcp/",
+      "instructions": "Indexed external library documentation (84 libraries; the surviving docs lane of CodeAtlas). Canonical flow: resolve_library_id -> search_docs (library_ids=[...] for cross-library) -> read_doc or expand_doc_chunk. list_doc_libraries enumerates coverage. Library mutations (add_doc_library, update_doc_library, delete_doc_library, import_doc_bundle) proxy to the internal docs writer and need the writer container up (`solemd infra up`). Context7/web are fallback-only when this index lacks the library, is stale/unavailable, or gives clearly low-quality results; state the fallback reason explicitly."
     }
   }
 }

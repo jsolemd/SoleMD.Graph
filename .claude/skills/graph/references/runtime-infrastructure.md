@@ -203,7 +203,8 @@ docker compose -f infra/docker/compose.yaml --profile db up -d graph-db-warehous
 | Worker Prometheus | `9095` | Infra-owned Prometheus for Graph worker telemetry |
 | Worker Grafana | `3300` | Infra-owned Grafana for Graph worker telemetry |
 | Langfuse | `3100` | Shared observability |
-| CodeAtlas | `8100` | Shared MCP |
+| RepoWise | `7350` | Shared code-search MCP (systemd --user, `repowise-mcp`) |
+| CodeAtlas Docs | `8101` | Shared indexed-library-docs MCP |
 
 ## References
 

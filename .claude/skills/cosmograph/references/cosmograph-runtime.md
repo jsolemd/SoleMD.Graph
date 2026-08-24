@@ -207,16 +207,16 @@ See "Canvas-Side Color Props" above.
 
 ## API Lookup Workflow
 
-The Cosmograph docs are indexed under codeatlas as
+The Cosmograph docs are indexed on the `codeatlas-docs` server as
 `/jsolemd/cosmograph-docs`:
 
 ```text
-mcp__codeatlas__resolve_library_id("cosmograph") -> /jsolemd/cosmograph-docs
-mcp__codeatlas__search_docs(library_id="/jsolemd/cosmograph-docs", query="Cosmograph fitView")
-mcp__codeatlas__read_doc(library_id="/jsolemd/cosmograph-docs", path="docs-lib/api/classes/Cosmograph.md")
+mcp__codeatlas-docs__resolve_library_id("cosmograph") -> /jsolemd/cosmograph-docs
+mcp__codeatlas-docs__search_docs(library_id="/jsolemd/cosmograph-docs", query="Cosmograph fitView")
+mcp__codeatlas-docs__read_doc(library_id="/jsolemd/cosmograph-docs", path="docs-lib/api/classes/Cosmograph.md")
 ```
 
-When codeatlas's index is stale, fall back to context7 with the same library id.
+When the indexed docs are stale, fall back to context7 with the same library id.
 
 When docs disagree with runtime, confirm against local typings:
 

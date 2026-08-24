@@ -40,7 +40,8 @@ changes. Always preserve these rules:
 - Future interactive lectures keep the site shell and tokens. Do not copy
   branding into a standalone experience; extract a versioned brand package if
   a separate deployment is truly required.
-- Use CodeAtlas indexed docs first for Next, React, Mantine, Tailwind, and Motion.
+- Use the indexed docs on the `codeatlas-docs` server first for Next, React, Mantine,
+  Tailwind, and Motion.
 
 The rest of this file is the **SoleMD.Graph-only contract** unless a rule is
 explicitly described as shared.
@@ -66,7 +67,7 @@ explicitly described as shared.
 | Style an entity profile | Use `panelAccentCardEntityStyle` + `data-entity-type={…}`. The `[data-entity-type]` selector rewires `--entity-accent` per type |
 | Scale panel sizing | `panelScaledPx(10)` composes `--app-density` × `--graph-panel-scale`. Never hardcode px in panels |
 | Configure a mode color | Edit `MODES[k].color` and `colorVar` in `apps/web/features/graph/lib/modes.ts`. See `references/mode-system.md` |
-| Look up Mantine API | CodeAtlas indexed Mantine docs first → official Mantine docs if the index has a gap → `docs/mantine-llms.txt` |
+| Look up Mantine API | Indexed Mantine docs (`codeatlas-docs`) first → official Mantine docs if the index has a gap → `docs/mantine-llms.txt` |
 | Preview Mantine themes | [MantineHub](https://mantinehub.com/) — interactive theme builder, copy-paste Blocks |
 
 ## Brand Personality
@@ -360,7 +361,7 @@ widget taxonomy, and dark-mode patterns → `references/cosmograph-integration.m
 
 ## New Component Checklist
 
-1. Check if a Mantine component exists first (use CodeAtlas indexed Mantine docs).
+1. Check if a Mantine component exists first (use the indexed Mantine docs on `codeatlas-docs`).
 2. Use CSS vars from `tokens.css` for colors — never hardcode hex.
 3. Use `rounded-surface*` (or Mantine `radius="lg"`) for border radius.
 4. Use `shadow-[var(--shadow-sm)]` for default shadows.
@@ -439,6 +440,6 @@ widget taxonomy, and dark-mode patterns → `references/cosmograph-integration.m
 | Panel styling patterns + container queries | `references/panel-patterns.md` |
 | Brand & visual identity | `docs/map/brand.md` |
 | Architecture overview | `docs/map/architecture.md` |
-| Mantine docs (indexed) | CodeAtlas Mantine library documentation |
+| Mantine docs (indexed) | Mantine library documentation on the `codeatlas-docs` server |
 | Mantine docs (offline) | `docs/mantine-llms.txt` |
 | MantineHub theme builder | [mantinehub.com](https://mantinehub.com/) |

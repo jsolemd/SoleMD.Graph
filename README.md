@@ -56,8 +56,8 @@ This repo now carries a thin AI Workbench project definition under `.project/`.
 That boundary is intentional:
 
 - `SoleMD.Graph` is Workbench-aware, not Workbench-dominated.
-- `SoleMD.Infra` still owns TEI, CodeAtlas, Neo4j, Qdrant, Langfuse, Portainer,
-  and MCP infrastructure.
+- `SoleMD.Infra` still owns RepoWise, the CodeAtlas docs lane, Qdrant, Langfuse,
+  Portainer, and MCP infrastructure (Neo4j and TEI are legacy CodeAtlas services).
 - Vercel and GCP deployment concerns remain separate from AI Workbench metadata.
 
 There is no Graph-local Workbench compose stack yet. If this repo later needs

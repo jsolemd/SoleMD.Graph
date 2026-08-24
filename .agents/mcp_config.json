@@ -13,29 +13,11 @@
     "chrome-devtools": {
       "serverUrl": "http://localhost:8400/mcp"
     },
-    "codeatlas": {
-      "serverUrl": "http://localhost:8100/mcp/solemd.graph"
+    "repowise": {
+      "serverUrl": "http://localhost:7350/mcp"
     },
-    "neo4j": {
-      "command": "/workspaces/SoleMD.Infra/scripts/neo4j-mcp-server.sh",
-      "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USERNAME": "neo4j",
-        "NEO4J_PASSWORD": "solemd.infra",
-        "NEO4J_DATABASE": "neo4j"
-      }
-    },
-    "codeatlas-graph": {
-      "serverUrl": "http://localhost:8100/mcp/solemd.graph"
-    },
-    "codeatlas-web": {
-      "serverUrl": "http://localhost:8100/mcp/solemd.web"
-    },
-    "codeatlas-make": {
-      "serverUrl": "http://localhost:8100/mcp/solemd.make"
-    },
-    "codeatlas-infra": {
-      "serverUrl": "http://localhost:8100/mcp/solemd.infra"
+    "codeatlas-docs": {
+      "serverUrl": "http://localhost:8101/mcp/"
     }
   }
 }

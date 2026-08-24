@@ -169,3 +169,6 @@ nul
 docs/design/mantine-llms.txt
 # Local wiki authoring helper path (directory or symlink)
 /wiki
+
+# RepoWise per-repo index store (machine-local; rebuilt by repowise init/update)
+.repowise/
