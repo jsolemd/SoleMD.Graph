@@ -197,7 +197,7 @@ Otherwise, review changed code:
 ## 2. Pre-Flight: Discover The Live Architecture
 
 Before reviewing any file or writing any fix, build a live picture of the area
-with code-search. No stale snapshots, no assumptions.
+with RepoWise. No stale snapshots, no assumptions.
 
 Minimum expectations:
 
@@ -223,8 +223,8 @@ Detailed recon mechanics live in:
 - `/repowise` (shared skill)
 
 Rule: do not create new helpers, hooks, components, queries, or utilities until
-code-search shows no reusable equivalent and docs search shows the platform does
-not already provide the right native capability.
+`find_clones` / `find_patterns` show no reusable equivalent and docs search shows
+the platform does not already provide the right native capability.
 
 ## 3. Review
 
@@ -260,7 +260,7 @@ references before declaring the pass complete.
 
 For each issue found:
 
-1. **Search first** — use code-search to check if a fix pattern already exists
+1. **Search first** — use `search_codebase` to check if a fix pattern already exists
 2. **Read surrounding code** — understand the full context before changing anything
 3. **Apply the principled fix** — replace custom with native, wrap with adapter,
    extract shared module, add memoization, centralize the token, and complete the
@@ -283,7 +283,7 @@ Do **not**:
 - Refactor code outside the review scope
 - Write tests for code you didn't change (unless perf tests were missing for paths
   you touched)
-- Create new utilities without first searching for existing ones via code-search
+- Create new utilities without first searching for existing ones via `find_clones` / `search_codebase`
 - Leave behind temporary shims, fallback branches, "for now" hacks, or unfinished
   migrations that require a later cleanup pass to become correct
 - Solve mobile by deleting desktop quality or solve desktop by forcing phone-sized
