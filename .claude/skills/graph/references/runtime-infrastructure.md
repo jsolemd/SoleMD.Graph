@@ -201,7 +201,7 @@ docker compose -f infra/docker/compose.yaml --profile db up -d graph-db-warehous
 | PgBouncer Serve | `56432` | Transaction pooler in front of serve |
 | Redis | `57379` | Local dev cache / Dramatiq broker |
 | Worker Prometheus | `9095` | Infra-owned Prometheus for Graph worker telemetry |
-| Worker Grafana | `3300` | Infra-owned Grafana for Graph worker telemetry |
+| Worker Grafana | `3301` | Infra-owned Grafana for Graph worker telemetry (`3300` is the RepoWise dashboard UI since 2026-08-29) |
 | Langfuse | `3100` | Shared observability |
 | RepoWise | `7350` | Shared code-search MCP (systemd --user, `repowise-mcp`) |
 | CodeAtlas Docs | `8101` | Shared indexed-library-docs MCP |

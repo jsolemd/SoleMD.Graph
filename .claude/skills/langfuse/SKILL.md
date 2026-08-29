@@ -173,7 +173,7 @@ EU tenant: `https://cloud.langfuse.com`.
 
 The Langfuse UI runs on host port `3100` (see `/graph` →
 `runtime-infrastructure.md` for the canonical pinned-port table). Worker
-telemetry uses Prometheus on `9095` and Grafana on `3300`; those are
+telemetry uses Prometheus on `9095` and Grafana on `3301`; those are
 independent of Langfuse and are documented in the same table.
 
 ## Environments and Tags

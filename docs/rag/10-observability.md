@@ -10,7 +10,7 @@
 > now lives in `SoleMD.Infra/infra/observability/`, using host
 > networking to scrape the host-run worker endpoints on `9464` /
 > `9465` / `9466` and exposing local UIs on Prometheus `9095` and
-> Grafana `3300`. Loki / Alloy / Alertmanager and the wider non-worker
+> Grafana `3301`. Loki / Alloy / Alertmanager and the wider non-worker
 > exporter set remain deferred.
 >
 > **Date**: 2026-04-16
